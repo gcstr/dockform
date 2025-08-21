@@ -1,0 +1,21 @@
+docker:
+  context: default
+  identifier: demo
+
+applications:
+  website:
+    root: ./website
+    files:
+      - docker-compose.yaml
+    project:
+      name: website
+
+volumes:
+  demo-volume-1:
+    {}
+
+networks:
+  demo-network:
+    {}
+
+

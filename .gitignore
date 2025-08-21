@@ -1,0 +1,44 @@
+# Go binaries and build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# If building the CLI at repo root
+/dockform
+
+# Build output directories
+bin/
+build/
+dist/
+out/
+coverage/
+
+# Go vendor (if used)
+vendor/
+
+# CUE cache
+.cue_cache/
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Tooling
+.cursor/
+
