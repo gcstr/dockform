@@ -1,6 +1,6 @@
 services:
   nginx:
-    image: nginx:1.24
+    image: nginx:1.11
     ports:
       - "8080:80"
     healthcheck:

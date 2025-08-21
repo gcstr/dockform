@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Exec abstracts docker command execution for ease of testing.
@@ -159,6 +161,49 @@ func (c *Client) ComposeConfigServices(ctx context.Context, workingDir string, f
 		return nil, err
 	}
 	return splitNonEmptyLines(out), nil
+}
+
+// ComposeConfigDoc captures the relevant parts of docker compose config.
+type ComposeConfigDoc struct {
+	Services map[string]ComposeService `json:"services" yaml:"services"`
+}
+
+type ComposeService struct {
+	Image string `json:"image" yaml:"image"`
+}
+
+// ComposeConfigFull renders the effective compose config and parses desired services info (image, etc.).
+func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files, profiles, envFiles []string) (ComposeConfigDoc, error) {
+	args := []string{"compose"}
+	for _, f := range files {
+		args = append(args, "-f", filepath.Clean(f))
+	}
+	for _, e := range envFiles {
+		args = append(args, "--env-file", filepath.Clean(e))
+	}
+	for _, p := range profiles {
+		args = append(args, "--profile", p)
+	}
+	// Prefer JSON when available
+	argsJSON := append(append([]string{}, args...), "config", "--format", "json")
+	out, err := c.exec.RunInDir(ctx, workingDir, argsJSON...)
+	if err == nil {
+		var doc ComposeConfigDoc
+		if json.Unmarshal([]byte(out), &doc) == nil {
+			return doc, nil
+		}
+	}
+	// Fallback to YAML
+	argsYAML := append(append([]string{}, args...), "config")
+	out, err = c.exec.RunInDir(ctx, workingDir, argsYAML...)
+	if err != nil {
+		return ComposeConfigDoc{}, err
+	}
+	var doc ComposeConfigDoc
+	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
+		return ComposeConfigDoc{}, err
+	}
+	return doc, nil
 }
 
 // ComposePsItem is a subset of fields from `docker compose ps --format json`.

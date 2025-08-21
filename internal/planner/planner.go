@@ -89,10 +89,10 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 				continue
 			}
 
-			plannedServices := []string{}
-			if ss, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile); err == nil {
-				plannedServices = ss
-			}
+			// Desired config (images) from compose config
+			doc, _ := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile)
+			plannedServices := sortedKeys(doc.Services)
+
 			running := map[string]dockercli.ComposePsItem{}
 			proj := ""
 			if app.Project != nil {
@@ -104,15 +104,15 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 				}
 			}
 
-			plannedSet := map[string]struct{}{}
 			for _, s := range plannedServices {
-				plannedSet[s] = struct{}{}
-			}
-			plannedSorted := append([]string(nil), plannedServices...)
-			sort.Strings(plannedSorted)
-			for _, s := range plannedSorted {
-				if _, ok := running[s]; ok {
-					lines = append(lines, ui.Line(ui.Noop, "service %s/%s running", appName, s))
+				if it, ok := running[s]; ok {
+					// Compare image
+					desiredImage := doc.Services[s].Image
+					if desiredImage != "" && it.Image != "" && it.Image != desiredImage {
+						lines = append(lines, ui.Line(ui.Change, "service %s/%s image: %s -> %s", appName, s, it.Image, desiredImage))
+					} else {
+						lines = append(lines, ui.Line(ui.Noop, "service %s/%s running", appName, s))
+					}
 				} else {
 					lines = append(lines, ui.Line(ui.Add, "service %s/%s will be started", appName, s))
 				}
