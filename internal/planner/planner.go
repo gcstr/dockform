@@ -144,23 +144,6 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 		}
 	}
 
-	// Unmanaged (prunable) containers: those with compose labels but not in desired apps/projects
-	if p.docker != nil {
-		managedProjects := map[string]struct{}{}
-		for _, app := range cfg.Applications {
-			if app.Project != nil && app.Project.Name != "" {
-				managedProjects[app.Project.Name] = struct{}{}
-			}
-		}
-		if items, err := p.docker.ListComposeContainersAll(ctx); err == nil {
-			for _, it := range items {
-				if _, ok := managedProjects[it.Project]; !ok {
-					lines = append(lines, ui.Line(ui.Remove, "container %s unmanaged (project %s) - will be removed with --prune", it.Name, it.Project))
-				}
-			}
-		}
-	}
-
 	if len(lines) == 0 {
 		lines = append(lines, ui.Line(ui.Noop, "nothing to do"))
 	}

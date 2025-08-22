@@ -49,6 +49,7 @@ It ensures that the **current Docker state** matches the **desired state defined
 ```yaml
 docker:
   context: "default" # used for docker CLI context
+  identifier: "my-project" # optional; if provided, will be applied as a label to every managed resource
 
 applications:
   <app-name>:
@@ -65,10 +66,14 @@ applications:
 volumes:
   demo-volume:
     external: false              # optional; default false. If true, treat as external
+    labels:                      # optional; custom labels for this volume
+      owner: dockform
 
 networks:
   demo-network:
     external: false              # optional; default false. If true, treat as external
+    labels:                      # optional; custom labels for this network
+      owner: dockform
 ```
 
 ---
@@ -79,32 +84,27 @@ networks:
 - `root`: required, must be a valid relative path.
 - `files`: optional, defaults to `<root>/docker-compose.yml`.
 - `volumes` and `networks`: must be expressed in **map form** only (e.g. `demo-volume: { external: false }`).
-- For both resources, `external` is optional boolean (default `false`).
+- For both resources, `external` is optional boolean (default `false`), `labels` is optional map.
 - `docker.context`: optional, defaults to `default`.
+- `docker.identifier`: optional, if provided Dockform adds it as a label to every managed resource and uses it to scope state comparison (ignores resources without this label).
 - Config file: if `--file` is not provided, defaults to `config.yml` or `config.yaml` in the current directory.
 
 ---
 
 ## 6. State Comparison
 
-When running `plan` or `apply`, compare the following attributes between **desired** and **current state** for each **application**:
+Dockform uses **Compose’s native config-hash** to compare desired and running state for services:
 
-- image
-- name
-- port
-- command
-- entrypoint
-- env
-- labels
-- volumes (service mounts and top-level volume existence/`external`)
-- networks (service attachments and top-level network existence/`external`)
-- resources (CPU/mem)
-- healthcheck
+- For each service, run `docker compose config --hash <service>` with the same inputs Dockform will use on apply (user files + identifier overlay).
+- Read the running container label `com.docker.compose.config-hash` via `docker inspect`.
+- If hashes match → `[noop]` for that service.
+- If hashes differ or label missing → `[change]`.
 
-For **top-level resources**:
+For **top-level resources** (volumes and networks):
+- **Volumes**: presence, `external` flag semantics, labels, driver/options (if discoverable), and references by services.
+- **Networks**: presence, `external` flag semantics, labels, driver/options (if discoverable), and references by services.
 
-- **Volumes**: presence, `external` flag semantics, driver/options (if discoverable), and references by services.
-- **Networks**: presence, `external` flag semantics, driver/options (if discoverable), and references by services.
+Resources without the matching `docker.identifier` label are ignored during state comparison.
 
 ---
 
