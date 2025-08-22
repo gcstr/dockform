@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
@@ -162,6 +163,62 @@ func sortedKeys[T any](m map[string]T) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func comparePorts(desired []dockercli.ComposePort, running []dockercli.ComposePublisher) string {
+	// Build sets of "published:target/proto"
+	dset := map[string]struct{}{}
+	for _, p := range desired {
+		key := fmt.Sprintf("%d:%d/%s", p.Published, p.Target, normalizeProto(p.Protocol))
+		dset[key] = struct{}{}
+	}
+	rset := map[string]struct{}{}
+	for _, p := range running {
+		key := fmt.Sprintf("%d:%d/%s", p.PublishedPort, p.TargetPort, normalizeProto(p.Protocol))
+		rset[key] = struct{}{}
+	}
+	// Compare sets
+	var adds, removes []string
+	for k := range dset {
+		if _, ok := rset[k]; !ok {
+			adds = append(adds, "+"+k)
+		}
+	}
+	for k := range rset {
+		if _, ok := dset[k]; !ok {
+			removes = append(removes, "-"+k)
+		}
+	}
+	if len(adds) == 0 && len(removes) == 0 {
+		return ""
+	}
+	sort.Strings(adds)
+	sort.Strings(removes)
+	return strings.Join(append(removes, adds...), ", ")
+}
+
+func comparePortsCoerce(desired []dockercli.ComposePort, running []dockercli.ComposePublisher) string {
+	coerced := make([]dockercli.ComposePort, 0, len(desired))
+	for _, p := range desired {
+		pub := 0
+		switch v := p.Published.(type) {
+		case int:
+			pub = v
+		case int64:
+			pub = int(v)
+		case string:
+			fmt.Sscanf(v, "%d", &pub)
+		}
+		coerced = append(coerced, dockercli.ComposePort{Target: p.Target, Published: pub, Protocol: p.Protocol})
+	}
+	return comparePorts(coerced, running)
+}
+
+func normalizeProto(p string) string {
+	if p == "" {
+		return "tcp"
+	}
+	return strings.ToLower(p)
 }
 
 // Apply creates missing top-level resources with labels and performs compose up, labeling containers with identifier.
