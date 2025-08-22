@@ -141,6 +141,32 @@ Example (output of `dockform plan`):
   - Apply is **idempotent**: repeat runs produce no changes.
   - Changes are always displayed before execution.
 
+### 8.1 Identifier Overlay Strategy (recommended)
+
+To ensure every managed resource carries `dockform.identifier=<value>` **and** to keep Compose hashes consistent, Dockform uses a small ephemeral **overlay compose file**:
+
+- **What gets generated**
+
+  - For each service: adds label `dockform.identifier: <value>` (and nothing else).
+  - For managed volumes/networks at creation time: adds the same label to the resource.
+
+- **How it is used**
+
+  - Dockform writes the overlay to a **temp file** (e.g., `/tmp/dockform.overlay.yml`).
+  - All Compose calls include the overlay via additional `-f` flag(s):
+    - `docker compose -f <user files...> -f /tmp/dockform.overlay.yml --project-directory <root> [--env-file ...] [--profile ...] config --hash <service>`
+    - `docker compose -f <user files...> -f /tmp/dockform.overlay.yml --project-directory <root> [--env-file ...] [--profile ...] up -d`
+  - The temp file is removed after the command finishes (configurable: keep on `--debug`).
+
+- **Why this works**
+
+  - The **desired** hash (from `compose config --hash`) and the **running** containers are computed from the **same inputs**, so `com.docker.compose.config-hash` **matches**.
+  - The identifier becomes a stable part of the Compose inputs without modifying user files.
+
+- **Alternatives**
+
+  - **STDIN/**``** piping** is possible but brittle with multiple files and merge semantics; the temp-file overlay is more compatible and explicit.
+
 ---
 
 ## 9. Dependencies
@@ -149,7 +175,7 @@ Example (output of `dockform plan`):
 - [go-playground/validator](https://github.com/go-playground/validator) for YAML validation
 - [Cobra](https://github.com/spf13/cobra) for CLI structure
 - [Lip Gloss](https://github.com/charmbracelet/lipgloss) for terminal styling
-- Docker CLI installed and accessible
+- Docker CLI installed and accessible (Compose v2.23.1+ required for `docker compose config --hash`)
 - Source: [github.com/gcstr/dockform](https://github.com/gcstr/dockform)
 
 ---
@@ -161,6 +187,7 @@ Example (output of `dockform plan`):
 - Dry-run mode for `apply` (skip execution).
 - Support for secrets & configs.
 - State caching to speed up large projects.
+- Multi-identifier coexistence: allow multiple Dockform configs to manage distinct sets of resources in the same Docker context, each scoped by its own `docker.identifier`.
 
 ---
 
