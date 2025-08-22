@@ -1,0 +1,50 @@
+package dockercli
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"os/exec"
+)
+
+// Exec abstracts docker command execution for ease of testing.
+type Exec interface {
+	Run(ctx context.Context, args ...string) (string, error)
+	RunInDir(ctx context.Context, dir string, args ...string) (string, error)
+}
+
+// SystemExec is a real implementation that shells out to the docker CLI.
+type SystemExec struct {
+	ContextName string
+}
+
+func (s SystemExec) Run(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	if s.ContextName != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("DOCKER_CONTEXT=%s", s.ContextName))
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.String(), fmt.Errorf("%w: %s", err, truncate(stderr.String(), 512))
+	}
+	return stdout.String(), nil
+}
+
+func (s SystemExec) RunInDir(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	if s.ContextName != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("DOCKER_CONTEXT=%s", s.ContextName))
+	}
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.String(), fmt.Errorf("%w: %s", err, truncate(stderr.String(), 512))
+	}
+	return stdout.String(), nil
+}
