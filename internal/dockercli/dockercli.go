@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/gcstr/dockform/internal/util"
 )
 
 // Client provides higher-level helpers around docker CLI.
@@ -21,14 +23,6 @@ func New(contextName string) *Client {
 func (c *Client) WithIdentifier(id string) *Client {
 	c.identifier = id
 	return c
-}
-
-// ComposeAPI defines the subset of compose-related operations used by planner (exported for fakes in tests).
-type ComposeAPI interface {
-	ListVolumes(ctx context.Context) ([]string, error)
-	ListNetworks(ctx context.Context) ([]string, error)
-	ComposeConfigServices(ctx context.Context, workingDir string, files, profiles, envFiles []string) ([]string, error)
-	ComposePs(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string) ([]ComposePsItem, error)
 }
 
 // RemoveContainer removes a container by name. If force is true, the container
@@ -94,7 +88,7 @@ func (c *Client) ListComposeContainersAll(ctx context.Context) ([]PsBrief, error
 		return nil, err
 	}
 	var items []PsBrief
-	for _, line := range splitNonEmptyLines(out) {
+	for _, line := range util.SplitNonEmptyLines(out) {
 		parts := strings.SplitN(line, ";", 3)
 		if len(parts) != 3 {
 			continue
@@ -108,22 +102,4 @@ func (c *Client) ListComposeContainersAll(ctx context.Context) ([]PsBrief, error
 		items = append(items, PsBrief{Project: proj, Service: svc, Name: name})
 	}
 	return items, nil
-}
-
-func splitNonEmptyLines(s string) []string {
-	var out []string
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			out = append(out, line)
-		}
-	}
-	return out
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
 }

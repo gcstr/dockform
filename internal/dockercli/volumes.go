@@ -3,6 +3,8 @@ package dockercli
 import (
 	"context"
 	"fmt"
+
+	"github.com/gcstr/dockform/internal/util"
 )
 
 // ListVolumes returns names of docker volumes.
@@ -15,7 +17,7 @@ func (c *Client) ListVolumes(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return splitNonEmptyLines(out), nil
+	return util.SplitNonEmptyLines(out), nil
 }
 
 func (c *Client) CreateVolume(ctx context.Context, name string, labels map[string]string) error {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gcstr/dockform/internal/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -34,7 +35,7 @@ func (c *Client) ComposeConfigServices(ctx context.Context, workingDir string, f
 	if err != nil {
 		return nil, err
 	}
-	return splitNonEmptyLines(out), nil
+	return util.SplitNonEmptyLines(out), nil
 }
 
 // ComposeConfigFull renders the effective compose config and parses desired services info (image, etc.).
@@ -93,7 +94,7 @@ func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profil
 	if len(results) > 0 {
 		return results, nil
 	}
-	return nil, fmt.Errorf("unexpected compose ps json: %s", truncate(out, 256))
+	return nil, fmt.Errorf("unexpected compose ps json: %s", util.Truncate(out, 256))
 }
 
 // ComposeConfigHash returns the compose config hash for a single service.
@@ -122,7 +123,7 @@ func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files
 	}
 	fields := strings.Fields(firstLine)
 	if len(fields) == 0 {
-		return "", fmt.Errorf("unexpected compose hash output: %s", truncate(trimmed, 200))
+		return "", fmt.Errorf("unexpected compose hash output: %s", util.Truncate(trimmed, 200))
 	}
 	return fields[len(fields)-1], nil
 }
