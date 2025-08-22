@@ -9,7 +9,7 @@ import (
 	"regexp"
 
 	"github.com/go-playground/validator/v10"
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml"
 )
 
 // Config is the root desired-state structure parsed from YAML.
@@ -176,17 +176,6 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 	return nil
-}
-
-func resolveEnvPaths(base string, files []string) []string {
-	out := make([]string, 0, len(files))
-	for _, f := range files {
-		if f == "" {
-			continue
-		}
-		out = append(out, filepath.Clean(filepath.Join(base, f)))
-	}
-	return out
 }
 
 func rebaseRootEnvToApp(baseDir, resolvedRoot string, files []string) []string {

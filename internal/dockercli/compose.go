@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/gcstr/dockform/internal/util"
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml"
 )
 
 // ComposeUp runs docker compose up -d with the given parameters.

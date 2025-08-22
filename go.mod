@@ -5,8 +5,8 @@ go 1.25.0
 require (
 	github.com/charmbracelet/lipgloss v0.10.0
 	github.com/go-playground/validator/v10 v10.20.0
+	github.com/goccy/go-yaml v1.18.0
 	github.com/spf13/cobra v1.8.1
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
