@@ -1,6 +1,7 @@
 package dockercli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,8 +29,13 @@ func (s SystemExec) Run(ctx context.Context, args ...string) (string, error) {
 	if s.ContextName != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("DOCKER_CONTEXT=%s", s.ContextName))
 	}
-	b, err := cmd.CombinedOutput()
-	return string(b), err
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.String(), fmt.Errorf("%w: %s", err, truncate(stderr.String(), 512))
+	}
+	return stdout.String(), nil
 }
 
 func (s SystemExec) RunInDir(ctx context.Context, dir string, args ...string) (string, error) {
@@ -40,8 +46,13 @@ func (s SystemExec) RunInDir(ctx context.Context, dir string, args ...string) (s
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	b, err := cmd.CombinedOutput()
-	return string(b), err
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.String(), fmt.Errorf("%w: %s", err, truncate(stderr.String(), 512))
+	}
+	return stdout.String(), nil
 }
 
 // Client provides higher-level helpers around docker CLI.

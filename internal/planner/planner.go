@@ -163,7 +163,7 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 			}
 		}
 		// Plan removals for labeled containers whose services are not desired
-		if p.docker != nil {
+		if p.docker != nil && len(desiredServices) > 0 {
 			if all, err := p.docker.ListComposeContainersAll(ctx); err == nil {
 				for _, it := range all {
 					if _, want := desiredServices[it.Service]; !want {

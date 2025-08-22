@@ -15,6 +15,7 @@ import (
 // Config is the root desired-state structure parsed from YAML.
 type Config struct {
 	Docker       DockerConfig                    `yaml:"docker"`
+	Environment  *Environment                    `yaml:"environment"`
 	Applications map[string]Application          `yaml:"applications"`
 	Volumes      map[string]TopLevelResourceSpec `yaml:"volumes"`
 	Networks     map[string]TopLevelResourceSpec `yaml:"networks"`
@@ -26,15 +27,21 @@ type DockerConfig struct {
 }
 
 type Application struct {
-	Root     string   `yaml:"root" validate:"required"`
-	Files    []string `yaml:"files"`
-	Profiles []string `yaml:"profiles"`
-	EnvFile  []string `yaml:"env-file"`
-	Project  *Project `yaml:"project"`
+	Root        string       `yaml:"root" validate:"required"`
+	Files       []string     `yaml:"files"`
+	Profiles    []string     `yaml:"profiles"`
+	EnvFile     []string     `yaml:"env-file"`
+	Environment *Environment `yaml:"environment"`
+	Project     *Project     `yaml:"project"`
 }
 
 type Project struct {
 	Name string `yaml:"name"`
+}
+
+// Environment holds environment file references
+type Environment struct {
+	Files []string `yaml:"files"`
 }
 
 // TopLevelResourceSpec mirrors YAML for volumes/networks.
@@ -115,22 +122,51 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		}
 		// Resolve root relative to config file directory
 		resolvedRoot := filepath.Clean(filepath.Join(baseDir, app.Root))
+
+		// Merge environment files with correct base paths
+		// Root-level files are converted from baseDir-relative to resolvedRoot-relative
+		var mergedEnv []string
+		if c.Environment != nil && len(c.Environment.Files) > 0 {
+			mergedEnv = append(mergedEnv, rebaseRootEnvToApp(baseDir, resolvedRoot, c.Environment.Files)...)
+		}
+		if app.Environment != nil && len(app.Environment.Files) > 0 {
+			mergedEnv = append(mergedEnv, app.Environment.Files...)
+		}
+		if len(app.EnvFile) > 0 {
+			mergedEnv = append(mergedEnv, app.EnvFile...)
+		}
+		// De-duplicate env files while preserving order
+		if len(mergedEnv) > 1 {
+			seen := make(map[string]struct{}, len(mergedEnv))
+			uniq := make([]string, 0, len(mergedEnv))
+			for _, p := range mergedEnv {
+				if _, ok := seen[p]; ok {
+					continue
+				}
+				seen[p] = struct{}{}
+				uniq = append(uniq, p)
+			}
+			mergedEnv = uniq
+		}
+
 		if len(app.Files) == 0 {
 			c.Applications[appName] = Application{
-				Root:     resolvedRoot,
-				Files:    []string{filepath.Join(resolvedRoot, "docker-compose.yml")},
-				Profiles: app.Profiles,
-				EnvFile:  app.EnvFile,
-				Project:  app.Project,
+				Root:        resolvedRoot,
+				Files:       []string{filepath.Join(resolvedRoot, "docker-compose.yml")},
+				Profiles:    app.Profiles,
+				EnvFile:     mergedEnv,
+				Environment: app.Environment,
+				Project:     app.Project,
 			}
 		} else {
 			// Keep provided file paths (interpreted relative to Root by compose), but store resolved Root
 			c.Applications[appName] = Application{
-				Root:     resolvedRoot,
-				Files:    app.Files,
-				Profiles: app.Profiles,
-				EnvFile:  app.EnvFile,
-				Project:  app.Project,
+				Root:        resolvedRoot,
+				Files:       app.Files,
+				Profiles:    app.Profiles,
+				EnvFile:     mergedEnv,
+				Environment: app.Environment,
+				Project:     app.Project,
 			}
 		}
 	}
@@ -140,4 +176,31 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 	return nil
+}
+
+func resolveEnvPaths(base string, files []string) []string {
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		if f == "" {
+			continue
+		}
+		out = append(out, filepath.Clean(filepath.Join(base, f)))
+	}
+	return out
+}
+
+func rebaseRootEnvToApp(baseDir, resolvedRoot string, files []string) []string {
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		if f == "" {
+			continue
+		}
+		abs := filepath.Clean(filepath.Join(baseDir, f))
+		if rel, err := filepath.Rel(resolvedRoot, abs); err == nil {
+			out = append(out, rel)
+		} else {
+			out = append(out, abs)
+		}
+	}
+	return out
 }

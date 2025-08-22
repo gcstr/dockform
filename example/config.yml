@@ -2,6 +2,10 @@ docker:
   context: default
   identifier: demo
 
+environment:
+  files:
+    - global.env
+
 applications:
   website:
     root: ./website
@@ -9,6 +13,9 @@ applications:
       - docker-compose.yaml
     project:
       name: website
+    environment:
+      files:
+        - vars.env
 
 volumes:
   demo-volume-1:

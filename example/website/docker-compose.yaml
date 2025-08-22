@@ -3,10 +3,7 @@ services:
     image: nginx:1.12 
     ports:
       - "8000:80"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 3s
+    environment:
+      - PROJECT_LOCAL=${PROJECT_LOCAL}
+      - PROJECT_GLOBAL=${PROJECT_GLOBAL}
 
