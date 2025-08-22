@@ -16,6 +16,9 @@ applications:
     environment:
       files:
         - vars.env
+      inline:
+        - FOO=bar
+        - BAZ=qux
 
 volumes:
   demo-volume-1:

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,7 +17,7 @@ import (
 type Config struct {
 	Docker       DockerConfig                    `yaml:"docker"`
 	Environment  *Environment                    `yaml:"environment"`
-	Applications map[string]Application          `yaml:"applications"`
+	Applications map[string]Application          `yaml:"applications" validate:"dive"`
 	Volumes      map[string]TopLevelResourceSpec `yaml:"volumes"`
 	Networks     map[string]TopLevelResourceSpec `yaml:"networks"`
 }
@@ -66,8 +67,9 @@ func Load(path string) (Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(b, &cfg); err != nil {
-		return Config{}, fmt.Errorf("parse yaml: %w", err)
+	dec := yaml.NewDecoder(bytes.NewReader(b), yaml.Validator(validate), yaml.Strict())
+	if err := dec.Decode(&cfg); err != nil {
+		return Config{}, fmt.Errorf("parse yaml: %s", yaml.FormatError(err, true, true))
 	}
 
 	if err := cfg.normalizeAndValidate(filepath.Dir(guessed)); err != nil {
@@ -116,9 +118,6 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 	for appName, app := range c.Applications {
 		if !appKeyRegex.MatchString(appName) {
 			return fmt.Errorf("invalid application key %q: must match ^[a-z0-9_.-]+$", appName)
-		}
-		if app.Root == "" {
-			return fmt.Errorf("application %q: root is required", appName)
 		}
 		// Resolve root relative to config file directory
 		resolvedRoot := filepath.Clean(filepath.Join(baseDir, app.Root))
@@ -171,10 +170,6 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		}
 	}
 
-	// Struct-level validation (currently just ensures required fields)
-	if err := validate.Struct(c); err != nil {
-		return fmt.Errorf("validation failed: %w", err)
-	}
 	return nil
 }
 
