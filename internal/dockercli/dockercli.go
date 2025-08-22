@@ -168,8 +168,15 @@ type ComposeConfigDoc struct {
 	Services map[string]ComposeService `json:"services" yaml:"services"`
 }
 
+type ComposePort struct {
+	Target    int         `json:"target" yaml:"target"`
+	Published interface{} `json:"published" yaml:"published"`
+	Protocol  string      `json:"protocol" yaml:"protocol"`
+}
+
 type ComposeService struct {
-	Image string `json:"image" yaml:"image"`
+	Image string        `json:"image" yaml:"image"`
+	Ports []ComposePort `json:"ports" yaml:"ports"`
 }
 
 // ComposeConfigFull renders the effective compose config and parses desired services info (image, etc.).
@@ -208,11 +215,19 @@ func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files
 
 // ComposePsItem is a subset of fields from `docker compose ps --format json`.
 type ComposePsItem struct {
-	Name    string `json:"Name"`
-	Service string `json:"Service"`
-	Image   string `json:"Image"`
-	State   string `json:"State"`
-	Project string `json:"Project"`
+	Name       string             `json:"Name"`
+	Service    string             `json:"Service"`
+	Image      string             `json:"Image"`
+	State      string             `json:"State"`
+	Project    string             `json:"Project"`
+	Publishers []ComposePublisher `json:"Publishers"`
+}
+
+type ComposePublisher struct {
+	URL           string `json:"URL"`
+	TargetPort    int    `json:"TargetPort"`
+	PublishedPort int    `json:"PublishedPort"`
+	Protocol      string `json:"Protocol"`
 }
 
 // ComposePs lists running (or created) compose services for the project.
