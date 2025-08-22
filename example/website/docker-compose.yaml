@@ -1,8 +1,8 @@
 services:
   nginx:
-    image: nginx:1.11
+    image: nginx:1.12 
     ports:
-      - "8080:80"
+      - "8000:80"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
       interval: 10s
