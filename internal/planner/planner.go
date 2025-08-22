@@ -60,11 +60,9 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 		}
 	}
 	// Plan removals for labeled volumes no longer in config
-	if existingVolumes != nil {
-		for name := range existingVolumes {
-			if _, want := cfg.Volumes[name]; !want {
-				lines = append(lines, ui.Line(ui.Remove, "volume %s will be removed", name))
-			}
+	for name := range existingVolumes {
+		if _, want := cfg.Volumes[name]; !want {
+			lines = append(lines, ui.Line(ui.Remove, "volume %s will be removed", name))
 		}
 	}
 
@@ -81,11 +79,9 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 		}
 	}
 	// Plan removals for labeled networks no longer in config
-	if existingNetworks != nil {
-		for name := range existingNetworks {
-			if _, want := cfg.Networks[name]; !want {
-				lines = append(lines, ui.Line(ui.Remove, "network %s will be removed", name))
-			}
+	for name := range existingNetworks {
+		if _, want := cfg.Networks[name]; !want {
+			lines = append(lines, ui.Line(ui.Remove, "network %s will be removed", name))
 		}
 	}
 
