@@ -376,6 +376,9 @@ func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string,
 	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
 		return "", fmt.Errorf("parse compose yaml: %w", err)
 	}
+	if doc == nil {
+		doc = map[string]any{}
+	}
 	services, _ := doc["services"].(map[string]any)
 	if services == nil {
 		services = map[string]any{}
