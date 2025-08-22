@@ -71,6 +71,24 @@ func (c *Client) WithIdentifier(id string) *Client {
 	return c
 }
 
+// composeBaseArgs builds common docker compose CLI arguments in the expected order.
+func (c *Client) composeBaseArgs(files, profiles, envFiles []string, projectName string) []string {
+	args := []string{"compose"}
+	for _, f := range files {
+		args = append(args, "-f", filepath.Clean(f))
+	}
+	if projectName != "" {
+		args = append(args, "-p", projectName)
+	}
+	for _, e := range envFiles {
+		args = append(args, "--env-file", filepath.Clean(e))
+	}
+	for _, p := range profiles {
+		args = append(args, "--profile", p)
+	}
+	return args
+}
+
 // ComposeAPI defines the subset of compose-related operations used by planner (exported for fakes in tests).
 type ComposeAPI interface {
 	ListVolumes(ctx context.Context) ([]string, error)
@@ -150,47 +168,22 @@ func (c *Client) RemoveContainer(ctx context.Context, name string, force bool) e
 // ComposeUp runs docker compose up -d with the given parameters.
 // workingDir is where compose files and relative paths are resolved.
 func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string) (string, error) {
-	args := []string{"compose"}
-	// Use merged labeled compose file when identifier is set; otherwise use user files
+	// Choose compose files (overlay or user files)
+	chosenFiles := files
 	if c.identifier != "" {
-		if p, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier); err == nil && p != "" {
-			defer os.Remove(p)
-			args = append(args, "-f", filepath.Clean(p))
-		} else {
-			for _, f := range files {
-				args = append(args, "-f", filepath.Clean(f))
-			}
-		}
-	} else {
-		for _, f := range files {
-			args = append(args, "-f", filepath.Clean(f))
+		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier); err == nil && pth != "" {
+			defer os.Remove(pth)
+			chosenFiles = []string{pth}
 		}
 	}
-	if projectName != "" {
-		args = append(args, "-p", projectName)
-	}
-	for _, e := range envFiles {
-		args = append(args, "--env-file", filepath.Clean(e))
-	}
-	for _, p := range profiles {
-		args = append(args, "--profile", p)
-	}
+	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
 	args = append(args, "up", "-d")
 	return c.exec.RunInDir(ctx, workingDir, args...)
 }
 
 // ComposeConfigServices returns the list of service names that would be part of the project.
 func (c *Client) ComposeConfigServices(ctx context.Context, workingDir string, files, profiles, envFiles []string) ([]string, error) {
-	args := []string{"compose"}
-	for _, f := range files {
-		args = append(args, "-f", filepath.Clean(f))
-	}
-	for _, e := range envFiles {
-		args = append(args, "--env-file", filepath.Clean(e))
-	}
-	for _, p := range profiles {
-		args = append(args, "--profile", p)
-	}
+	args := c.composeBaseArgs(files, profiles, envFiles, "")
 	args = append(args, "config", "--services")
 	out, err := c.exec.RunInDir(ctx, workingDir, args...)
 	if err != nil {
@@ -215,18 +208,26 @@ type ComposeService struct {
 	Ports []ComposePort `json:"ports" yaml:"ports"`
 }
 
+// ComposePsItem is a subset of fields from `docker compose ps --format json`.
+type ComposePsItem struct {
+	Name       string             `json:"Name"`
+	Service    string             `json:"Service"`
+	Image      string             `json:"Image"`
+	State      string             `json:"State"`
+	Project    string             `json:"Project"`
+	Publishers []ComposePublisher `json:"Publishers"`
+}
+
+type ComposePublisher struct {
+	URL           string `json:"URL"`
+	TargetPort    int    `json:"TargetPort"`
+	PublishedPort int    `json:"PublishedPort"`
+	Protocol      string `json:"Protocol"`
+}
+
 // ComposeConfigFull renders the effective compose config and parses desired services info (image, etc.).
 func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files, profiles, envFiles []string) (ComposeConfigDoc, error) {
-	args := []string{"compose"}
-	for _, f := range files {
-		args = append(args, "-f", filepath.Clean(f))
-	}
-	for _, e := range envFiles {
-		args = append(args, "--env-file", filepath.Clean(e))
-	}
-	for _, p := range profiles {
-		args = append(args, "--profile", p)
-	}
+	args := c.composeBaseArgs(files, profiles, envFiles, "")
 	// Prefer JSON when available
 	argsJSON := append(append([]string{}, args...), "config", "--format", "json")
 	out, err := c.exec.RunInDir(ctx, workingDir, argsJSON...)
@@ -249,38 +250,9 @@ func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files
 	return doc, nil
 }
 
-// ComposePsItem is a subset of fields from `docker compose ps --format json`.
-type ComposePsItem struct {
-	Name       string             `json:"Name"`
-	Service    string             `json:"Service"`
-	Image      string             `json:"Image"`
-	State      string             `json:"State"`
-	Project    string             `json:"Project"`
-	Publishers []ComposePublisher `json:"Publishers"`
-}
-
-type ComposePublisher struct {
-	URL           string `json:"URL"`
-	TargetPort    int    `json:"TargetPort"`
-	PublishedPort int    `json:"PublishedPort"`
-	Protocol      string `json:"Protocol"`
-}
-
 // ComposePs lists running (or created) compose services for the project.
 func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string) ([]ComposePsItem, error) {
-	args := []string{"compose"}
-	for _, f := range files {
-		args = append(args, "-f", filepath.Clean(f))
-	}
-	if projectName != "" {
-		args = append(args, "-p", projectName)
-	}
-	for _, e := range envFiles {
-		args = append(args, "--env-file", filepath.Clean(e))
-	}
-	for _, p := range profiles {
-		args = append(args, "--profile", p)
-	}
+	args := c.composeBaseArgs(files, profiles, envFiles, projectName)
 	args = append(args, "ps", "--format", "json")
 	out, err := c.exec.RunInDir(ctx, workingDir, args...)
 	if err != nil {
@@ -316,31 +288,15 @@ func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profil
 // If identifier is non-empty, a temporary overlay compose file is used to add
 // the label `dockform.identifier=<identifier>` to that service before hashing.
 func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, service string, identifier string) (string, error) {
-	args := []string{"compose"}
-	// Use merged labeled compose file when identifier is set; otherwise use user files
+	// Choose compose files (overlay or user files)
+	chosenFiles := files
 	if identifier != "" {
-		if p, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, identifier); err == nil && p != "" {
-			defer os.Remove(p)
-			args = append(args, "-f", filepath.Clean(p))
-		} else {
-			for _, f := range files {
-				args = append(args, "-f", filepath.Clean(f))
-			}
-		}
-	} else {
-		for _, f := range files {
-			args = append(args, "-f", filepath.Clean(f))
+		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, identifier); err == nil && pth != "" {
+			defer os.Remove(pth)
+			chosenFiles = []string{pth}
 		}
 	}
-	if projectName != "" {
-		args = append(args, "-p", projectName)
-	}
-	for _, e := range envFiles {
-		args = append(args, "--env-file", filepath.Clean(e))
-	}
-	for _, p := range profiles {
-		args = append(args, "--profile", p)
-	}
+	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
 	args = append(args, "config", "--hash", service)
 	out, err := c.exec.RunInDir(ctx, workingDir, args...)
 	if err != nil {
@@ -365,19 +321,7 @@ func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string,
 	if identifier == "" {
 		return "", nil
 	}
-	args := []string{"compose"}
-	for _, f := range files {
-		args = append(args, "-f", filepath.Clean(f))
-	}
-	if projectName != "" {
-		args = append(args, "-p", projectName)
-	}
-	for _, e := range envFiles {
-		args = append(args, "--env-file", filepath.Clean(e))
-	}
-	for _, p := range profiles {
-		args = append(args, "--profile", p)
-	}
+	args := c.composeBaseArgs(files, profiles, envFiles, projectName)
 	args = append(args, "config")
 	out, err := c.exec.RunInDir(ctx, workingDir, args...)
 	if err != nil {
