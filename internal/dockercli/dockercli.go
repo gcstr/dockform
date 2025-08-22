@@ -128,8 +128,20 @@ func (c *Client) RemoveNetwork(ctx context.Context, name string) error {
 // workingDir is where compose files and relative paths are resolved.
 func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string) (string, error) {
 	args := []string{"compose"}
-	for _, f := range files {
-		args = append(args, "-f", filepath.Clean(f))
+	// Use merged labeled compose file when identifier is set; otherwise use user files
+	if c.identifier != "" {
+		if p, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier); err == nil && p != "" {
+			defer os.Remove(p)
+			args = append(args, "-f", filepath.Clean(p))
+		} else {
+			for _, f := range files {
+				args = append(args, "-f", filepath.Clean(f))
+			}
+		}
+	} else {
+		for _, f := range files {
+			args = append(args, "-f", filepath.Clean(f))
+		}
 	}
 	if projectName != "" {
 		args = append(args, "-p", projectName)
