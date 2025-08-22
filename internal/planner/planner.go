@@ -273,3 +273,45 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 	}
 	return nil
 }
+
+// Prune removes unmanaged resources labeled with the identifier.
+// It deletes volumes, networks, and containers that are labeled but not present in cfg.
+func (p *Planner) Prune(ctx context.Context, cfg config.Config) error {
+	if p.docker == nil {
+		return fmt.Errorf("docker client not configured")
+	}
+	// Desired services set across all applications
+	desiredServices := map[string]struct{}{}
+	for _, app := range cfg.Applications {
+		if doc, err := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile); err == nil {
+			for s := range doc.Services {
+				desiredServices[s] = struct{}{}
+			}
+		}
+	}
+	// Remove labeled containers not in desired set
+	if all, err := p.docker.ListComposeContainersAll(ctx); err == nil {
+		for _, it := range all {
+			if _, want := desiredServices[it.Service]; !want {
+				_ = p.docker.RemoveContainer(ctx, it.Name, true)
+			}
+		}
+	}
+	// Remove labeled volumes not in cfg
+	if vols, err := p.docker.ListVolumes(ctx); err == nil {
+		for _, v := range vols {
+			if _, want := cfg.Volumes[v]; !want {
+				_ = p.docker.RemoveVolume(ctx, v)
+			}
+		}
+	}
+	// Remove labeled networks not in cfg
+	if nets, err := p.docker.ListNetworks(ctx); err == nil {
+		for _, n := range nets {
+			if _, want := cfg.Networks[n]; !want {
+				_ = p.docker.RemoveNetwork(ctx, n)
+			}
+		}
+	}
+	return nil
+}

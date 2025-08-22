@@ -124,6 +124,18 @@ func (c *Client) RemoveNetwork(ctx context.Context, name string) error {
 	return err
 }
 
+// RemoveContainer removes a container by name. If force is true, the container
+// will be stopped if running and removed.
+func (c *Client) RemoveContainer(ctx context.Context, name string, force bool) error {
+	args := []string{"container", "rm"}
+	if force {
+		args = append(args, "-f")
+	}
+	args = append(args, name)
+	_, err := c.exec.Run(ctx, args...)
+	return err
+}
+
 // ComposeUp runs docker compose up -d with the given parameters.
 // workingDir is where compose files and relative paths are resolved.
 func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string) (string, error) {

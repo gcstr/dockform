@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
@@ -16,6 +17,7 @@ func newPlanCmd() *cobra.Command {
 		Short: "Show the plan to reach the desired state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("file")
+			prune, _ := cmd.Flags().GetBool("prune")
 			cfg, err := config.Load(file)
 			if err != nil {
 				return err
@@ -26,9 +28,14 @@ func newPlanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), pln.String())
+			out := pln.String()
+			fmt.Fprintln(cmd.OutOrStdout(), out)
+			if !prune && strings.Contains(out, "[remove]") {
+				fmt.Fprintln(cmd.OutOrStdout(), "No resources will be removed. Include --prune to delete them")
+			}
 			return nil
 		},
 	}
+	cmd.Flags().Bool("prune", false, "Show removal guidance if not set; no deletions occur in plan mode")
 	return cmd
 }
