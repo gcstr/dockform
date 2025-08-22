@@ -15,5 +15,3 @@ volumes:
 
 networks:
   demo-network:
-
-

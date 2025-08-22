@@ -59,6 +59,14 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 			lines = append(lines, ui.Line(ui.Add, "volume %s will be created", name))
 		}
 	}
+	// Plan removals for labeled volumes no longer in config
+	if existingVolumes != nil {
+		for name := range existingVolumes {
+			if _, want := cfg.Volumes[name]; !want {
+				lines = append(lines, ui.Line(ui.Remove, "volume %s will be removed", name))
+			}
+		}
+	}
 
 	netNames := sortedKeys(cfg.Networks)
 	for _, name := range netNames {
@@ -72,6 +80,14 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 			lines = append(lines, ui.Line(ui.Add, "network %s will be created", name))
 		}
 	}
+	// Plan removals for labeled networks no longer in config
+	if existingNetworks != nil {
+		for name := range existingNetworks {
+			if _, want := cfg.Networks[name]; !want {
+				lines = append(lines, ui.Line(ui.Remove, "network %s will be removed", name))
+			}
+		}
+	}
 
 	// Applications: compose planned vs running diff
 	if len(cfg.Applications) == 0 {
@@ -82,6 +98,8 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 			appNames = append(appNames, name)
 		}
 		sort.Strings(appNames)
+		// Track desired services across all apps (by service name)
+		desiredServices := map[string]struct{}{}
 		for _, appName := range appNames {
 			app := cfg.Applications[appName]
 			if p.docker == nil {
@@ -118,6 +136,7 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 			}
 
 			for _, s := range plannedServices {
+				desiredServices[s] = struct{}{}
 				// Always compute desired hash first to generate/print overlay for debugging
 				projName := ""
 				if app.Project != nil {
@@ -144,6 +163,16 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 					}
 				} else {
 					lines = append(lines, ui.Line(ui.Add, "service %s/%s will be started", appName, s))
+				}
+			}
+		}
+		// Plan removals for labeled containers whose services are not desired
+		if p.docker != nil {
+			if all, err := p.docker.ListComposeContainersAll(ctx); err == nil {
+				for _, it := range all {
+					if _, want := desiredServices[it.Service]; !want {
+						lines = append(lines, ui.Line(ui.Remove, "container %s will be removed", it.Name))
+					}
 				}
 			}
 		}
