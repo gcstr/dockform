@@ -90,9 +90,22 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 				continue
 			}
 
-			// Desired config (images) from compose config
-			doc, _ := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile)
+			// Desired config (images, ports) from compose config
+			doc, derr := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile)
 			plannedServices := sortedKeys(doc.Services)
+			// Fallback to services list if no services parsed or error occurred
+			if derr != nil || len(plannedServices) == 0 {
+				if names, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile); err == nil && len(names) > 0 {
+					plannedServices = append([]string(nil), names...)
+					sort.Strings(plannedServices)
+				}
+			}
+
+			// If still nothing, show fallback line
+			if len(plannedServices) == 0 {
+				lines = append(lines, ui.Line(ui.Noop, "application %s planned (services diff TBD)", appName))
+				continue
+			}
 
 			running := map[string]dockercli.ComposePsItem{}
 			proj := ""
@@ -107,11 +120,21 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 
 			for _, s := range plannedServices {
 				if it, ok := running[s]; ok {
-					// Compare image
-					desiredImage := doc.Services[s].Image
-					if desiredImage != "" && it.Image != "" && it.Image != desiredImage {
-						lines = append(lines, ui.Line(ui.Change, "service %s/%s image: %s -> %s", appName, s, it.Image, desiredImage))
+					// Compare image and ports if config details available
+					if svc, has := doc.Services[s]; has {
+						desiredImage := svc.Image
+						if desiredImage != "" && it.Image != "" && it.Image != desiredImage {
+							lines = append(lines, ui.Line(ui.Change, "service %s/%s image: %s -> %s", appName, s, it.Image, desiredImage))
+						}
+						portDelta := comparePortsCoerce(svc.Ports, it.Publishers)
+						if portDelta != "" {
+							lines = append(lines, ui.Line(ui.Change, "service %s/%s ports: %s", appName, s, portDelta))
+						}
+						if desiredImage == it.Image && portDelta == "" {
+							lines = append(lines, ui.Line(ui.Noop, "service %s/%s running", appName, s))
+						}
 					} else {
+						// No config details; just mark running
 						lines = append(lines, ui.Line(ui.Noop, "service %s/%s running", appName, s))
 					}
 				} else {
