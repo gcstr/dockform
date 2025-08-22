@@ -81,11 +81,11 @@ func resolveConfigPath(path string) (string, error) {
 		candidate := filepath.Join(cwd, name)
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate, nil
-		} else if errors.Is(err, fs.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return "", fmt.Errorf("stat %s: %w", candidate, err)
 		}
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		return "", fmt.Errorf("stat %s: %w", candidate, err)
 	}
 	return "", fmt.Errorf("no config file found (looked for config.yml or config.yaml)")
 }
