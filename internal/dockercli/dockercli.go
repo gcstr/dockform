@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -274,6 +275,148 @@ func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profil
 		return results, nil
 	}
 	return nil, fmt.Errorf("unexpected compose ps json: %s", truncate(out, 256))
+}
+
+// ComposeConfigHash returns the compose config hash for a single service.
+// If identifier is non-empty, a temporary overlay compose file is used to add
+// the label `dockform.identifier=<identifier>` to that service before hashing.
+func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, service string, identifier string) (string, error) {
+	args := []string{"compose"}
+	// Use merged labeled compose file when identifier is set; otherwise use user files
+	if identifier != "" {
+		if p, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, identifier); err == nil && p != "" {
+			defer os.Remove(p)
+			args = append(args, "-f", filepath.Clean(p))
+		} else {
+			for _, f := range files {
+				args = append(args, "-f", filepath.Clean(f))
+			}
+		}
+	} else {
+		for _, f := range files {
+			args = append(args, "-f", filepath.Clean(f))
+		}
+	}
+	if projectName != "" {
+		args = append(args, "-p", projectName)
+	}
+	for _, e := range envFiles {
+		args = append(args, "--env-file", filepath.Clean(e))
+	}
+	for _, p := range profiles {
+		args = append(args, "--profile", p)
+	}
+	args = append(args, "config", "--hash", service)
+	out, err := c.exec.RunInDir(ctx, workingDir, args...)
+	if err != nil {
+		return "", err
+	}
+	trimmed := strings.TrimSpace(out)
+	// Extract the last field from the first line: format is "<service> <hash>"
+	firstLine := trimmed
+	if idx := strings.IndexAny(trimmed, "\r\n"); idx >= 0 {
+		firstLine = trimmed[:idx]
+	}
+	fields := strings.Fields(firstLine)
+	if len(fields) == 0 {
+		return "", fmt.Errorf("unexpected compose hash output: %s", truncate(trimmed, 200))
+	}
+	return fields[len(fields)-1], nil
+}
+
+// buildLabeledProjectTemp loads the effective compose yaml via `docker compose config`,
+// injects dockform.identifier label into all services, writes to a temp file, and returns its path.
+func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, identifier string) (string, error) {
+	if identifier == "" {
+		return "", nil
+	}
+	args := []string{"compose"}
+	for _, f := range files {
+		args = append(args, "-f", filepath.Clean(f))
+	}
+	if projectName != "" {
+		args = append(args, "-p", projectName)
+	}
+	for _, e := range envFiles {
+		args = append(args, "--env-file", filepath.Clean(e))
+	}
+	for _, p := range profiles {
+		args = append(args, "--profile", p)
+	}
+	args = append(args, "config")
+	out, err := c.exec.RunInDir(ctx, workingDir, args...)
+	if err != nil {
+		return "", fmt.Errorf("compose config: %w", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
+		return "", fmt.Errorf("parse compose yaml: %w", err)
+	}
+	services, _ := doc["services"].(map[string]any)
+	if services == nil {
+		services = map[string]any{}
+	}
+	for name, val := range services {
+		service, _ := val.(map[string]any)
+		if service == nil {
+			service = map[string]any{}
+		}
+		labels, _ := service["labels"].(map[string]any)
+		if labels == nil {
+			labels = map[string]any{}
+		}
+		labels["dockform.identifier"] = identifier
+		service["labels"] = labels
+		services[name] = service
+	}
+	doc["services"] = services
+	b, err := yaml.Marshal(doc)
+	if err != nil {
+		return "", fmt.Errorf("marshal labeled yaml: %w", err)
+	}
+	f, err := os.CreateTemp("", "dockform-labeled-project-*.yml")
+	if err != nil {
+		return "", fmt.Errorf("create temp project: %w", err)
+	}
+	path := f.Name()
+	if _, err := f.Write(b); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return "", fmt.Errorf("write temp project: %w", err)
+	}
+	_ = f.Close()
+	if os.Getenv("DOCKFORM_PRINT_OVERLAY") == "1" || os.Getenv("DOCKFORM_DEBUG_OVERLAY") == "1" {
+		fmt.Fprintln(os.Stderr, "--- dockform labeled compose (merged) ---")
+		fmt.Fprintf(os.Stderr, "path: %s\n", path)
+		fmt.Fprintln(os.Stderr, string(b))
+		fmt.Fprintln(os.Stderr, "--- end labeled ---")
+	}
+	return path, nil
+}
+
+// InspectContainerLabels returns selected labels from a container.
+func (c *Client) InspectContainerLabels(ctx context.Context, containerName string, keys []string) (map[string]string, error) {
+	if containerName == "" {
+		return nil, fmt.Errorf("container name required")
+	}
+	out, err := c.exec.Run(ctx, "inspect", "-f", "{{json .Config.Labels}}", containerName)
+	if err != nil {
+		return nil, err
+	}
+	var labels map[string]string
+	if err := json.Unmarshal([]byte(out), &labels); err != nil {
+		return nil, fmt.Errorf("parse labels json: %w", err)
+	}
+	if len(keys) == 0 {
+		return labels, nil
+	}
+	filtered := map[string]string{}
+	for _, k := range keys {
+		if v, ok := labels[k]; ok {
+			filtered[k] = v
+		}
+	}
+	return filtered, nil
 }
 
 // PsBrief represents a container with compose labels.
