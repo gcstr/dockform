@@ -12,10 +12,8 @@ applications:
 
 volumes:
   demo-volume-1:
-    {}
 
 networks:
   demo-network:
-    {}
 
 
