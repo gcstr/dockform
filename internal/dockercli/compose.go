@@ -24,12 +24,14 @@ func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profil
 	}
 	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
 	args = append(args, "up", "-d")
-	cmdStr := "docker " + strings.Join(args, " ")
-	if len(inlineEnv) > 0 {
-		fmt.Fprintf(os.Stderr, "RUN: %s %s\n", strings.Join(inlineEnv, " "), cmdStr)
-	} else {
-		fmt.Fprintf(os.Stderr, "RUN: %s\n", cmdStr)
-	}
+
+	// DEBUG: Print the command to be run
+	// cmdStr := "docker " + strings.Join(args, " ")
+	// if len(inlineEnv) > 0 {
+	// 	fmt.Fprintf(os.Stderr, "RUN: %s %s\n", strings.Join(inlineEnv, " "), cmdStr)
+	// } else {
+	// 	fmt.Fprintf(os.Stderr, "RUN: %s\n", cmdStr)
+	// }
 	if len(inlineEnv) > 0 {
 		return c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
 	}
