@@ -2,22 +2,22 @@ package secrets
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	decrypt "github.com/getsops/sops/v3/decrypt"
-	"github.com/goccy/go-yaml"
 )
 
 // DecryptAndParse returns key=value pairs from a SOPS-encrypted file.
-// format: "dotenv", "yaml", or "json". Defaults to "dotenv" if empty.
+// format: only "dotenv" is supported. Defaults to "dotenv" if empty.
 func DecryptAndParse(ctx context.Context, path string, format string, ageKeyFile string) ([]string, error) {
 	if format == "" {
 		format = "dotenv"
+	}
+	if strings.ToLower(format) != "dotenv" {
+		return nil, fmt.Errorf("unsupported secrets format %q: only \"dotenv\" is supported", format)
 	}
 	// Resolve home dir for key file if starts with ~/
 	unset := false
@@ -47,17 +47,7 @@ func DecryptAndParse(ctx context.Context, path string, format string, ageKeyFile
 		return nil, fmt.Errorf("sops decrypt %s: %w", path, err)
 	}
 
-	switch strings.ToLower(format) {
-	case "dotenv":
-		return parseDotenv(string(b)), nil
-	case "yaml", "yml":
-		return parseYAML(b)
-	case "json":
-		return parseJSON(b)
-	default:
-		// treat as dotenv-like
-		return parseDotenv(string(b)), nil
-	}
+	return parseDotenv(string(b)), nil
 }
 
 func parseDotenv(s string) []string {
@@ -82,44 +72,6 @@ func parseDotenv(s string) []string {
 			continue
 		}
 		pairs = append(pairs, fmt.Sprintf("%s=%s", key, val))
-	}
-	return pairs
-}
-
-func parseYAML(b []byte) ([]string, error) {
-	var m map[string]any
-	if err := yaml.Unmarshal(b, &m); err != nil {
-		return nil, fmt.Errorf("parse yaml: %w", err)
-	}
-	return topLevelStringPairs(m), nil
-}
-
-func parseJSON(b []byte) ([]string, error) {
-	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, fmt.Errorf("parse json: %w", err)
-	}
-	return topLevelStringPairs(m), nil
-}
-
-func topLevelStringPairs(m map[string]any) []string {
-	// Only collect top-level string values
-	if len(m) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	// Deterministic output
-	sort.Strings(keys)
-	var pairs []string
-	for _, k := range keys {
-		if v, ok := m[k]; ok {
-			if s, ok := v.(string); ok {
-				pairs = append(pairs, fmt.Sprintf("%s=%s", k, s))
-			}
-		}
 	}
 	return pairs
 }
