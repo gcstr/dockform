@@ -18,6 +18,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Create dummy age key file
+        run: |
+          mkdir -p /home/runner/.config/sops/age
+          echo 'AGE-SECRET-KEY-1XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' > /home/runner/.config/sops/age/keys.txt
 
       - name: Vet
         run: go vet ./...
