@@ -6,4 +6,8 @@ services:
     environment:
       - PROJECT_LOCAL=${PROJECT_LOCAL}
       - PROJECT_GLOBAL=${PROJECT_GLOBAL}
+      - FOO=${FOO}
+      - BAZ=${BAZ}
+      - GFOO=${GFOO}
+      - GBAZ=${GBAZ}
 

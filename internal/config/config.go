@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-yaml"
@@ -34,6 +35,7 @@ type Application struct {
 	EnvFile     []string     `yaml:"env-file"`
 	Environment *Environment `yaml:"environment"`
 	Project     *Project     `yaml:"project"`
+	EnvInline   []string     `yaml:"-"`
 }
 
 type Project struct {
@@ -42,7 +44,8 @@ type Project struct {
 
 // Environment holds environment file references
 type Environment struct {
-	Files []string `yaml:"files"`
+	Files  []string `yaml:"files"`
+	Inline []string `yaml:"inline"`
 }
 
 // TopLevelResourceSpec mirrors YAML for volumes/networks.
@@ -148,6 +151,40 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 			mergedEnv = uniq
 		}
 
+		// Merge inline env vars (root first, then app). Last value for a key wins.
+		var mergedInline []string
+		if c.Environment != nil && len(c.Environment.Inline) > 0 {
+			mergedInline = append(mergedInline, c.Environment.Inline...)
+		}
+		if app.Environment != nil && len(app.Environment.Inline) > 0 {
+			mergedInline = append(mergedInline, app.Environment.Inline...)
+		}
+		if len(mergedInline) > 1 {
+			// Deduplicate by key with last-wins while preserving order of last occurrences
+			seen := map[string]struct{}{}
+			dedupReversed := make([]string, 0, len(mergedInline))
+			for i := len(mergedInline) - 1; i >= 0; i-- {
+				kv := mergedInline[i]
+				if kv == "" {
+					continue
+				}
+				parts := strings.SplitN(kv, "=", 2)
+				if len(parts) == 0 || parts[0] == "" {
+					continue
+				}
+				key := parts[0]
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				dedupReversed = append(dedupReversed, kv)
+			}
+			mergedInline = make([]string, 0, len(dedupReversed))
+			for i := len(dedupReversed) - 1; i >= 0; i-- {
+				mergedInline = append(mergedInline, dedupReversed[i])
+			}
+		}
+
 		if len(app.Files) == 0 {
 			c.Applications[appName] = Application{
 				Root:        resolvedRoot,
@@ -155,6 +192,7 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 				Profiles:    app.Profiles,
 				EnvFile:     mergedEnv,
 				Environment: app.Environment,
+				EnvInline:   mergedInline,
 				Project:     app.Project,
 			}
 		} else {
@@ -165,6 +203,7 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 				Profiles:    app.Profiles,
 				EnvFile:     mergedEnv,
 				Environment: app.Environment,
+				EnvInline:   mergedInline,
 				Project:     app.Project,
 			}
 		}

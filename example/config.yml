@@ -5,10 +5,13 @@ docker:
 environment:
   files:
     - global.env
+  inline:
+    - GFOO=bar
+    - GBAZ=qux
 
 applications:
   website:
-    root: ./website
+    root: website
     files:
       - docker-compose.yaml
     project:

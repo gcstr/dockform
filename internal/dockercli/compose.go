@@ -13,25 +13,34 @@ import (
 
 // ComposeUp runs docker compose up -d with the given parameters.
 // workingDir is where compose files and relative paths are resolved.
-func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string) (string, error) {
+func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string) (string, error) {
 	// Choose compose files (overlay or user files)
 	chosenFiles := files
 	if c.identifier != "" {
-		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier); err == nil && pth != "" {
+		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier, inlineEnv); err == nil && pth != "" {
 			defer os.Remove(pth)
 			chosenFiles = []string{pth}
 		}
 	}
 	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
 	args = append(args, "up", "-d")
+	if len(inlineEnv) > 0 {
+		return c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
+	}
 	return c.exec.RunInDir(ctx, workingDir, args...)
 }
 
 // ComposeConfigServices returns the list of service names that would be part of the project.
-func (c *Client) ComposeConfigServices(ctx context.Context, workingDir string, files, profiles, envFiles []string) ([]string, error) {
+func (c *Client) ComposeConfigServices(ctx context.Context, workingDir string, files, profiles, envFiles []string, inlineEnv []string) ([]string, error) {
 	args := c.composeBaseArgs(files, profiles, envFiles, "")
 	args = append(args, "config", "--services")
-	out, err := c.exec.RunInDir(ctx, workingDir, args...)
+	var out string
+	var err error
+	if len(inlineEnv) > 0 {
+		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
+	} else {
+		out, err = c.exec.RunInDir(ctx, workingDir, args...)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -39,11 +48,17 @@ func (c *Client) ComposeConfigServices(ctx context.Context, workingDir string, f
 }
 
 // ComposeConfigFull renders the effective compose config and parses desired services info (image, etc.).
-func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files, profiles, envFiles []string) (ComposeConfigDoc, error) {
+func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files, profiles, envFiles []string, inlineEnv []string) (ComposeConfigDoc, error) {
 	args := c.composeBaseArgs(files, profiles, envFiles, "")
 	// Prefer JSON when available
 	argsJSON := append(append([]string{}, args...), "config", "--format", "json")
-	out, err := c.exec.RunInDir(ctx, workingDir, argsJSON...)
+	var out string
+	var err error
+	if len(inlineEnv) > 0 {
+		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, argsJSON...)
+	} else {
+		out, err = c.exec.RunInDir(ctx, workingDir, argsJSON...)
+	}
 	if err == nil {
 		var doc ComposeConfigDoc
 		if json.Unmarshal([]byte(out), &doc) == nil {
@@ -52,7 +67,11 @@ func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files
 	}
 	// Fallback to YAML
 	argsYAML := append(append([]string{}, args...), "config")
-	out, err = c.exec.RunInDir(ctx, workingDir, argsYAML...)
+	if len(inlineEnv) > 0 {
+		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, argsYAML...)
+	} else {
+		out, err = c.exec.RunInDir(ctx, workingDir, argsYAML...)
+	}
 	if err != nil {
 		return ComposeConfigDoc{}, err
 	}
@@ -64,10 +83,16 @@ func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files
 }
 
 // ComposePs lists running (or created) compose services for the project.
-func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string) ([]ComposePsItem, error) {
+func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string) ([]ComposePsItem, error) {
 	args := c.composeBaseArgs(files, profiles, envFiles, projectName)
 	args = append(args, "ps", "--format", "json")
-	out, err := c.exec.RunInDir(ctx, workingDir, args...)
+	var out string
+	var err error
+	if len(inlineEnv) > 0 {
+		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
+	} else {
+		out, err = c.exec.RunInDir(ctx, workingDir, args...)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -100,18 +125,24 @@ func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profil
 // ComposeConfigHash returns the compose config hash for a single service.
 // If identifier is non-empty, a temporary overlay compose file is used to add
 // the label `dockform.identifier=<identifier>` to that service before hashing.
-func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, service string, identifier string) (string, error) {
+func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, service string, identifier string, inlineEnv []string) (string, error) {
 	// Choose compose files (overlay or user files)
 	chosenFiles := files
 	if identifier != "" {
-		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, identifier); err == nil && pth != "" {
+		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, identifier, inlineEnv); err == nil && pth != "" {
 			defer os.Remove(pth)
 			chosenFiles = []string{pth}
 		}
 	}
 	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
 	args = append(args, "config", "--hash", service)
-	out, err := c.exec.RunInDir(ctx, workingDir, args...)
+	var out string
+	var err error
+	if len(inlineEnv) > 0 {
+		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
+	} else {
+		out, err = c.exec.RunInDir(ctx, workingDir, args...)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -130,13 +161,19 @@ func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files
 
 // buildLabeledProjectTemp loads the effective compose yaml via `docker compose config`,
 // injects dockform.identifier label into all services, writes to a temp file, and returns its path.
-func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, identifier string) (string, error) {
+func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, identifier string, inlineEnv []string) (string, error) {
 	if identifier == "" {
 		return "", nil
 	}
 	args := c.composeBaseArgs(files, profiles, envFiles, projectName)
 	args = append(args, "config")
-	out, err := c.exec.RunInDir(ctx, workingDir, args...)
+	var out string
+	var err error
+	if len(inlineEnv) > 0 {
+		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
+	} else {
+		out, err = c.exec.RunInDir(ctx, workingDir, args...)
+	}
 	if err != nil {
 		return "", fmt.Errorf("compose config: %w", err)
 	}
