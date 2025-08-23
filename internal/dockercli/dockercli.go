@@ -11,18 +11,30 @@ import (
 
 // Client provides higher-level helpers around docker CLI.
 type Client struct {
-	exec       Exec
-	identifier string
+	exec        Exec
+	identifier  string
+	contextName string
 }
 
 func New(contextName string) *Client {
-	return &Client{exec: SystemExec{ContextName: contextName}}
+	return &Client{exec: SystemExec{ContextName: contextName}, contextName: contextName}
 }
 
 // WithIdentifier sets an optional label identifier to scope discovery.
 func (c *Client) WithIdentifier(id string) *Client {
 	c.identifier = id
 	return c
+}
+
+// CheckDaemon verifies the docker daemon for the configured context is reachable.
+func (c *Client) CheckDaemon(ctx context.Context) error {
+	if _, err := c.exec.Run(ctx, "version", "--format", "{{.Server.Version}}"); err != nil {
+		if c.contextName != "" {
+			return fmt.Errorf("docker daemon not reachable (context=%s): %w", c.contextName, err)
+		}
+		return fmt.Errorf("docker daemon not reachable: %w", err)
+	}
+	return nil
 }
 
 // RemoveContainer removes a container by name. If force is true, the container

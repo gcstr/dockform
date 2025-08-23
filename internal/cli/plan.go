@@ -24,6 +24,9 @@ func newPlanCmd() *cobra.Command {
 			}
 			// Use Docker context from config and scope by identifier if present
 			d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
+			if err := d.CheckDaemon(context.Background()); err != nil {
+				return err
+			}
 			pln, err := planner.NewWithDocker(d).BuildPlan(context.Background(), cfg)
 			if err != nil {
 				return err
