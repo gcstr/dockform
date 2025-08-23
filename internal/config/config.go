@@ -23,6 +23,7 @@ type Config struct {
 	Applications map[string]Application          `yaml:"applications" validate:"dive"`
 	Volumes      map[string]TopLevelResourceSpec `yaml:"volumes"`
 	Networks     map[string]TopLevelResourceSpec `yaml:"networks"`
+	BaseDir      string                          `yaml:"-"`
 }
 
 type DockerConfig struct {
@@ -98,7 +99,9 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("parse yaml: %s", yaml.FormatError(err, true, true))
 	}
 
-	if err := cfg.normalizeAndValidate(filepath.Dir(guessed)); err != nil {
+	baseDir := filepath.Dir(guessed)
+	cfg.BaseDir = baseDir
+	if err := cfg.normalizeAndValidate(baseDir); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil

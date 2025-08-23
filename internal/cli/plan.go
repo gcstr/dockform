@@ -8,6 +8,7 @@ import (
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/planner"
+	"github.com/gcstr/dockform/internal/validator"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +25,7 @@ func newPlanCmd() *cobra.Command {
 			}
 			// Use Docker context from config and scope by identifier if present
 			d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
-			if err := d.CheckDaemon(context.Background()); err != nil {
+			if err := validator.Validate(context.Background(), cfg, d); err != nil {
 				return err
 			}
 			pln, err := planner.NewWithDocker(d).BuildPlan(context.Background(), cfg)
