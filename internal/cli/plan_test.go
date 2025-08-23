@@ -13,7 +13,7 @@ func TestPlan_PrintsRemovalGuidance_WhenRemovalsPresent_AndNoPrune_Solo(t *testi
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"plan", "-f", filepath.Join("..", "..", "example", "config.yml")})
+	root.SetArgs([]string{"plan", "-c", filepath.Join("..", "..", "example", "dockform.yml")})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("plan execute: %v", err)
 	}

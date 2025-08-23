@@ -12,7 +12,7 @@ import (
 )
 
 func TestPlan_MinimalExample(t *testing.T) {
-	cfgPath := filepath.Join("..", "..", "example", "config.yml")
+	cfgPath := filepath.Join("..", "..", "example", "dockform.yml")
 	if _, err := os.Stat(cfgPath); err != nil {
 		t.Fatalf("example config missing: %v", err)
 	}

@@ -18,7 +18,7 @@ func newApplyCmd() *cobra.Command {
 		Use:   "apply",
 		Short: "Apply the desired state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			file, _ := cmd.Flags().GetString("file")
+			file, _ := cmd.Flags().GetString("config")
 			cfg, err := config.Load(file)
 			if err != nil {
 				return err

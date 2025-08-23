@@ -81,7 +81,7 @@ var (
 )
 
 // Load reads and validates configuration from the provided path. When path is empty,
-// it searches for config.yml or config.yaml in the current working directory.
+// it searches for dockform.yml or dockform.yaml in the current working directory.
 func Load(path string) (Config, error) {
 	guessed, err := resolveConfigPath(path)
 	if err != nil {
@@ -109,23 +109,43 @@ func Load(path string) (Config, error) {
 
 func resolveConfigPath(path string) (string, error) {
 	if path != "" {
+		// If user provided a path, allow either a directory or a file.
+		if info, err := os.Stat(path); err == nil {
+			if info.IsDir() {
+				for _, name := range []string{"dockform.yaml", "dockform.yml"} {
+					candidate := filepath.Join(path, name)
+					_, statErr := os.Stat(candidate)
+					if statErr == nil {
+						return candidate, nil
+					}
+					if !errors.Is(statErr, fs.ErrNotExist) {
+						return "", fmt.Errorf("stat %s: %w", candidate, statErr)
+					}
+				}
+				return "", fmt.Errorf("no config file found in %s (looked for dockform.yaml or dockform.yml)", path)
+			}
+			// Path exists and is a file. Use it directly.
+			return path, nil
+		}
+		// If path does not exist, treat it as a file path and let the read fail later.
 		return path, nil
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("getwd: %w", err)
 	}
-	for _, name := range []string{"config.yml", "config.yaml"} {
+	for _, name := range []string{"dockform.yaml", "dockform.yml"} {
 		candidate := filepath.Join(cwd, name)
-		if _, err := os.Stat(candidate); err == nil {
+		_, statErr := os.Stat(candidate)
+		if statErr == nil {
 			return candidate, nil
 		}
-		if errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(statErr, fs.ErrNotExist) {
 			continue
 		}
-		return "", fmt.Errorf("stat %s: %w", candidate, err)
+		return "", fmt.Errorf("stat %s: %w", candidate, statErr)
 	}
-	return "", fmt.Errorf("no config file found (looked for config.yml or config.yaml)")
+	return "", fmt.Errorf("no config file found (looked for dockform.yaml or dockform.yml)")
 }
 
 func (c *Config) normalizeAndValidate(baseDir string) error {

@@ -15,7 +15,7 @@ func newValidateCmd() *cobra.Command {
 		Use:   "validate",
 		Short: "Validate configuration and environment",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			file, _ := cmd.Flags().GetString("file")
+			file, _ := cmd.Flags().GetString("config")
 			cfg, err := config.Load(file)
 			if err != nil {
 				return err

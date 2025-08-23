@@ -17,7 +17,7 @@ func newPlanCmd() *cobra.Command {
 		Use:   "plan",
 		Short: "Show the plan to reach the desired state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			file, _ := cmd.Flags().GetString("file")
+			file, _ := cmd.Flags().GetString("config")
 			prune, _ := cmd.Flags().GetBool("prune")
 			cfg, err := config.Load(file)
 			if err != nil {

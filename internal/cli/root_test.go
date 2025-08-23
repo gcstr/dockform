@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-func TestRoot_HasSubcommandsAndFileFlag(t *testing.T) {
+func TestRoot_HasSubcommandsAndConfigFlag(t *testing.T) {
 	cmd := newRootCmd()
-	if cmd.PersistentFlags().Lookup("file") == nil {
-		t.Fatalf("expected persistent --file flag on root command")
+	if cmd.PersistentFlags().Lookup("config") == nil {
+		t.Fatalf("expected persistent --config flag on root command")
 	}
 	foundPlan := false
 	foundApply := false

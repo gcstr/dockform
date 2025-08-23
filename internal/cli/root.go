@@ -18,7 +18,7 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 
-	cmd.PersistentFlags().StringP("file", "f", "", "Path to configuration file (defaults to config.yml or config.yaml)")
+	cmd.PersistentFlags().StringP("config", "c", "", "Path to configuration file or directory (defaults to dockform.yml or dockform.yaml in current directory)")
 
 	cmd.AddCommand(newPlanCmd())
 	cmd.AddCommand(newApplyCmd())

@@ -13,7 +13,7 @@ func TestApply_PrintsRemovalGuidance_WhenRemovalsPresent_AndNoPrune_Solo(t *test
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"apply", "-f", filepath.Join("..", "..", "example", "config.yml")})
+	root.SetArgs([]string{"apply", "-c", filepath.Join("..", "..", "example", "dockform.yml")})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute: %v", err)
 	}

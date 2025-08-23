@@ -9,7 +9,7 @@ sops:
 secrets:
   sops:
     - path: secrets.env
-      format: dotenv # dotenv | yaml | json
+      format: dotenv
 
 environment:
   files:
