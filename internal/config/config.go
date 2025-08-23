@@ -17,6 +17,8 @@ import (
 // Config is the root desired-state structure parsed from YAML.
 type Config struct {
 	Docker       DockerConfig                    `yaml:"docker"`
+	Sops         *SopsConfig                     `yaml:"sops"`
+	Secrets      *Secrets                        `yaml:"secrets"`
 	Environment  *Environment                    `yaml:"environment"`
 	Applications map[string]Application          `yaml:"applications" validate:"dive"`
 	Volumes      map[string]TopLevelResourceSpec `yaml:"volumes"`
@@ -34,8 +36,10 @@ type Application struct {
 	Profiles    []string     `yaml:"profiles"`
 	EnvFile     []string     `yaml:"env-file"`
 	Environment *Environment `yaml:"environment"`
+	Secrets     *Secrets     `yaml:"secrets"`
 	Project     *Project     `yaml:"project"`
 	EnvInline   []string     `yaml:"-"`
+	SopsSecrets []SopsSecret `yaml:"-"`
 }
 
 type Project struct {
@@ -46,6 +50,25 @@ type Project struct {
 type Environment struct {
 	Files  []string `yaml:"files"`
 	Inline []string `yaml:"inline"`
+}
+
+// SopsConfig configures SOPS provider(s)
+type SopsConfig struct {
+	Age *SopsAgeConfig `yaml:"age"`
+}
+
+type SopsAgeConfig struct {
+	KeyFile string `yaml:"key_file"`
+}
+
+// Secrets holds secret sources
+type Secrets struct {
+	Sops []SopsSecret `yaml:"sops"`
+}
+
+type SopsSecret struct {
+	Path   string `yaml:"path"`
+	Format string `yaml:"format"` // dotenv | yaml | json
 }
 
 // TopLevelResourceSpec mirrors YAML for volumes/networks.
@@ -185,6 +208,30 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 			}
 		}
 
+		// Merge SOPS secrets: root-level rebased to app root, then app-level
+		var mergedSops []SopsSecret
+		if c.Secrets != nil && len(c.Secrets.Sops) > 0 {
+			for _, s := range c.Secrets.Sops {
+				if s.Path == "" {
+					continue
+				}
+				abs := filepath.Clean(filepath.Join(baseDir, s.Path))
+				if rel, err := filepath.Rel(resolvedRoot, abs); err == nil {
+					mergedSops = append(mergedSops, SopsSecret{Path: rel, Format: strings.ToLower(s.Format)})
+				} else {
+					mergedSops = append(mergedSops, SopsSecret{Path: abs, Format: strings.ToLower(s.Format)})
+				}
+			}
+		}
+		if app.Secrets != nil && len(app.Secrets.Sops) > 0 {
+			for _, s := range app.Secrets.Sops {
+				if s.Path == "" {
+					continue
+				}
+				mergedSops = append(mergedSops, SopsSecret{Path: s.Path, Format: strings.ToLower(s.Format)})
+			}
+		}
+
 		if len(app.Files) == 0 {
 			c.Applications[appName] = Application{
 				Root:        resolvedRoot,
@@ -192,7 +239,9 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 				Profiles:    app.Profiles,
 				EnvFile:     mergedEnv,
 				Environment: app.Environment,
+				Secrets:     app.Secrets,
 				EnvInline:   mergedInline,
+				SopsSecrets: mergedSops,
 				Project:     app.Project,
 			}
 		} else {
@@ -203,7 +252,9 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 				Profiles:    app.Profiles,
 				EnvFile:     mergedEnv,
 				Environment: app.Environment,
+				Secrets:     app.Secrets,
 				EnvInline:   mergedInline,
+				SopsSecrets: mergedSops,
 				Project:     app.Project,
 			}
 		}

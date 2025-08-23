@@ -10,4 +10,6 @@ services:
       - BAZ=${BAZ}
       - GFOO=${GFOO}
       - GBAZ=${GBAZ}
+      - SECRET_KEY=${SECRET_KEY}
+      - LOCAL_SECRET_KEY=${LOCAL_SECRET_KEY}
 

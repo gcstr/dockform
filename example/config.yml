@@ -2,6 +2,15 @@ docker:
   context: default
   identifier: demo
 
+sops:
+  age:
+    key_file: ~/.config/sops/age/keys.txt
+
+secrets:
+  sops:
+    - path: secrets.env
+      format: dotenv # dotenv | yaml | json
+
 environment:
   files:
     - global.env
@@ -22,6 +31,10 @@ applications:
       inline:
         - FOO=bar
         - BAZ=qux
+    secrets:
+      sops:
+        - path: secrets.env
+          format: dotenv
 
 volumes:
   demo-volume-1:

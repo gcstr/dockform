@@ -42,3 +42,5 @@ Thumbs.db
 # Tooling
 .cursor/
 
+
+.sops.yaml

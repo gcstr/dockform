@@ -3,10 +3,12 @@ package planner
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/secrets"
 	"github.com/gcstr/dockform/internal/ui"
 )
 
@@ -103,12 +105,28 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 				continue
 			}
 
+			// Build inline env: user inline plus decrypted SOPS
+			inline := append([]string(nil), app.EnvInline...)
+			ageKeyFile := ""
+			if cfg.Sops != nil && cfg.Sops.Age != nil {
+				ageKeyFile = cfg.Sops.Age.KeyFile
+			}
+			for _, s := range app.SopsSecrets {
+				pth := s.Path
+				if pth != "" && !filepath.IsAbs(pth) {
+					pth = filepath.Join(app.Root, pth)
+				}
+				if pairs, err := secrets.DecryptAndParse(ctx, pth, s.Format, ageKeyFile); err == nil {
+					inline = append(inline, pairs...)
+				}
+			}
+
 			// Desired config (images, ports) from compose config
-			doc, derr := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, app.EnvInline)
+			doc, derr := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
 			plannedServices := sortedKeys(doc.Services)
 			// Fallback to services list if no services parsed or error occurred
 			if derr != nil || len(plannedServices) == 0 {
-				if names, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, app.EnvInline); err == nil && len(names) > 0 {
+				if names, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil && len(names) > 0 {
 					plannedServices = append([]string(nil), names...)
 					sort.Strings(plannedServices)
 				}
@@ -125,7 +143,7 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 			if app.Project != nil {
 				proj = app.Project.Name
 			}
-			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, app.EnvInline); err == nil {
+			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
 				for _, it := range items {
 					running[it.Service] = it
 				}
@@ -138,7 +156,7 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 				if app.Project != nil {
 					projName = app.Project.Name
 				}
-				desiredHash, derr := p.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, projName, s, cfg.Docker.Identifier, app.EnvInline)
+				desiredHash, derr := p.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, projName, s, cfg.Docker.Identifier, inline)
 				if it, ok := running[s]; ok {
 					// Use compose config hash comparison with identifier overlay
 					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"dockform.identifier", "com.docker.compose.config-hash"})
@@ -255,12 +273,27 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 		if app.Project != nil {
 			proj = app.Project.Name
 		}
-		if _, err := p.docker.ComposeUp(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, app.EnvInline); err != nil {
+		// Build inline env same as in planning
+		inline := append([]string(nil), app.EnvInline...)
+		ageKeyFile := ""
+		if cfg.Sops != nil && cfg.Sops.Age != nil {
+			ageKeyFile = cfg.Sops.Age.KeyFile
+		}
+		for _, s := range app.SopsSecrets {
+			pth := s.Path
+			if pth != "" && !filepath.IsAbs(pth) {
+				pth = filepath.Join(app.Root, pth)
+			}
+			if pairs, err := secrets.DecryptAndParse(ctx, pth, s.Format, ageKeyFile); err == nil {
+				inline = append(inline, pairs...)
+			}
+		}
+		if _, err := p.docker.ComposeUp(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err != nil {
 			return fmt.Errorf("compose up %s: %w", appName, err)
 		}
 		// Label running containers for this app with identifier (best-effort)
 		if identifier != "" {
-			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, app.EnvInline); err == nil {
+			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
 				for _, it := range items {
 					_ = p.docker.UpdateContainerLabels(ctx, it.Name, map[string]string{"dockform.identifier": identifier})
 				}
@@ -279,7 +312,21 @@ func (p *Planner) Prune(ctx context.Context, cfg config.Config) error {
 	// Desired services set across all applications
 	desiredServices := map[string]struct{}{}
 	for _, app := range cfg.Applications {
-		if doc, err := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, app.EnvInline); err == nil {
+		inline := append([]string(nil), app.EnvInline...)
+		ageKeyFile := ""
+		if cfg.Sops != nil && cfg.Sops.Age != nil {
+			ageKeyFile = cfg.Sops.Age.KeyFile
+		}
+		for _, s := range app.SopsSecrets {
+			pth := s.Path
+			if pth != "" && !filepath.IsAbs(pth) {
+				pth = filepath.Join(app.Root, pth)
+			}
+			if pairs, err := secrets.DecryptAndParse(ctx, pth, s.Format, ageKeyFile); err == nil {
+				inline = append(inline, pairs...)
+			}
+		}
+		if doc, err := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil {
 			for s := range doc.Services {
 				desiredServices[s] = struct{}{}
 			}
