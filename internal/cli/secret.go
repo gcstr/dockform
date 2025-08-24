@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/secrets"
@@ -46,13 +47,35 @@ func newSecretCreateCmd() *cobra.Command {
 				return fmt.Errorf("file already exists: %s", target)
 			}
 
-			recipients, err := secrets.AgeRecipientsFromKeyFile(cfg.Sops.Age.KeyFile)
+			// Resolve recipients: start with configured list (if any),
+			// then always include recipient(s) from keyfile, deduplicated in order.
+			var recipients []string
+			if cfg.Sops != nil && len(cfg.Sops.Recipients) > 0 {
+				recipients = append(recipients, cfg.Sops.Recipients...)
+			}
+			r, err := secrets.AgeRecipientsFromKeyFile(cfg.Sops.Age.KeyFile)
 			if err != nil {
 				return err
 			}
+			recipients = append(recipients, r...)
 			if len(recipients) == 0 {
-				return errors.New("no age recipients found in key file")
+				return errors.New("no age recipients configured or found in key file")
 			}
+			// Deduplicate while preserving order
+			seen := make(map[string]struct{}, len(recipients))
+			uniq := make([]string, 0, len(recipients))
+			for _, rec := range recipients {
+				rec = strings.TrimSpace(rec)
+				if rec == "" {
+					continue
+				}
+				if _, ok := seen[rec]; ok {
+					continue
+				}
+				seen[rec] = struct{}{}
+				uniq = append(uniq, rec)
+			}
+			recipients = uniq
 
 			// Write plaintext template
 			const template = "SECRET_KEY=secret\n"

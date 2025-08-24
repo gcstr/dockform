@@ -5,6 +5,8 @@ docker:
 sops:
   age:
     key_file: ~/.config/sops/age/keys.txt
+  recipients: 
+    - age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
 
 secrets:
   sops:

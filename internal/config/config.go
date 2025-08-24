@@ -55,7 +55,8 @@ type Environment struct {
 
 // SopsConfig configures SOPS provider(s)
 type SopsConfig struct {
-	Age *SopsAgeConfig `yaml:"age"`
+	Age        *SopsAgeConfig `yaml:"age"`
+	Recipients []string       `yaml:"recipients"`
 }
 
 type SopsAgeConfig struct {
