@@ -249,6 +249,24 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 		}
 	}
 
+	// Sync assets into volumes (deterministic order)
+	if len(cfg.Assets) > 0 {
+		assetNames := make([]string, 0, len(cfg.Assets))
+		for n := range cfg.Assets {
+			assetNames = append(assetNames, n)
+		}
+		sort.Strings(assetNames)
+		for _, n := range assetNames {
+			a := cfg.Assets[n]
+			if a.SourceAbs == "" {
+				return fmt.Errorf("asset %s: resolved source path is empty", n)
+			}
+			if err := p.docker.SyncDirToVolume(ctx, a.TargetVolume, a.TargetPath, a.SourceAbs); err != nil {
+				return fmt.Errorf("sync asset %s to volume %s at %s: %w", n, a.TargetVolume, a.TargetPath, err)
+			}
+		}
+	}
+
 	// Ensure networks exist
 	existingNetworks := map[string]struct{}{}
 	if nets, err := p.docker.ListNetworks(ctx); err == nil {

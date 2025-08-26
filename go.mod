@@ -3,6 +3,7 @@ module github.com/gcstr/dockform
 go 1.25.0
 
 require (
+	filippo.io/age v1.2.1
 	github.com/charmbracelet/lipgloss v0.10.0
 	github.com/getsops/sops/v3 v3.10.2
 	github.com/go-playground/validator/v10 v10.20.0
@@ -21,7 +22,6 @@ require (
 	cloud.google.com/go/longrunning v0.6.6 // indirect
 	cloud.google.com/go/monitoring v1.24.1 // indirect
 	cloud.google.com/go/storage v1.51.0 // indirect
-	filippo.io/age v1.2.1 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.9.0 // indirect

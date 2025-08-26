@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/util"
@@ -114,4 +115,35 @@ func (c *Client) ListComposeContainersAll(ctx context.Context) ([]PsBrief, error
 		items = append(items, PsBrief{Project: proj, Service: svc, Name: name})
 	}
 	return items, nil
+}
+
+// SyncDirToVolume streams a tar of localDir to the named volume's targetPath.
+// Requirements:
+// - targetPath must be absolute and not '/'
+// - Ensure targetPath exists in the container (mkdir -p)
+// - Mount the volume at targetPath and operate there
+// - Remove current contents then extract tar stream into targetPath
+func (c *Client) SyncDirToVolume(ctx context.Context, volumeName, targetPath, localDir string) error {
+	if volumeName == "" {
+		return fmt.Errorf("volume name required")
+	}
+	if !strings.HasPrefix(targetPath, "/") {
+		return fmt.Errorf("targetPath must be absolute")
+	}
+	if targetPath == "/" {
+		return fmt.Errorf("targetPath cannot be '/'")
+	}
+	cmd := []string{
+		"run", "--rm", "-i",
+		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"alpine", "sh", "-c",
+		"mkdir -p '" + targetPath + "' && rm -rf '" + targetPath + "'/* '" + targetPath + "'/.[!.]* '" + targetPath + "'/..?* 2>/dev/null || true; tar -xpf - -C '" + targetPath + "'",
+	}
+	pr, pw := io.Pipe()
+	go func() {
+		werr := util.TarDirectoryToWriter(localDir, "", pw)
+		_ = pw.CloseWithError(werr)
+	}()
+	_, err := c.exec.RunWithStdin(ctx, pr, cmd...)
+	return err
 }

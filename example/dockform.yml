@@ -1,6 +1,12 @@
 docker:
-  context: default
+  context: oracle
   identifier: demo
+
+assets:
+  files:
+    source: website/assets/
+    target_volume: demo-volume-1
+    target_path: /assets
 
 sops:
   age:

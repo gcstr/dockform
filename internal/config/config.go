@@ -23,6 +23,7 @@ type Config struct {
 	Applications map[string]Application          `yaml:"applications" validate:"dive"`
 	Volumes      map[string]TopLevelResourceSpec `yaml:"volumes"`
 	Networks     map[string]TopLevelResourceSpec `yaml:"networks"`
+	Assets       map[string]AssetSpec            `yaml:"assets"`
 	BaseDir      string                          `yaml:"-"`
 }
 
@@ -75,6 +76,14 @@ type SopsSecret struct {
 
 // TopLevelResourceSpec mirrors YAML for volumes/networks.
 type TopLevelResourceSpec struct{}
+
+// AssetSpec defines a local directory to sync into a docker volume at a target path.
+type AssetSpec struct {
+	Source       string `yaml:"source"`
+	TargetVolume string `yaml:"target_volume"`
+	TargetPath   string `yaml:"target_path"`
+	SourceAbs    string `yaml:"-"`
+}
 
 var (
 	appKeyRegex = regexp.MustCompile(`^[a-z0-9_.-]+$`)
@@ -162,6 +171,9 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 	}
 	if c.Networks == nil {
 		c.Networks = map[string]TopLevelResourceSpec{}
+	}
+	if c.Assets == nil {
+		c.Assets = map[string]AssetSpec{}
 	}
 
 	// Validate application keys and fill defaults
@@ -282,6 +294,35 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 				Project:     app.Project,
 			}
 		}
+	}
+
+	// Assets validation and normalization
+	for assetName, a := range c.Assets {
+		if !appKeyRegex.MatchString(assetName) {
+			return fmt.Errorf("invalid asset key %q: must match ^[a-z0-9_.-]+$", assetName)
+		}
+		if strings.TrimSpace(a.Source) == "" {
+			return fmt.Errorf("asset %s: source path is required", assetName)
+		}
+		if a.TargetVolume == "" {
+			return fmt.Errorf("asset %s: target_volume is required", assetName)
+		}
+		if _, ok := c.Volumes[a.TargetVolume]; !ok {
+			return fmt.Errorf("asset %s: target_volume %q is not declared under volumes", assetName, a.TargetVolume)
+		}
+		if a.TargetPath == "" || !filepath.IsAbs(a.TargetPath) {
+			return fmt.Errorf("asset %s: target_path must be an absolute path", assetName)
+		}
+		if a.TargetPath == "/" {
+			return fmt.Errorf("asset %s: target_path cannot be '/'", assetName)
+		}
+		// Resolve source relative to baseDir
+		srcAbs := a.Source
+		if !filepath.IsAbs(srcAbs) {
+			srcAbs = filepath.Clean(filepath.Join(baseDir, srcAbs))
+		}
+		a.SourceAbs = srcAbs
+		c.Assets[assetName] = a
 	}
 
 	return nil

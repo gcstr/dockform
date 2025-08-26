@@ -44,3 +44,5 @@ Thumbs.db
 
 
 .sops.yaml
+
+example/website/assets/

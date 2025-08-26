@@ -110,5 +110,19 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 		}
 	}
 
+	// 6) Assets: ensure sources exist and are directories
+	for name, a := range cfg.Assets {
+		if a.SourceAbs == "" {
+			return fmt.Errorf("asset %s: source path is required", name)
+		}
+		st, err := os.Stat(a.SourceAbs)
+		if err != nil {
+			return fmt.Errorf("asset %s source: %w", name, err)
+		}
+		if !st.IsDir() {
+			return fmt.Errorf("asset %s source is not a directory: %s", name, a.SourceAbs)
+		}
+	}
+
 	return nil
 }
