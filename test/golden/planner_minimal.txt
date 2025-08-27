@@ -1,4 +1,0 @@
-[add]  volume demo-volume-1 will be created
-[add]  network demo-network will be created
-[no-op] application website planned (services diff TBD)
-
