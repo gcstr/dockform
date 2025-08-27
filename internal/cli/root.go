@@ -24,6 +24,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newApplyCmd())
 	cmd.AddCommand(newValidateCmd())
 	cmd.AddCommand(newSecretCmd())
+	cmd.AddCommand(newManifestCmd())
 
 	cmd.SetHelpTemplate(cmd.HelpTemplate() + "\n\nProject home: https://github.com/gcstr/dockform\n")
 
