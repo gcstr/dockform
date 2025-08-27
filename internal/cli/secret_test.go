@@ -28,6 +28,10 @@ func writeTempAgeKey(t *testing.T, dir string) (keyPath string, recipient string
 func TestSecret_Create_Success(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, _ := writeTempAgeKey(t, dir)
+	// Isolate sops config from CI environment
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	_ = os.MkdirAll(filepath.Join(dir, ".config", "sops", "age"), 0o755)
 	t.Setenv("SOPS_AGE_KEY_FILE", keyPath)
 	cfgPath := filepath.Join(dir, "dockform.yml")
 	// Minimal config with sops key; recipients can be empty as they will be derived from key file
@@ -106,6 +110,10 @@ func TestSecret_Create_MissingKeyConfig_Error(t *testing.T) {
 func TestSecret_Rekey_Success(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, recipient := writeTempAgeKey(t, dir)
+	// Isolate sops config from CI environment
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	_ = os.MkdirAll(filepath.Join(dir, ".config", "sops", "age"), 0o755)
 	t.Setenv("SOPS_AGE_KEY_FILE", keyPath)
 	// First, create an encrypted secret using create
 	cfgCreatePath := filepath.Join(dir, "create.yml")

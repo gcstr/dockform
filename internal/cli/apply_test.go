@@ -15,7 +15,7 @@ func TestApply_PrintsRemovalGuidance_WhenRemovalsPresent_AndNoPrune_Solo(t *test
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"apply", "-c", exampleConfigPath(t)})
+	root.SetArgs([]string{"apply", "-c", basicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestApply_DoesNotPrintRemovalGuidance_WhenPruneFlagSet(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"apply", "--prune", "-c", exampleConfigPath(t)})
+	root.SetArgs([]string{"apply", "--prune", "-c", basicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute with --prune: %v", err)
 	}
@@ -78,7 +78,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"apply", "-c", exampleConfigPath(t)})
+	root.SetArgs([]string{"apply", "-c", basicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute: %v", err)
 	}
@@ -133,7 +133,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"apply", "-c", exampleConfigPath(t)})
+	root.SetArgs([]string{"apply", "-c", basicConfigPath(t)})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error from apply when docker fails, got nil")
 	} else if !strings.Contains(err.Error(), "list volumes") {

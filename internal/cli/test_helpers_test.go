@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -104,4 +105,40 @@ func exampleConfigPath(t *testing.T) string {
 		t.Fatalf("example config missing: %v", err)
 	}
 	return cfg
+}
+
+// basicConfigPath creates a minimal valid dockform config and file layout
+// in a temporary directory suitable for CLI tests without external assets.
+func basicConfigPath(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	appRoot := filepath.Join(dir, "website")
+	if err := os.MkdirAll(appRoot, 0o755); err != nil {
+		t.Fatalf("mkdir app root: %v", err)
+	}
+	// Minimal compose file required by validator
+	composePath := filepath.Join(appRoot, "docker-compose.yaml")
+	if err := os.WriteFile(composePath, []byte("version: '3'\nservices: {}\n"), 0o644); err != nil {
+		t.Fatalf("write compose: %v", err)
+	}
+	// Minimal config referencing the app and declaring volumes/networks
+	cfg := strings.Join([]string{
+		"docker:",
+		"  context: default",
+		"  identifier: demo",
+		"applications:",
+		"  website:",
+		"    root: website",
+		"    files:",
+		"      - docker-compose.yaml",
+		"volumes:",
+		"  demo-volume-1: {}",
+		"networks:",
+		"  demo-network: {}",
+	}, "\n") + "\n"
+	cfgPath := filepath.Join(dir, "dockform.yml")
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return cfgPath
 }
