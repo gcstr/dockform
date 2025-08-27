@@ -13,6 +13,9 @@ func TestRoot_HasSubcommandsAndConfigFlag(t *testing.T) {
 	}
 	foundPlan := false
 	foundApply := false
+	foundValidate := false
+	foundSecret := false
+	foundManifest := false
 	for _, c := range cmd.Commands() {
 		if c.Name() == "plan" {
 			foundPlan = true
@@ -20,9 +23,18 @@ func TestRoot_HasSubcommandsAndConfigFlag(t *testing.T) {
 		if c.Name() == "apply" {
 			foundApply = true
 		}
+		if c.Name() == "validate" {
+			foundValidate = true
+		}
+		if c.Name() == "secret" {
+			foundSecret = true
+		}
+		if c.Name() == "manifest" {
+			foundManifest = true
+		}
 	}
-	if !foundPlan || !foundApply {
-		t.Fatalf("expected plan and apply subcommands; got plan=%v apply=%v", foundPlan, foundApply)
+	if !foundPlan || !foundApply || !foundValidate || !foundSecret || !foundManifest {
+		t.Fatalf("expected plan, apply, validate, secret, manifest subcommands; got plan=%v apply=%v validate=%v secret=%v manifest=%v", foundPlan, foundApply, foundValidate, foundSecret, foundManifest)
 	}
 }
 
@@ -53,6 +65,16 @@ func TestRoot_HelpShowsProjectHome(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "Project home: https://github.com/gcstr/dockform") {
 		t.Fatalf("help output missing project home; got: %q", got)
+	}
+}
+
+func TestRoot_SilenceFlags(t *testing.T) {
+	cmd := newRootCmd()
+	if !cmd.SilenceUsage {
+		t.Fatalf("expected SilenceUsage to be true")
+	}
+	if !cmd.SilenceErrors {
+		t.Fatalf("expected SilenceErrors to be true")
 	}
 }
 
