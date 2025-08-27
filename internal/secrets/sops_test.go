@@ -1,0 +1,58 @@
+package secrets
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestDecryptAndParse_Dotenv_Success(t *testing.T) {
+	dir := t.TempDir()
+	keyPath, recip := writeTempAgeKey(t, dir, true)
+	// Create plaintext and encrypt using our helper
+	plainPath := filepath.Join(dir, "secret.env")
+	if err := os.WriteFile(plainPath, []byte("FOO=bar\nBAZ='qux'\n"), 0o600); err != nil {
+		t.Fatalf("write plaintext: %v", err)
+	}
+	if err := EncryptDotenvFileWithSops(context.Background(), plainPath, []string{recip}, keyPath); err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	// Now decrypt via DecryptAndParse
+	pairs, err := DecryptAndParse(context.Background(), plainPath, "dotenv", keyPath)
+	if err != nil {
+		t.Fatalf("DecryptAndParse: %v", err)
+	}
+	if len(pairs) != 2 || pairs[0] != "FOO=bar" || pairs[1] != "BAZ=qux" {
+		t.Fatalf("unexpected pairs: %#v", pairs)
+	}
+}
+
+func TestDecryptAndParse_UnsupportedFormat_Error(t *testing.T) {
+	if _, err := DecryptAndParse(context.Background(), "x", "yaml", ""); err == nil {
+		t.Fatalf("expected error for unsupported format")
+	}
+}
+
+func TestDecryptAndParse_MissingFile_Error(t *testing.T) {
+	dir := t.TempDir()
+	keyPath, _ := writeTempAgeKey(t, dir, true)
+	if _, err := DecryptAndParse(context.Background(), filepath.Join(dir, "missing.env"), "dotenv", keyPath); err == nil {
+		t.Fatalf("expected decrypt error for missing file")
+	}
+}
+
+func TestParseDotenv_VariousCases(t *testing.T) {
+	in := "\n# comment\nFOO=bar\n export BAR = \"baz\" \nBAZ='qux'\n=invalid\nONLYKEY\n\n"
+	got := parseDotenv(in)
+	// Expect: ignores comments/blank/invalid, trims export and quotes
+	want := []string{"FOO=bar", "BAR=baz", "BAZ=qux"}
+	if len(got) != len(want) {
+		t.Fatalf("unexpected count: %#v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("mismatch at %d: got %q want %q", i, got[i], want[i])
+		}
+	}
+}
