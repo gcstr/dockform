@@ -13,7 +13,7 @@ func TestValidate_Success_PrintsMessage(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"validate", "-c", filepath.Join("..", "..", "example", "dockform.yml")})
+	root.SetArgs([]string{"validate", "-c", exampleConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("validate execute: %v", err)
 	}
@@ -48,7 +48,7 @@ esac
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"validate", "-c", filepath.Join("..", "..", "example", "dockform.yml")})
+	root.SetArgs([]string{"validate", "-c", exampleConfigPath(t)})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected docker unreachable error, got nil")
 	}

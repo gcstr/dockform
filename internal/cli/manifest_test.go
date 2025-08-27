@@ -13,7 +13,7 @@ func TestManifest_Render_Success_WithTrailingNewline(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"manifest", "render", "-c", filepath.Join("..", "..", "example", "dockform.yml")})
+	root.SetArgs([]string{"manifest", "render", "-c", exampleConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("manifest render execute: %v", err)
 	}

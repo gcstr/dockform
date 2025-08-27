@@ -10,6 +10,10 @@ import (
 func TestDecryptAndParse_Dotenv_Success(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, recip := writeTempAgeKey(t, dir, true)
+	// Isolate sops config from CI environment
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	_ = os.MkdirAll(filepath.Join(dir, ".config", "sops", "age"), 0o755)
 	// Create plaintext and encrypt using our helper
 	plainPath := filepath.Join(dir, "secret.env")
 	if err := os.WriteFile(plainPath, []byte("FOO=bar\nBAZ='qux'\n"), 0o600); err != nil {

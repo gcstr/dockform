@@ -33,6 +33,16 @@ func DecryptAndParse(ctx context.Context, path string, format string, ageKeyFile
 			unset = true
 		}
 		_ = os.Setenv("SOPS_AGE_KEY_FILE", key)
+		// Also set SOPS_AGE_KEY for environments where sops reads the key from env
+		if b, rerr := os.ReadFile(key); rerr == nil {
+			prevKey := os.Getenv("SOPS_AGE_KEY")
+			_ = os.Setenv("SOPS_AGE_KEY", string(b))
+			if prevKey == "" {
+				defer os.Unsetenv("SOPS_AGE_KEY")
+			} else {
+				defer os.Setenv("SOPS_AGE_KEY", prevKey)
+			}
+		}
 		if unset {
 			defer os.Unsetenv("SOPS_AGE_KEY_FILE")
 		} else {

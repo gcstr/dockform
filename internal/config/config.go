@@ -101,7 +101,13 @@ func Load(path string) (Config, error) {
 		return Config{}, err
 	}
 
-	b, err := os.ReadFile(guessed)
+	// Ensure absolute path for consistent base directory resolution across environments
+	guessedAbs, err := filepath.Abs(guessed)
+	if err != nil {
+		return Config{}, fmt.Errorf("abs path: %w", err)
+	}
+
+	b, err := os.ReadFile(guessedAbs)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}
@@ -118,7 +124,7 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("parse yaml: %s", yaml.FormatError(err, true, true))
 	}
 
-	baseDir := filepath.Dir(guessed)
+	baseDir := filepath.Dir(guessedAbs)
 	cfg.BaseDir = baseDir
 	if err := cfg.normalizeAndValidate(baseDir); err != nil {
 		return Config{}, err
@@ -136,7 +142,12 @@ func Render(path string) (string, error) {
 		return "", err
 	}
 
-	b, err := os.ReadFile(guessed)
+	guessedAbs, err := filepath.Abs(guessed)
+	if err != nil {
+		return "", fmt.Errorf("abs path: %w", err)
+	}
+
+	b, err := os.ReadFile(guessedAbs)
 	if err != nil {
 		return "", fmt.Errorf("read config: %w", err)
 	}
