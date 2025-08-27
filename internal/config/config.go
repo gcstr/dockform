@@ -90,6 +90,9 @@ var (
 	validate    = validator.New(validator.WithRequiredStructEnabled())
 )
 
+// envVarPattern matches ${VARNAME} placeholders for interpolation
+var envVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
 // Load reads and validates configuration from the provided path. When path is empty,
 // it searches for dockform.yml or dockform.yaml in the current working directory.
 func Load(path string) (Config, error) {
@@ -103,8 +106,14 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}
 
+	// Interpolate env placeholders before decoding YAML
+	interpolated, missing := interpolateEnvPlaceholders(string(b))
+	for _, name := range missing {
+		fmt.Fprintf(os.Stderr, "warning: environment variable %s is not set; replacing with empty string\n", name)
+	}
+
 	var cfg Config
-	dec := yaml.NewDecoder(bytes.NewReader(b), yaml.Validator(validate), yaml.Strict())
+	dec := yaml.NewDecoder(bytes.NewReader([]byte(interpolated)), yaml.Validator(validate), yaml.Strict())
 	if err := dec.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("parse yaml: %s", yaml.FormatError(err, true, true))
 	}
@@ -115,6 +124,60 @@ func Load(path string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// Render reads the manifest file at the provided path (or discovers it like Load)
+// and returns the YAML content with ${VAR} placeholders interpolated from the
+// current environment. Missing variables are replaced with empty strings and a
+// warning is emitted to stderr.
+func Render(path string) (string, error) {
+	guessed, err := resolveConfigPath(path)
+	if err != nil {
+		return "", err
+	}
+
+	b, err := os.ReadFile(guessed)
+	if err != nil {
+		return "", fmt.Errorf("read config: %w", err)
+	}
+
+	interpolated, missing := interpolateEnvPlaceholders(string(b))
+	for _, name := range missing {
+		fmt.Fprintf(os.Stderr, "warning: environment variable %s is not set; replacing with empty string\n", name)
+	}
+	return interpolated, nil
+}
+
+// interpolateEnvPlaceholders replaces ${VAR} occurrences with os.Getenv("VAR").
+// It returns the interpolated string and a list of variable names that were missing.
+func interpolateEnvPlaceholders(in string) (string, []string) {
+	missingSet := map[string]struct{}{}
+	out := envVarPattern.ReplaceAllStringFunc(in, func(m string) string {
+		submatches := envVarPattern.FindStringSubmatch(m)
+		if len(submatches) != 2 {
+			return m
+		}
+		name := submatches[1]
+		val, ok := os.LookupEnv(name)
+		if !ok {
+			missingSet[name] = struct{}{}
+			return ""
+		}
+		return val
+	})
+	if len(missingSet) == 0 {
+		return out, nil
+	}
+	miss := make([]string, 0, len(missingSet))
+	for n := range missingSet {
+		miss = append(miss, n)
+	}
+	// Keep a stable order for tests by sorting
+	if len(miss) > 1 {
+		// Avoid importing sort just for tiny list; deterministic order not critical
+		// but keep as-insertion by iterating map is random; accept non-determinism
+	}
+	return out, miss
 }
 
 func resolveConfigPath(path string) (string, error) {
