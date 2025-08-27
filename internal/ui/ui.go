@@ -31,7 +31,7 @@ type DiffLine struct {
 func (d DiffLine) String() string {
 	switch d.Type {
 	case Noop:
-		return styleNoop.Render("[noop]") + " " + d.Message
+		return styleNoop.Render("[no-op]") + " " + d.Message
 	case Add:
 		return styleAdd.Render("[add]") + "  " + d.Message
 	case Remove:
