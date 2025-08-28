@@ -89,7 +89,9 @@ func newSecretCreateCmd() *cobra.Command {
 				_ = os.Remove(target)
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Created encrypted secret: %s\n", target)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Created encrypted secret: %s\n", target); err != nil {
+				return err
+			}
 			return nil
 		},
 	}
@@ -250,7 +252,9 @@ func newSecretRekeyCmd() *cobra.Command {
 				if r, err := filepath.Rel(cwd, it.path); err == nil {
 					rel = r
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s reencrypted\n", rel)
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s reencrypted\n", rel); err != nil {
+					return err
+				}
 			}
 
 			return nil

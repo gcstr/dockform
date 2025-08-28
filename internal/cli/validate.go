@@ -24,7 +24,9 @@ func newValidateCmd() *cobra.Command {
 			if err := validator.Validate(context.Background(), cfg, d); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "validation successful")
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), "validation successful"); err != nil {
+				return err
+			}
 			return nil
 		},
 	}

@@ -34,9 +34,13 @@ func newApplyCmd() *cobra.Command {
 				return err
 			}
 			out := pln.String()
-			fmt.Fprintln(cmd.OutOrStdout(), out)
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), out); err != nil {
+				return err
+			}
 			if !prune && strings.Contains(out, "[remove]") {
-				fmt.Fprintln(cmd.OutOrStdout(), "No resources will be removed. Include --prune to delete them")
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No resources will be removed. Include --prune to delete them"); err != nil {
+					return err
+				}
 			}
 
 			if err := planner.NewWithDocker(d).Apply(context.Background(), cfg); err != nil {

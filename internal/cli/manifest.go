@@ -27,9 +27,13 @@ func newManifestRenderCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(cmd.OutOrStdout(), out)
+			if _, err := fmt.Fprint(cmd.OutOrStdout(), out); err != nil {
+				return err
+			}
 			if len(out) == 0 || out[len(out)-1] != '\n' {
-				fmt.Fprintln(cmd.OutOrStdout())
+				if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+					return err
+				}
 			}
 			return nil
 		},
