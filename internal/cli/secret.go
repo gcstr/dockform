@@ -142,46 +142,37 @@ func newSecretRekeyCmd() *cobra.Command {
 			}
 			recipients = uniq
 
-			// Collect unique absolute secret file paths and formats from root and applications
+			// Collect unique absolute secret file paths from root and applications
 			type secretItem struct {
-				path   string
-				format string
+				path string
 			}
 			items := make([]secretItem, 0)
 			dedup := map[string]struct{}{}
 
 			if cfg.Secrets != nil {
-				for _, s := range cfg.Secrets.Sops {
-					if s.Path == "" {
+				for _, sp := range cfg.Secrets.Sops {
+					if sp == "" {
 						continue
 					}
-					abs := filepath.Clean(filepath.Join(cfg.BaseDir, s.Path))
+					abs := filepath.Clean(filepath.Join(cfg.BaseDir, sp))
 					if _, ok := dedup[abs]; ok {
 						continue
 					}
 					dedup[abs] = struct{}{}
-					f := strings.ToLower(strings.TrimSpace(s.Format))
-					if f == "" {
-						f = "dotenv"
-					}
-					items = append(items, secretItem{path: abs, format: f})
+					items = append(items, secretItem{path: abs})
 				}
 			}
 			for _, app := range cfg.Applications {
-				for _, s := range app.SopsSecrets {
-					if s.Path == "" {
+				for _, sp := range app.SopsSecrets {
+					if sp == "" {
 						continue
 					}
-					abs := filepath.Clean(filepath.Join(app.Root, s.Path))
+					abs := filepath.Clean(filepath.Join(app.Root, sp))
 					if _, ok := dedup[abs]; ok {
 						continue
 					}
 					dedup[abs] = struct{}{}
-					f := strings.ToLower(strings.TrimSpace(s.Format))
-					if f == "" {
-						f = "dotenv"
-					}
-					items = append(items, secretItem{path: abs, format: f})
+					items = append(items, secretItem{path: abs})
 				}
 			}
 
@@ -208,11 +199,8 @@ func newSecretRekeyCmd() *cobra.Command {
 			cwd, _ := os.Getwd()
 
 			for _, it := range items {
-				if it.format != "dotenv" {
-					return apperr.New("cli.secret.rekey", apperr.InvalidInput, "unsupported secrets format %q for %s: only \"dotenv\" is supported", it.format, it.path)
-				}
-				// Decrypt existing file
-				plaintext, err := decrypt.File(it.path, it.format)
+				// Decrypt existing file (dotenv)
+				plaintext, err := decrypt.File(it.path, "dotenv")
 				if err != nil {
 					return apperr.Wrap("cli.secret.rekey", apperr.External, err, "sops decrypt %s", it.path)
 				}

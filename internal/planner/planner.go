@@ -111,12 +111,12 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 			if cfg.Sops != nil && cfg.Sops.Age != nil {
 				ageKeyFile = cfg.Sops.Age.KeyFile
 			}
-			for _, s := range app.SopsSecrets {
-				pth := s.Path
+			for _, pth0 := range app.SopsSecrets {
+				pth := pth0
 				if pth != "" && !filepath.IsAbs(pth) {
 					pth = filepath.Join(app.Root, pth)
 				}
-				if pairs, err := secrets.DecryptAndParse(ctx, pth, s.Format, ageKeyFile); err == nil {
+				if pairs, err := secrets.DecryptAndParse(ctx, pth, ageKeyFile); err == nil {
 					inline = append(inline, pairs...)
 				}
 			}
@@ -303,12 +303,12 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 		if cfg.Sops != nil && cfg.Sops.Age != nil {
 			ageKeyFile = cfg.Sops.Age.KeyFile
 		}
-		for _, s := range app.SopsSecrets {
-			pth := s.Path
+		for _, pth0 := range app.SopsSecrets {
+			pth := pth0
 			if pth != "" && !filepath.IsAbs(pth) {
 				pth = filepath.Join(app.Root, pth)
 			}
-			if pairs, err := secrets.DecryptAndParse(ctx, pth, s.Format, ageKeyFile); err == nil {
+			if pairs, err := secrets.DecryptAndParse(ctx, pth, ageKeyFile); err == nil {
 				inline = append(inline, pairs...)
 			}
 		}
@@ -341,12 +341,12 @@ func (p *Planner) Prune(ctx context.Context, cfg config.Config) error {
 		if cfg.Sops != nil && cfg.Sops.Age != nil {
 			ageKeyFile = cfg.Sops.Age.KeyFile
 		}
-		for _, s := range app.SopsSecrets {
-			pth := s.Path
+		for _, pth0 := range app.SopsSecrets {
+			pth := pth0
 			if pth != "" && !filepath.IsAbs(pth) {
 				pth = filepath.Join(app.Root, pth)
 			}
-			if pairs, err := secrets.DecryptAndParse(ctx, pth, s.Format, ageKeyFile); err == nil {
+			if pairs, err := secrets.DecryptAndParse(ctx, pth, ageKeyFile); err == nil {
 				inline = append(inline, pairs...)
 			}
 		}

@@ -82,8 +82,7 @@ sops:
     key_file: ~/.config/sops/age/keys.txt
 secrets:
   sops:
-    - path: secrets.env
-      format: dotenv
+    - secrets.env
 environment:
   files:
     - global.env
@@ -97,8 +96,7 @@ applications:
         - vars.env
     secrets:
       sops:
-        - path: secrets.env
-          format: dotenv
+        - secrets.env
 `)
 	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
 
@@ -164,8 +162,7 @@ func TestValidate_Fails_WhenRootSopsSecretMissing(t *testing.T) {
   context: default
 secrets:
   sops:
-    - path: secrets.env
-      format: dotenv
+    - secrets.env
 applications:
   website:
     root: website
@@ -344,8 +341,7 @@ applications:
       - docker-compose.yaml
     secrets:
       sops:
-        - path: secrets.env
-          format: dotenv
+        - secrets.env
 `)
 	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
 	cfg, err := config.Load(tmp)

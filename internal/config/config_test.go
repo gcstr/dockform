@@ -29,8 +29,7 @@ func TestLoad_NormalizesAndMerges(t *testing.T) {
 		"    - FOO=1",
 		"secrets:",
 		"  sops:",
-		"    - path: rootsecret.env",
-		"      format: dotenv",
+		"    - rootsecret.env",
 		"applications:",
 		"  web:",
 		"    root: app",
@@ -75,7 +74,7 @@ func TestLoad_NormalizesAndMerges(t *testing.T) {
 		t.Fatalf("unexpected inline env: %#v", app.EnvInline)
 	}
 	// SOPS secrets merged and rebased to app root
-	if len(app.SopsSecrets) != 1 || app.SopsSecrets[0].Path != "../rootsecret.env" || app.SopsSecrets[0].Format != "dotenv" {
+	if len(app.SopsSecrets) != 1 || app.SopsSecrets[0] != "../rootsecret.env" {
 		t.Fatalf("unexpected sops secrets: %#v", app.SopsSecrets)
 	}
 	// Assets source resolved to absolute path

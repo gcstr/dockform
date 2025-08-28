@@ -11,15 +11,9 @@ import (
 	decrypt "github.com/getsops/sops/v3/decrypt"
 )
 
-// DecryptAndParse returns key=value pairs from a SOPS-encrypted file.
-// format: only "dotenv" is supported. Defaults to "dotenv" if empty.
-func DecryptAndParse(ctx context.Context, path string, format string, ageKeyFile string) ([]string, error) {
-	if format == "" {
-		format = "dotenv"
-	}
-	if strings.ToLower(format) != "dotenv" {
-		return nil, apperr.New("secrets.DecryptAndParse", apperr.InvalidInput, "unsupported secrets format %q: only \"dotenv\" is supported", format)
-	}
+// DecryptAndParse returns key=value pairs from a SOPS-encrypted dotenv file.
+// Only dotenv format is supported.
+func DecryptAndParse(ctx context.Context, path string, ageKeyFile string) ([]string, error) {
 	// Resolve home dir for key file if starts with ~/
 	unset := false
 	if ageKeyFile != "" {
@@ -53,7 +47,7 @@ func DecryptAndParse(ctx context.Context, path string, format string, ageKeyFile
 
 	// Decrypt file
 	// The decrypt package uses env vars and does not need ctx.
-	b, err := decrypt.File(path, format)
+	b, err := decrypt.File(path, "dotenv")
 	if err != nil {
 		return nil, apperr.Wrap("secrets.DecryptAndParse", apperr.External, err, "sops decrypt %s", path)
 	}

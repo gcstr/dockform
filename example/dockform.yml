@@ -16,8 +16,7 @@ sops:
 
 secrets:
   sops:
-    - path: secrets.env
-      format: dotenv
+    - secrets.env
 
 environment:
   files:
@@ -41,8 +40,7 @@ applications:
         - BAZ=qux
     secrets:
       sops:
-        - path: secrets.env
-          format: dotenv
+        - secrets.env
 
 volumes:
   demo-volume-1:

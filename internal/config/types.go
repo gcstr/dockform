@@ -31,7 +31,7 @@ type Application struct {
 	Secrets     *Secrets     `yaml:"secrets"`
 	Project     *Project     `yaml:"project"`
 	EnvInline   []string     `yaml:"-"`
-	SopsSecrets []SopsSecret `yaml:"-"`
+	SopsSecrets []string     `yaml:"-"`
 }
 
 type Project struct {
@@ -56,12 +56,7 @@ type SopsAgeConfig struct {
 
 // Secrets holds secret sources
 type Secrets struct {
-	Sops []SopsSecret `yaml:"sops"`
-}
-
-type SopsSecret struct {
-	Path   string `yaml:"path"`
-	Format string `yaml:"format"` // dotenv | yaml | json
+	Sops []string `yaml:"sops"`
 }
 
 // TopLevelResourceSpec mirrors YAML for volumes/networks.

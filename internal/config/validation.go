@@ -94,26 +94,34 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		}
 
 		// Merge SOPS secrets: root-level rebased to app root, then app-level
-		var mergedSops []SopsSecret
+		var mergedSops []string
 		if c.Secrets != nil && len(c.Secrets.Sops) > 0 {
-			for _, s := range c.Secrets.Sops {
-				if s.Path == "" {
+			for _, sp := range c.Secrets.Sops {
+				p := strings.TrimSpace(sp)
+				if p == "" {
 					continue
 				}
-				abs := filepath.Clean(filepath.Join(baseDir, s.Path))
+				if !strings.HasSuffix(strings.ToLower(p), ".env") {
+					return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "secrets.sops: %s must have .env extension", sp)
+				}
+				abs := filepath.Clean(filepath.Join(baseDir, p))
 				if rel, err := filepath.Rel(resolvedRoot, abs); err == nil {
-					mergedSops = append(mergedSops, SopsSecret{Path: rel, Format: strings.ToLower(s.Format)})
+					mergedSops = append(mergedSops, rel)
 				} else {
-					mergedSops = append(mergedSops, SopsSecret{Path: abs, Format: strings.ToLower(s.Format)})
+					mergedSops = append(mergedSops, abs)
 				}
 			}
 		}
 		if app.Secrets != nil && len(app.Secrets.Sops) > 0 {
-			for _, s := range app.Secrets.Sops {
-				if s.Path == "" {
+			for _, sp := range app.Secrets.Sops {
+				p := strings.TrimSpace(sp)
+				if p == "" {
 					continue
 				}
-				mergedSops = append(mergedSops, SopsSecret{Path: s.Path, Format: strings.ToLower(s.Format)})
+				if !strings.HasSuffix(strings.ToLower(p), ".env") {
+					return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "application %s secrets.sops: %s must have .env extension", appName, sp)
+				}
+				mergedSops = append(mergedSops, p)
 			}
 		}
 

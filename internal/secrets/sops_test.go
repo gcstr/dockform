@@ -23,7 +23,7 @@ func TestDecryptAndParse_Dotenv_Success(t *testing.T) {
 		t.Fatalf("encrypt: %v", err)
 	}
 	// Now decrypt via DecryptAndParse
-	pairs, err := DecryptAndParse(context.Background(), plainPath, "dotenv", keyPath)
+	pairs, err := DecryptAndParse(context.Background(), plainPath, keyPath)
 	if err != nil {
 		t.Fatalf("DecryptAndParse: %v", err)
 	}
@@ -32,16 +32,10 @@ func TestDecryptAndParse_Dotenv_Success(t *testing.T) {
 	}
 }
 
-func TestDecryptAndParse_UnsupportedFormat_Error(t *testing.T) {
-	if _, err := DecryptAndParse(context.Background(), "x", "yaml", ""); err == nil {
-		t.Fatalf("expected error for unsupported format")
-	}
-}
-
 func TestDecryptAndParse_MissingFile_Error(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, _ := writeTempAgeKey(t, dir, true)
-	if _, err := DecryptAndParse(context.Background(), filepath.Join(dir, "missing.env"), "dotenv", keyPath); err == nil {
+	if _, err := DecryptAndParse(context.Background(), filepath.Join(dir, "missing.env"), keyPath); err == nil {
 		t.Fatalf("expected decrypt error for missing file")
 	}
 }

@@ -48,16 +48,16 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 
 	// 3) Root-level SOPS secrets
 	if cfg.Secrets != nil && len(cfg.Secrets.Sops) > 0 {
-		for _, s := range cfg.Secrets.Sops {
-			if s.Path == "" {
+		for _, sp := range cfg.Secrets.Sops {
+			if sp == "" {
 				continue
 			}
-			p := s.Path
+			p := sp
 			if !filepath.IsAbs(p) {
 				p = filepath.Join(cfg.BaseDir, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "secrets sops file %s", s.Path)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "secrets sops file %s", sp)
 			}
 		}
 	}
@@ -105,8 +105,8 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 			}
 		}
 		// SOPS secrets (merged and rebased in config normalization)
-		for _, s := range app.SopsSecrets {
-			p := s.Path
+		for _, sp := range app.SopsSecrets {
+			p := sp
 			if p == "" {
 				continue
 			}
@@ -114,7 +114,7 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 				p = filepath.Join(app.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "application %s sops secret %s", appName, s.Path)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "application %s sops secret %s", appName, sp)
 			}
 		}
 	}

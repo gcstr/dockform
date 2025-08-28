@@ -133,7 +133,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 
 	// Now, run rekey pointing to the created secret path via config
 	cfgRekeyPath := filepath.Join(dir, "rekey.yml")
-	cfgRekey := "sops:\n  age:\n    key_file: " + keyPath + "\n  recipients:\n    - " + recipient + "\nsecrets:\n  sops:\n    - path: secrets.env\n      format: dotenv\n"
+	cfgRekey := "sops:\n  age:\n    key_file: " + keyPath + "\n  recipients:\n    - " + recipient + "\nsecrets:\n  sops:\n    - secrets.env\n"
 	if err := os.WriteFile(cfgRekeyPath, []byte(cfgRekey), 0o644); err != nil {
 		t.Fatalf("write rekey config: %v", err)
 	}
@@ -159,29 +159,11 @@ func TestSecret_Rekey_Success(t *testing.T) {
 	}
 }
 
-func TestSecret_Rekey_UnsupportedFormat_Error(t *testing.T) {
-	dir := t.TempDir()
-	keyPath, recipient := writeTempAgeKey(t, dir)
-	cfgPath := filepath.Join(dir, "cfg.yml")
-	cfg := "sops:\n  age:\n    key_file: " + keyPath + "\n  recipients:\n    - " + recipient + "\nsecrets:\n  sops:\n    - path: secrets.env\n      format: yaml\n"
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
-		t.Fatalf("write cfg: %v", err)
-	}
-	root := newRootCmd()
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"secret", "rekey", "-c", cfgPath})
-	if err := root.Execute(); err == nil {
-		t.Fatalf("expected error for unsupported format, got nil")
-	}
-}
-
 func TestSecret_Rekey_DecryptError(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, recipient := writeTempAgeKey(t, dir)
 	cfgPath := filepath.Join(dir, "cfg.yml")
-	cfg := "sops:\n  age:\n    key_file: " + keyPath + "\n  recipients:\n    - " + recipient + "\nsecrets:\n  sops:\n    - path: missing.env\n      format: dotenv\n"
+	cfg := "sops:\n  age:\n    key_file: " + keyPath + "\n  recipients:\n    - " + recipient + "\nsecrets:\n  sops:\n    - missing.env\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write cfg: %v", err)
 	}
