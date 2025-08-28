@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/config"
@@ -19,6 +20,14 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 	// 1) Docker daemon liveness
 	if err := d.CheckDaemon(ctx); err != nil {
 		return err
+	}
+
+	// 1.1) docker.identifier validation: only letters, numbers, hyphen
+	if cfg.Docker.Identifier != "" {
+		validIdent := regexp.MustCompile(`^[A-Za-z0-9-]+$`)
+		if !validIdent.MatchString(cfg.Docker.Identifier) {
+			return fmt.Errorf("docker.identifier: must match [A-Za-z0-9-]+")
+		}
 	}
 
 	// 2) Root-level environment files

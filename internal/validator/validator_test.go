@@ -76,6 +76,7 @@ func TestValidate_Succeeds_WithCompleteConfigAndFiles(t *testing.T) {
 
 	yml := []byte(`docker:
   context: default
+  identifier: demo-123
 sops:
   age:
     key_file: ~/.config/sops/age/keys.txt
@@ -354,5 +355,38 @@ applications:
 	d := dockercli.New(cfg.Docker.Context)
 	if err := Validate(context.Background(), cfg, d); err == nil {
 		t.Fatalf("expected error for missing app sops secret file")
+	}
+}
+
+func TestValidate_Identifier_Invalid(t *testing.T) {
+	defer withStubDocker(t)()
+	tmp := t.TempDir()
+	mustWrite := func(path string, content string) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	// minimal app root and compose to bypass other errors
+	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
+	yml := []byte(`docker:
+  context: default
+  identifier: invalid_id!
+applications:
+  website:
+    root: website
+    files:
+      - docker-compose.yaml
+`)
+	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
+	cfg, err := config.Load(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	d := dockercli.New(cfg.Docker.Context)
+	if err := Validate(context.Background(), cfg, d); err == nil {
+		t.Fatalf("expected identifier validation error")
 	}
 }
