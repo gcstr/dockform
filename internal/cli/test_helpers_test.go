@@ -88,25 +88,6 @@ func withStubDocker(t *testing.T) func() {
 	return func() { _ = os.Setenv("PATH", oldPath) }
 }
 
-// exampleConfigPath returns the absolute path to the example manifest in the repo.
-func exampleConfigPath(t *testing.T) string {
-	t.Helper()
-	// The tests run from package directory; compute path from repo root using __file__ location.
-	// This file is at internal/cli/test_helpers_test.go → repo root is up 3 levels.
-	// Derive repo root using relative from current file directory.
-	// Use runtime.Caller to locate this file on disk.
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatalf("runtime.Caller failed")
-	}
-	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	cfg := filepath.Join(repoRoot, "example", "dockform.yml")
-	if _, err := os.Stat(cfg); err != nil {
-		t.Fatalf("example config missing: %v", err)
-	}
-	return cfg
-}
-
 // basicConfigPath creates a minimal valid dockform config and file layout
 // in a temporary directory suitable for CLI tests without external assets.
 func basicConfigPath(t *testing.T) string {
