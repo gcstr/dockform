@@ -20,7 +20,8 @@ func TestLoad_NormalizesAndMerges(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "rootsecret.env"), "FOO=bar\n")
 
 	yml := strings.Join([]string{
-		"docker: {}",
+		"docker:",
+		"  identifier: test-id",
 		"environment:",
 		"  files:",
 		"    - root.env",
@@ -89,7 +90,7 @@ func TestLoad_NormalizesAndMerges(t *testing.T) {
 
 func TestRender_InterpolatesEnv(t *testing.T) {
 	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "dockform.yml"), "value: ${MY_VAR}\n")
+	mustWrite(t, filepath.Join(dir, "dockform.yml"), "docker:\n  identifier: test-id\nvalue: ${MY_VAR}\n")
 	t.Setenv("MY_VAR", "abc")
 	out, err := Render(dir)
 	if err != nil {
@@ -102,7 +103,7 @@ func TestRender_InterpolatesEnv(t *testing.T) {
 
 func TestLoad_DirectoryResolution(t *testing.T) {
 	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "dockform.yml"), "applications: {}\n")
+	mustWrite(t, filepath.Join(dir, "dockform.yml"), "docker:\n  identifier: test-id\napplications: {}\n")
 	if _, err := Load(dir); err != nil {
 		t.Fatalf("load dir: %v", err)
 	}
@@ -118,13 +119,13 @@ func TestLoad_DirectoryResolution(t *testing.T) {
 func TestAssets_ValidationErrors(t *testing.T) {
 	dir := t.TempDir()
 	// target_volume not declared under volumes
-	yml := "assets:\n  bad:\n    source: .\n    target_volume: missing\n    target_path: /data\n"
+	yml := "docker:\n  identifier: test-id\nassets:\n  bad:\n    source: .\n    target_volume: missing\n    target_path: /data\n"
 	mustWrite(t, filepath.Join(dir, "dockform.yml"), yml)
 	if _, err := Load(dir); err == nil {
 		t.Fatalf("expected error for missing target_volume")
 	}
 	// target_path must be absolute
-	yml2 := "volumes:\n  v: {}\nassets:\n  bad:\n    source: .\n    target_volume: v\n    target_path: data\n"
+	yml2 := "docker:\n  identifier: test-id\nvolumes:\n  v: {}\nassets:\n  bad:\n    source: .\n    target_volume: v\n    target_path: data\n"
 	mustWrite(t, filepath.Join(dir, "dockform.yml"), yml2)
 	if _, err := Load(dir); err == nil {
 		t.Fatalf("expected error for non-absolute target_path")
@@ -138,7 +139,7 @@ func TestApplication_DefaultComposeFileWhenMissing(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	mustWrite(t, filepath.Join(appDir, "docker-compose.yml"), "version: '3'\nservices: {}\n")
-	yml := "applications:\n  a:\n    root: srv\n"
+	yml := "docker:\n  identifier: test-id\napplications:\n  a:\n    root: srv\n"
 	mustWrite(t, filepath.Join(dir, "dockform.yml"), yml)
 	cfg, err := Load(dir)
 	if err != nil {
@@ -152,7 +153,7 @@ func TestApplication_DefaultComposeFileWhenMissing(t *testing.T) {
 
 func TestApplication_InvalidKey_Error(t *testing.T) {
 	dir := t.TempDir()
-	yml := "applications:\n  INVALID: {root: .}\n"
+	yml := "docker:\n  identifier: test-id\napplications:\n  INVALID: {root: .}\n"
 	mustWrite(t, filepath.Join(dir, "dockform.yml"), yml)
 	if _, err := Load(dir); err == nil {
 		t.Fatalf("expected error for invalid application key")

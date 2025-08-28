@@ -76,7 +76,7 @@ func TestValidate_Succeeds_WithCompleteConfigAndFiles(t *testing.T) {
 
 	yml := []byte(`docker:
   context: default
-  identifier: demo-123
+  identifier: test-id
 sops:
   age:
     key_file: ~/.config/sops/age/keys.txt
@@ -126,6 +126,7 @@ func TestValidate_Fails_WhenRootEnvMissing(t *testing.T) {
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
 	yml := []byte(`docker:
   context: default
+  identifier: test-id
 applications:
   website:
     root: website
@@ -160,6 +161,7 @@ func TestValidate_Fails_WhenRootSopsSecretMissing(t *testing.T) {
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
 	yml := []byte(`docker:
   context: default
+  identifier: test-id
 secrets:
   sops:
     - secrets.env
@@ -200,6 +202,7 @@ func TestValidate_Fails_WhenSopsAgeKeyMissing(t *testing.T) {
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
 	yml := []byte(`docker:
   context: default
+  identifier: test-id
 sops:
   age:
     key_file: ~/.config/sops/age/keys.txt
@@ -234,6 +237,7 @@ func TestValidate_Fails_WhenAppRootMissing(t *testing.T) {
 	// do not create website dir
 	yml := []byte(`docker:
   context: default
+  identifier: test-id
 applications:
   website:
     root: website
@@ -268,6 +272,7 @@ func TestValidate_Fails_WhenComposeFileMissing(t *testing.T) {
 	}
 	yml := []byte(`docker:
   context: default
+  identifier: test-id
 applications:
   website:
     root: website
@@ -300,6 +305,7 @@ func TestValidate_Fails_WhenAppEnvMissing(t *testing.T) {
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
 	yml := []byte(`docker:
   context: default
+  identifier: test-id
 applications:
   website:
     root: website
@@ -334,6 +340,7 @@ func TestValidate_Fails_WhenAppSopsSecretMissing(t *testing.T) {
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
 	yml := []byte(`docker:
   context: default
+  identifier: test-id
 applications:
   website:
     root: website

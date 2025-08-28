@@ -12,6 +12,10 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 	if c.Docker.Context == "" {
 		c.Docker.Context = "default"
 	}
+	// Require docker.identifier
+	if strings.TrimSpace(c.Docker.Identifier) == "" {
+		return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "docker.identifier is required")
+	}
 	if c.Applications == nil {
 		c.Applications = map[string]Application{}
 	}
