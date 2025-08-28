@@ -2,10 +2,10 @@ package planner
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"sort"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/secrets"
@@ -230,7 +230,7 @@ func sortedKeys[T any](m map[string]T) []string {
 // Apply creates missing top-level resources with labels and performs compose up, labeling containers with identifier.
 func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 	if p.docker == nil {
-		return fmt.Errorf("docker client not configured")
+		return apperr.New("planner.Apply", apperr.Precondition, "docker client not configured")
 	}
 	identifier := cfg.Docker.Identifier
 	labels := map[string]string{}
@@ -245,12 +245,12 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 			existingVolumes[v] = struct{}{}
 		}
 	} else {
-		return fmt.Errorf("list volumes: %w", err)
+		return apperr.Wrap("planner.Apply", apperr.External, err, "list volumes")
 	}
 	for name := range cfg.Volumes {
 		if _, ok := existingVolumes[name]; !ok {
 			if err := p.docker.CreateVolume(ctx, name, labels); err != nil {
-				return fmt.Errorf("create volume %s: %w", name, err)
+				return apperr.Wrap("planner.Apply", apperr.External, err, "create volume %s", name)
 			}
 		}
 	}
@@ -265,10 +265,10 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 		for _, n := range assetNames {
 			a := cfg.Assets[n]
 			if a.SourceAbs == "" {
-				return fmt.Errorf("asset %s: resolved source path is empty", n)
+				return apperr.New("planner.Apply", apperr.InvalidInput, "asset %s: resolved source path is empty", n)
 			}
 			if err := p.docker.SyncDirToVolume(ctx, a.TargetVolume, a.TargetPath, a.SourceAbs); err != nil {
-				return fmt.Errorf("sync asset %s to volume %s at %s: %w", n, a.TargetVolume, a.TargetPath, err)
+				return apperr.Wrap("planner.Apply", apperr.External, err, "sync asset %s to volume %s at %s", n, a.TargetVolume, a.TargetPath)
 			}
 		}
 	}
@@ -280,12 +280,12 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 			existingNetworks[n] = struct{}{}
 		}
 	} else {
-		return fmt.Errorf("list networks: %w", err)
+		return apperr.Wrap("planner.Apply", apperr.External, err, "list networks")
 	}
 	for name := range cfg.Networks {
 		if _, ok := existingNetworks[name]; !ok {
 			if err := p.docker.CreateNetwork(ctx, name, labels); err != nil {
-				return fmt.Errorf("create network %s: %w", name, err)
+				return apperr.Wrap("planner.Apply", apperr.External, err, "create network %s", name)
 			}
 		}
 	}
@@ -313,7 +313,7 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 			}
 		}
 		if _, err := p.docker.ComposeUp(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err != nil {
-			return fmt.Errorf("compose up %s: %w", appName, err)
+			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s", appName)
 		}
 		// Label running containers for this app with identifier (best-effort)
 		if identifier != "" {
@@ -331,7 +331,7 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 // It deletes volumes, networks, and containers that are labeled but not present in cfg.
 func (p *Planner) Prune(ctx context.Context, cfg config.Config) error {
 	if p.docker == nil {
-		return fmt.Errorf("docker client not configured")
+		return apperr.New("planner.Prune", apperr.Precondition, "docker client not configured")
 	}
 	// Desired services set across all applications
 	desiredServices := map[string]struct{}{}

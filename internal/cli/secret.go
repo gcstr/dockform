@@ -2,12 +2,12 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/secrets"
 	decrypt "github.com/getsops/sops/v3/decrypt"
@@ -37,7 +37,7 @@ func newSecretCreateCmd() *cobra.Command {
 				return err
 			}
 			if cfg.Sops == nil || cfg.Sops.Age == nil || cfg.Sops.Age.KeyFile == "" {
-				return errors.New("sops age.key_file is not configured in dockform config")
+				return apperr.New("cli.secret.create", apperr.InvalidInput, "sops age.key_file is not configured in dockform config")
 			}
 
 			target := args[0]
@@ -46,7 +46,7 @@ func newSecretCreateCmd() *cobra.Command {
 				target = filepath.Clean(filepath.Join(cwd, target))
 			}
 			if _, err := os.Stat(target); err == nil {
-				return fmt.Errorf("file already exists: %s", target)
+				return apperr.New("cli.secret.create", apperr.Conflict, "file already exists: %s", target)
 			}
 
 			// Resolve recipients: start with configured list (if any),
@@ -61,7 +61,7 @@ func newSecretCreateCmd() *cobra.Command {
 			}
 			recipients = append(recipients, r...)
 			if len(recipients) == 0 {
-				return errors.New("no age recipients configured or found in key file")
+				return apperr.New("cli.secret.create", apperr.InvalidInput, "no age recipients configured or found in key file")
 			}
 			// Deduplicate while preserving order
 			seen := make(map[string]struct{}, len(recipients))
@@ -82,7 +82,7 @@ func newSecretCreateCmd() *cobra.Command {
 			// Write plaintext template
 			const template = "SECRET_KEY=secret\n"
 			if err := os.WriteFile(target, []byte(template), 0o600); err != nil {
-				return fmt.Errorf("write template: %w", err)
+				return apperr.Wrap("cli.secret.create", apperr.Internal, err, "write template")
 			}
 
 			if err := secrets.EncryptDotenvFileWithSops(context.Background(), target, recipients, cfg.Sops.Age.KeyFile); err != nil {
@@ -108,7 +108,7 @@ func newSecretRekeyCmd() *cobra.Command {
 				return err
 			}
 			if cfg.Sops == nil || cfg.Sops.Age == nil || cfg.Sops.Age.KeyFile == "" {
-				return errors.New("sops age.key_file is not configured in dockform config")
+				return apperr.New("cli.secret.rekey", apperr.InvalidInput, "sops age.key_file is not configured in dockform config")
 			}
 
 			// Resolve recipients: configured list + keyfile-derived, deduped.
@@ -122,7 +122,7 @@ func newSecretRekeyCmd() *cobra.Command {
 			}
 			recipients = append(recipients, r...)
 			if len(recipients) == 0 {
-				return errors.New("no age recipients configured or found in key file")
+				return apperr.New("cli.secret.rekey", apperr.InvalidInput, "no age recipients configured or found in key file")
 			}
 			// Deduplicate while preserving order
 			seen := make(map[string]struct{}, len(recipients))
@@ -207,30 +207,30 @@ func newSecretRekeyCmd() *cobra.Command {
 
 			for _, it := range items {
 				if it.format != "dotenv" {
-					return fmt.Errorf("unsupported secrets format %q for %s: only \"dotenv\" is supported", it.format, it.path)
+					return apperr.New("cli.secret.rekey", apperr.InvalidInput, "unsupported secrets format %q for %s: only \"dotenv\" is supported", it.format, it.path)
 				}
 				// Decrypt existing file
 				plaintext, err := decrypt.File(it.path, it.format)
 				if err != nil {
-					return fmt.Errorf("sops decrypt %s: %w", it.path, err)
+					return apperr.Wrap("cli.secret.rekey", apperr.External, err, "sops decrypt %s", it.path)
 				}
 
 				// Write plaintext to a temp file in the same directory
 				dir := filepath.Dir(it.path)
 				tmpf, err := os.CreateTemp(dir, ".rekey-*.env")
 				if err != nil {
-					return fmt.Errorf("create temp file: %w", err)
+					return apperr.Wrap("cli.secret.rekey", apperr.Internal, err, "create temp file")
 				}
 				tmp := tmpf.Name()
 				_ = tmpf.Chmod(0o600)
 				if _, err := tmpf.Write(plaintext); err != nil {
 					tmpf.Close()
 					_ = os.Remove(tmp)
-					return fmt.Errorf("write temp plaintext: %w", err)
+					return apperr.Wrap("cli.secret.rekey", apperr.Internal, err, "write temp plaintext")
 				}
 				if err := tmpf.Close(); err != nil {
 					_ = os.Remove(tmp)
-					return fmt.Errorf("close temp plaintext: %w", err)
+					return apperr.Wrap("cli.secret.rekey", apperr.Internal, err, "close temp plaintext")
 				}
 
 				// Encrypt plaintext temp file with new recipients
@@ -242,7 +242,7 @@ func newSecretRekeyCmd() *cobra.Command {
 				// Replace original file atomically
 				if err := os.Rename(tmp, it.path); err != nil {
 					_ = os.Remove(tmp)
-					return fmt.Errorf("replace original %s: %w", it.path, err)
+					return apperr.Wrap("cli.secret.rekey", apperr.Internal, err, "replace original %s", it.path)
 				}
 
 				// Print relative path info

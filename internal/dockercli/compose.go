@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/util"
 	"github.com/goccy/go-yaml"
 )
@@ -81,11 +82,11 @@ func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files
 		out, err = c.exec.RunInDir(ctx, workingDir, argsYAML...)
 	}
 	if err != nil {
-		return ComposeConfigDoc{}, err
+		return ComposeConfigDoc{}, apperr.Wrap("dockercli.ComposeConfigFull", apperr.Internal, err, "parse compose yaml")
 	}
 	var doc ComposeConfigDoc
 	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
-		return ComposeConfigDoc{}, err
+		return ComposeConfigDoc{}, apperr.Wrap("dockercli.ComposeConfigFull", apperr.Internal, err, "parse compose yaml")
 	}
 	return doc, nil
 }
@@ -127,7 +128,7 @@ func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profil
 	if len(results) > 0 {
 		return results, nil
 	}
-	return nil, fmt.Errorf("unexpected compose ps json: %s", util.Truncate(out, 256))
+	return nil, apperr.New("dockercli.ComposePs", apperr.External, "unexpected compose ps json: %s", util.Truncate(out, 256))
 }
 
 // ComposeConfigHash returns the compose config hash for a single service.
@@ -162,7 +163,7 @@ func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files
 	}
 	fields := strings.Fields(firstLine)
 	if len(fields) == 0 {
-		return "", fmt.Errorf("unexpected compose hash output: %s", util.Truncate(trimmed, 200))
+		return "", apperr.New("dockercli.ComposeConfigHash", apperr.External, "unexpected compose hash output: %s", util.Truncate(trimmed, 200))
 	}
 	return fields[len(fields)-1], nil
 }
@@ -183,11 +184,11 @@ func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string,
 		out, err = c.exec.RunInDir(ctx, workingDir, args...)
 	}
 	if err != nil {
-		return "", fmt.Errorf("compose config: %w", err)
+		return "", err
 	}
 	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
-		return "", fmt.Errorf("parse compose yaml: %w", err)
+		return "", apperr.Wrap("dockercli.buildLabeledProjectTemp", apperr.Internal, err, "parse compose yaml")
 	}
 	if doc == nil {
 		doc = map[string]any{}
@@ -212,17 +213,17 @@ func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string,
 	doc["services"] = services
 	b, err := yaml.Marshal(doc)
 	if err != nil {
-		return "", fmt.Errorf("marshal labeled yaml: %w", err)
+		return "", apperr.Wrap("dockercli.buildLabeledProjectTemp", apperr.Internal, err, "marshal labeled yaml")
 	}
 	f, err := os.CreateTemp("", "dockform-labeled-project-*.yml")
 	if err != nil {
-		return "", fmt.Errorf("create temp project: %w", err)
+		return "", apperr.Wrap("dockercli.buildLabeledProjectTemp", apperr.Internal, err, "create temp project")
 	}
 	path := f.Name()
 	if _, err := f.Write(b); err != nil {
 		_ = f.Close()
 		_ = os.Remove(path)
-		return "", fmt.Errorf("write temp project: %w", err)
+		return "", apperr.Wrap("dockercli.buildLabeledProjectTemp", apperr.Internal, err, "write temp project")
 	}
 	_ = f.Close()
 	if os.Getenv("DOCKFORM_PRINT_OVERLAY") == "1" || os.Getenv("DOCKFORM_DEBUG_OVERLAY") == "1" {

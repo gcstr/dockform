@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	decrypt "github.com/getsops/sops/v3/decrypt"
 )
 
@@ -17,7 +18,7 @@ func DecryptAndParse(ctx context.Context, path string, format string, ageKeyFile
 		format = "dotenv"
 	}
 	if strings.ToLower(format) != "dotenv" {
-		return nil, fmt.Errorf("unsupported secrets format %q: only \"dotenv\" is supported", format)
+		return nil, apperr.New("secrets.DecryptAndParse", apperr.InvalidInput, "unsupported secrets format %q: only \"dotenv\" is supported", format)
 	}
 	// Resolve home dir for key file if starts with ~/
 	unset := false
@@ -54,7 +55,7 @@ func DecryptAndParse(ctx context.Context, path string, format string, ageKeyFile
 	// The decrypt package uses env vars and does not need ctx.
 	b, err := decrypt.File(path, format)
 	if err != nil {
-		return nil, fmt.Errorf("sops decrypt %s: %w", path, err)
+		return nil, apperr.Wrap("secrets.DecryptAndParse", apperr.External, err, "sops decrypt %s", path)
 	}
 
 	return parseDotenv(string(b)), nil

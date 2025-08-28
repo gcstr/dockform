@@ -2,12 +2,12 @@ package validator
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
 )
@@ -26,7 +26,7 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 	if cfg.Docker.Identifier != "" {
 		validIdent := regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 		if !validIdent.MatchString(cfg.Docker.Identifier) {
-			return fmt.Errorf("docker.identifier: must match [A-Za-z0-9-]+")
+			return apperr.New("validator.Validate", apperr.InvalidInput, "docker.identifier: must match [A-Za-z0-9-]+")
 		}
 	}
 
@@ -41,7 +41,7 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 				p = filepath.Join(cfg.BaseDir, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return fmt.Errorf("env file %s: %w", f, err)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "env file %s", f)
 			}
 		}
 	}
@@ -57,7 +57,7 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 				p = filepath.Join(cfg.BaseDir, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return fmt.Errorf("secrets sops file %s: %w", s.Path, err)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "secrets sops file %s", s.Path)
 			}
 		}
 	}
@@ -71,7 +71,7 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 			}
 		}
 		if _, err := os.Stat(key); err != nil {
-			return fmt.Errorf("sops age key file: %w", err)
+			return apperr.Wrap("validator.Validate", apperr.NotFound, err, "sops age key file")
 		}
 	}
 
@@ -80,9 +80,9 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 		// Root must exist
 		if st, err := os.Stat(app.Root); err != nil || !st.IsDir() {
 			if err != nil {
-				return fmt.Errorf("application %s root: %w", appName, err)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "application %s root", appName)
 			}
-			return fmt.Errorf("application %s root is not a directory: %s", appName, app.Root)
+			return apperr.New("validator.Validate", apperr.InvalidInput, "application %s root is not a directory: %s", appName, app.Root)
 		}
 		// Compose files
 		for _, f := range app.Files {
@@ -91,7 +91,7 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 				p = filepath.Join(app.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return fmt.Errorf("application %s compose file %s: %w", appName, f, err)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "application %s compose file %s", appName, f)
 			}
 		}
 		// Env files (already rebased to app root semantics in config normalization)
@@ -101,7 +101,7 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 				p = filepath.Join(app.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return fmt.Errorf("application %s env file %s: %w", appName, e, err)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "application %s env file %s", appName, e)
 			}
 		}
 		// SOPS secrets (merged and rebased in config normalization)
@@ -114,7 +114,7 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 				p = filepath.Join(app.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return fmt.Errorf("application %s sops secret %s: %w", appName, s.Path, err)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "application %s sops secret %s", appName, s.Path)
 			}
 		}
 	}
@@ -122,14 +122,14 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 	// 6) Assets: ensure sources exist and are directories
 	for name, a := range cfg.Assets {
 		if a.SourceAbs == "" {
-			return fmt.Errorf("asset %s: source path is required", name)
+			return apperr.Wrap("validator.Validate", apperr.InvalidInput, config.ErrMissingRequired, "asset %s: source path is required", name)
 		}
 		st, err := os.Stat(a.SourceAbs)
 		if err != nil {
-			return fmt.Errorf("asset %s source: %w", name, err)
+			return apperr.Wrap("validator.Validate", apperr.NotFound, err, "asset %s source", name)
 		}
 		if !st.IsDir() {
-			return fmt.Errorf("asset %s source is not a directory: %s", name, a.SourceAbs)
+			return apperr.New("validator.Validate", apperr.InvalidInput, "asset %s source is not a directory: %s", name, a.SourceAbs)
 		}
 	}
 

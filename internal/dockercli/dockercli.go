@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/util"
 )
 
@@ -31,9 +32,9 @@ func (c *Client) WithIdentifier(id string) *Client {
 func (c *Client) CheckDaemon(ctx context.Context) error {
 	if _, err := c.exec.Run(ctx, "version", "--format", "{{.Server.Version}}"); err != nil {
 		if c.contextName != "" {
-			return fmt.Errorf("docker daemon not reachable (context=%s): %w", c.contextName, err)
+			return apperr.Wrap("dockercli.CheckDaemon", apperr.Unavailable, err, "docker daemon not reachable (context=%s)", c.contextName)
 		}
-		return fmt.Errorf("docker daemon not reachable: %w", err)
+		return apperr.Wrap("dockercli.CheckDaemon", apperr.Unavailable, err, "docker daemon not reachable")
 	}
 	return nil
 }
@@ -53,7 +54,7 @@ func (c *Client) RemoveContainer(ctx context.Context, name string, force bool) e
 // InspectContainerLabels returns selected labels from a container.
 func (c *Client) InspectContainerLabels(ctx context.Context, containerName string, keys []string) (map[string]string, error) {
 	if containerName == "" {
-		return nil, fmt.Errorf("container name required")
+		return nil, apperr.New("dockercli.InspectContainerLabels", apperr.InvalidInput, "container name required")
 	}
 	out, err := c.exec.Run(ctx, "inspect", "-f", "{{json .Config.Labels}}", containerName)
 	if err != nil {
@@ -61,7 +62,7 @@ func (c *Client) InspectContainerLabels(ctx context.Context, containerName strin
 	}
 	var labels map[string]string
 	if err := json.Unmarshal([]byte(out), &labels); err != nil {
-		return nil, fmt.Errorf("parse labels json: %w", err)
+		return nil, apperr.Wrap("dockercli.InspectContainerLabels", apperr.Internal, err, "parse labels json")
 	}
 	if len(keys) == 0 {
 		return labels, nil
@@ -125,13 +126,13 @@ func (c *Client) ListComposeContainersAll(ctx context.Context) ([]PsBrief, error
 // - Remove current contents then extract tar stream into targetPath
 func (c *Client) SyncDirToVolume(ctx context.Context, volumeName, targetPath, localDir string) error {
 	if volumeName == "" {
-		return fmt.Errorf("volume name required")
+		return apperr.New("dockercli.SyncDirToVolume", apperr.InvalidInput, "volume name required")
 	}
 	if !strings.HasPrefix(targetPath, "/") {
-		return fmt.Errorf("targetPath must be absolute")
+		return apperr.New("dockercli.SyncDirToVolume", apperr.InvalidInput, "targetPath must be absolute")
 	}
 	if targetPath == "/" {
-		return fmt.Errorf("targetPath cannot be '/'")
+		return apperr.New("dockercli.SyncDirToVolume", apperr.InvalidInput, "targetPath cannot be '/'")
 	}
 	cmd := []string{
 		"run", "--rm", "-i",

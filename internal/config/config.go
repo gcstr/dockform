@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-yaml"
 )
@@ -104,12 +105,12 @@ func Load(path string) (Config, error) {
 	// Ensure absolute path for consistent base directory resolution across environments
 	guessedAbs, err := filepath.Abs(guessed)
 	if err != nil {
-		return Config{}, fmt.Errorf("abs path: %w", err)
+		return Config{}, apperr.Wrap("config.Load", apperr.InvalidInput, err, "abs path")
 	}
 
 	b, err := os.ReadFile(guessedAbs)
 	if err != nil {
-		return Config{}, fmt.Errorf("read config: %w", err)
+		return Config{}, apperr.Wrap("config.Load", apperr.NotFound, err, "read config")
 	}
 
 	// Interpolate env placeholders before decoding YAML
@@ -121,7 +122,7 @@ func Load(path string) (Config, error) {
 	var cfg Config
 	dec := yaml.NewDecoder(bytes.NewReader([]byte(interpolated)), yaml.Validator(validate), yaml.Strict())
 	if err := dec.Decode(&cfg); err != nil {
-		return Config{}, fmt.Errorf("parse yaml: %s", yaml.FormatError(err, true, true))
+		return Config{}, apperr.New("config.Load", apperr.InvalidInput, "parse yaml: %s", yaml.FormatError(err, true, true))
 	}
 
 	baseDir := filepath.Dir(guessedAbs)
@@ -144,12 +145,12 @@ func Render(path string) (string, error) {
 
 	guessedAbs, err := filepath.Abs(guessed)
 	if err != nil {
-		return "", fmt.Errorf("abs path: %w", err)
+		return "", apperr.Wrap("config.Render", apperr.InvalidInput, err, "abs path")
 	}
 
 	b, err := os.ReadFile(guessedAbs)
 	if err != nil {
-		return "", fmt.Errorf("read config: %w", err)
+		return "", apperr.Wrap("config.Render", apperr.NotFound, err, "read config")
 	}
 
 	interpolated, missing := interpolateEnvPlaceholders(string(b))
@@ -203,10 +204,10 @@ func resolveConfigPath(path string) (string, error) {
 						return candidate, nil
 					}
 					if !errors.Is(statErr, fs.ErrNotExist) {
-						return "", fmt.Errorf("stat %s: %w", candidate, statErr)
+						return "", apperr.Wrap("config.resolveConfigPath", apperr.Internal, statErr, "stat %s", candidate)
 					}
 				}
-				return "", fmt.Errorf("no config file found in %s (looked for dockform.yaml or dockform.yml)", path)
+				return "", apperr.New("config.resolveConfigPath", apperr.NotFound, "no config file found in %s (looked for dockform.yaml or dockform.yml)", path)
 			}
 			// Path exists and is a file. Use it directly.
 			return path, nil
@@ -216,7 +217,7 @@ func resolveConfigPath(path string) (string, error) {
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("getwd: %w", err)
+		return "", apperr.Wrap("config.resolveConfigPath", apperr.Internal, err, "getwd")
 	}
 	for _, name := range []string{"dockform.yaml", "dockform.yml"} {
 		candidate := filepath.Join(cwd, name)
@@ -227,9 +228,9 @@ func resolveConfigPath(path string) (string, error) {
 		if errors.Is(statErr, fs.ErrNotExist) {
 			continue
 		}
-		return "", fmt.Errorf("stat %s: %w", candidate, statErr)
+		return "", apperr.Wrap("config.resolveConfigPath", apperr.Internal, statErr, "stat %s", candidate)
 	}
-	return "", fmt.Errorf("no config file found (looked for dockform.yaml or dockform.yml)")
+	return "", apperr.New("config.resolveConfigPath", apperr.NotFound, "no config file found (looked for dockform.yaml or dockform.yml)")
 }
 
 func (c *Config) normalizeAndValidate(baseDir string) error {
@@ -253,7 +254,7 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 	// Validate application keys and fill defaults
 	for appName, app := range c.Applications {
 		if !appKeyRegex.MatchString(appName) {
-			return fmt.Errorf("invalid application key %q: must match ^[a-z0-9_.-]+$", appName)
+			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "invalid application key %q: must match ^[a-z0-9_.-]+$", appName)
 		}
 		// Resolve root relative to config file directory
 		resolvedRoot := filepath.Clean(filepath.Join(baseDir, app.Root))
@@ -373,22 +374,22 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 	// Assets validation and normalization
 	for assetName, a := range c.Assets {
 		if !appKeyRegex.MatchString(assetName) {
-			return fmt.Errorf("invalid asset key %q: must match ^[a-z0-9_.-]+$", assetName)
+			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "invalid asset key %q: must match ^[a-z0-9_.-]+$", assetName)
 		}
 		if strings.TrimSpace(a.Source) == "" {
-			return fmt.Errorf("asset %s: source path is required", assetName)
+			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "asset %s: source path is required", assetName)
 		}
 		if a.TargetVolume == "" {
-			return fmt.Errorf("asset %s: target_volume is required", assetName)
+			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "asset %s: target_volume is required", assetName)
 		}
 		if _, ok := c.Volumes[a.TargetVolume]; !ok {
-			return fmt.Errorf("asset %s: target_volume %q is not declared under volumes", assetName, a.TargetVolume)
+			return apperr.New("config.normalizeAndValidate", apperr.NotFound, "asset %s: target_volume %q is not declared under volumes", assetName, a.TargetVolume)
 		}
 		if a.TargetPath == "" || !filepath.IsAbs(a.TargetPath) {
-			return fmt.Errorf("asset %s: target_path must be an absolute path", assetName)
+			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "asset %s: target_path must be an absolute path", assetName)
 		}
 		if a.TargetPath == "/" {
-			return fmt.Errorf("asset %s: target_path cannot be '/'", assetName)
+			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "asset %s: target_path cannot be '/'", assetName)
 		}
 		// Resolve source relative to baseDir
 		srcAbs := a.Source

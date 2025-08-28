@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/util"
 )
 
@@ -33,7 +34,7 @@ func (s SystemExec) Run(ctx context.Context, args ...string) (string, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return stdout.String(), fmt.Errorf("%w: %s", err, util.Truncate(stderr.String(), 512))
+		return stdout.String(), apperr.Wrap("dockercli.Exec.Run", apperr.External, err, "%s", util.Truncate(stderr.String(), 512))
 	}
 	return stdout.String(), nil
 }
@@ -59,7 +60,7 @@ func (s SystemExec) RunInDirWithEnv(ctx context.Context, dir string, extraEnv []
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return stdout.String(), fmt.Errorf("%w: %s", err, util.Truncate(stderr.String(), 512))
+		return stdout.String(), apperr.Wrap("dockercli.Exec.RunInDirWithEnv", apperr.External, err, "%s", util.Truncate(stderr.String(), 512))
 	}
 	return stdout.String(), nil
 }
@@ -76,7 +77,7 @@ func (s SystemExec) RunWithStdin(ctx context.Context, stdin io.Reader, args ...s
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return stdout.String(), fmt.Errorf("%w: %s", err, util.Truncate(stderr.String(), 512))
+		return stdout.String(), apperr.Wrap("dockercli.Exec.RunWithStdin", apperr.External, err, "%s", util.Truncate(stderr.String(), 512))
 	}
 	return stdout.String(), nil
 }
