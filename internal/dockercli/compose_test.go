@@ -225,5 +225,6 @@ func TestComposeUp_UsesOverlayWhenIdentifier(t *testing.T) {
 	}
 	if !strings.Contains(filepath.Base(joined), "dockform-labeled-project-") {
 		// At least ensure config was run and some file was used
+		t.Logf("compose args: %s", joined)
 	}
 }

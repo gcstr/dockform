@@ -180,7 +180,10 @@ func TestPlanner_Prune_RemovesUnmanaged(t *testing.T) {
 	// Assert that removes were attempted by reading the log
 	b, _ := os.ReadFile(log)
 	s := string(b)
-	if !(strings.Contains(s, "rm container other_name") || strings.Contains(s, "rm container -f other_name")) || !strings.Contains(s, "rm volume vOld") || !strings.Contains(s, "rm network nOld") {
+	containerRemoved := strings.Contains(s, "rm container other_name") || strings.Contains(s, "rm container -f other_name")
+	volumeRemoved := strings.Contains(s, "rm volume vOld")
+	networkRemoved := strings.Contains(s, "rm network nOld")
+	if !containerRemoved || !volumeRemoved || !networkRemoved {
 		t.Fatalf("expected prune removes in log, got: %s", s)
 	}
 }
