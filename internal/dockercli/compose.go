@@ -132,7 +132,7 @@ func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profil
 
 // ComposeConfigHash returns the compose config hash for a single service.
 // If identifier is non-empty, a temporary overlay compose file is used to add
-// the label `dockform.identifier=<identifier>` to that service before hashing.
+// the label `io.dockform/<identifier>` to that service before hashing.
 func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, service string, identifier string, inlineEnv []string) (string, error) {
 	// Choose compose files (overlay or user files)
 	chosenFiles := files
@@ -168,7 +168,7 @@ func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files
 }
 
 // buildLabeledProjectTemp loads the effective compose yaml via `docker compose config`,
-// injects dockform.identifier label into all services, writes to a temp file, and returns its path.
+// injects io.dockform/<identifier> label into all services, writes to a temp file, and returns its path.
 func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, identifier string, inlineEnv []string) (string, error) {
 	if identifier == "" {
 		return "", nil
@@ -205,7 +205,7 @@ func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string,
 		if labels == nil {
 			labels = map[string]any{}
 		}
-		labels["dockform.identifier"] = identifier
+		labels["io.dockform/"+identifier] = "1"
 		service["labels"] = labels
 		services[name] = service
 	}

@@ -202,7 +202,7 @@ func TestBuildLabeledProjectTemp_AddsIdentifierLabel(t *testing.T) {
 	for name, v := range svcs {
 		svc, _ := v.(map[string]any)
 		labels, _ := svc["labels"].(map[string]any)
-		if labels == nil || labels["dockform.identifier"] != "demo" {
+		if labels == nil || labels["io.dockform/demo"] != "1" {
 			t.Fatalf("service %s missing identifier label: %#v", name, labels)
 		}
 	}

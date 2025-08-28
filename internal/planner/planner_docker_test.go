@@ -57,15 +57,15 @@ case "$cmd" in
   inspect)
     # Labels based on mode
     if [ "$MODE" = "mismatch" ]; then
-      echo '{"dockform.identifier":"oldid","com.docker.compose.config-hash":"cafebabe"}'
+      echo '{"io.dockform/oldid":"1","com.docker.compose.config-hash":"cafebabe"}'
       exit 0
     fi
     if [ "$MODE" = "drift" ]; then
-      echo '{"dockform.identifier":"demo","com.docker.compose.config-hash":"cafebabe"}'
+      echo '{"io.dockform/demo":"1","com.docker.compose.config-hash":"cafebabe"}'
       exit 0
     fi
     if [ "$MODE" = "match" ]; then
-      echo '{"dockform.identifier":"demo","com.docker.compose.config-hash":"deadbeef"}'
+      echo '{"io.dockform/demo":"1","com.docker.compose.config-hash":"deadbeef"}'
       exit 0
     fi
     echo '{}' ; exit 0 ;;

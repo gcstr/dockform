@@ -143,12 +143,12 @@ Example (output of `dockform plan`):
 
 ### 8.1 Identifier Overlay Strategy (recommended)
 
-To ensure every managed resource carries `dockform.identifier=<value>` **and** to keep Compose hashes consistent, Dockform uses a small ephemeral **overlay compose file**:
+To ensure every managed resource carries `io.dockform/<identifier>: "1"` **and** to keep Compose hashes consistent, Dockform uses a small ephemeral **overlay compose file**:
 
 - **What gets generated**
 
-  - For each service: adds label `dockform.identifier: <value>` (and nothing else).
-  - For managed volumes/networks at creation time: adds the same label to the resource.
+  - For each service: adds label key `io.dockform/<identifier>` with value `"1"` (and nothing else).
+  - For managed volumes/networks at creation time: adds the same label key and value to the resource.
 
 - **How it is used**
 

@@ -94,7 +94,7 @@ func (c *Client) ListComposeContainersAll(ctx context.Context) ([]PsBrief, error
 	format := `{{.Label "com.docker.compose.project"}};{{.Label "com.docker.compose.service"}};{{.Names}}`
 	args := []string{"ps", "-a", "--format", format}
 	if c.identifier != "" {
-		args = append(args, "--filter", "label=dockform.identifier="+c.identifier)
+		args = append(args, "--filter", "label=io.dockform/"+c.identifier)
 	}
 	out, err := c.exec.Run(ctx, args...)
 	if err != nil {

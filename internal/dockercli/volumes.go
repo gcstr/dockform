@@ -11,7 +11,7 @@ import (
 func (c *Client) ListVolumes(ctx context.Context) ([]string, error) {
 	args := []string{"volume", "ls", "--format", "{{.Name}}"}
 	if c.identifier != "" {
-		args = append(args, "--filter", "label=dockform.identifier="+c.identifier)
+		args = append(args, "--filter", "label=io.dockform/"+c.identifier)
 	}
 	out, err := c.exec.Run(ctx, args...)
 	if err != nil {

@@ -159,10 +159,16 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 				desiredHash, derr := p.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, projName, s, cfg.Docker.Identifier, inline)
 				if it, ok := running[s]; ok {
 					// Use compose config hash comparison with identifier overlay
-					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"dockform.identifier", "com.docker.compose.config-hash"})
-					if cfg.Docker.Identifier != "" && labels["dockform.identifier"] != cfg.Docker.Identifier {
-						lines = append(lines, ui.Line(ui.Change, "service %s/%s will be reconciled (identifier mismatch)", appName, s))
-						continue
+					keys := []string{"com.docker.compose.config-hash"}
+					if cfg.Docker.Identifier != "" {
+						keys = append(keys, "io.dockform/"+cfg.Docker.Identifier)
+					}
+					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, keys)
+					if cfg.Docker.Identifier != "" {
+						if _, ok := labels["io.dockform/"+cfg.Docker.Identifier]; !ok {
+							lines = append(lines, ui.Line(ui.Change, "service %s/%s will be reconciled (identifier mismatch)", appName, s))
+							continue
+						}
 					}
 					if derr != nil || desiredHash == "" {
 						// Fallback if hash unavailable
@@ -229,7 +235,7 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 	identifier := cfg.Docker.Identifier
 	labels := map[string]string{}
 	if identifier != "" {
-		labels["dockform.identifier"] = identifier
+		labels["io.dockform/"+identifier] = "1"
 	}
 
 	// Ensure volumes exist
@@ -313,7 +319,7 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 		if identifier != "" {
 			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
 				for _, it := range items {
-					_ = p.docker.UpdateContainerLabels(ctx, it.Name, map[string]string{"dockform.identifier": identifier})
+					_ = p.docker.UpdateContainerLabels(ctx, it.Name, map[string]string{"io.dockform/" + identifier: "1"})
 				}
 			}
 		}

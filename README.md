@@ -57,7 +57,7 @@ Successfully created context "my-remote-docker"
 
 ### How it works
 
-- Identifier labeling: all managed resources are labeled `dockform.identifier=<value>`.
+- Identifier labeling: all managed resources are labeled with key `io.dockform/<identifier>` and value `"1"`.
 - Hash-based service comparison:
   - Desired: `docker compose config --hash <service>` (with a temporary overlay that injects the identifier label).
   - Running: reads `com.docker.compose.config-hash` from the container labels.

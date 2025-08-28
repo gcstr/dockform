@@ -113,7 +113,7 @@ case "$cmd" in
     exit 0 ;;
   inspect)
     # Labels: different identifier and a hash
-    echo '{"dockform.identifier":"oldid","com.docker.compose.config-hash":"cafebabe"}'
+    echo '{"io.dockform/oldid":"1","com.docker.compose.config-hash":"cafebabe"}'
     exit 0 ;;
 esac
 exit 0
