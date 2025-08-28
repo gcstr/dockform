@@ -14,7 +14,7 @@ import (
 // Extract with `tar -xpf - -C <dest>`.
 func TarDirectoryToWriter(localDir string, targetPrefix string, w io.Writer) error {
 	tw := tar.NewWriter(w)
-	defer tw.Close()
+	defer func() { _ = tw.Close() }()
 	// Normalize inputs
 	localDir = filepath.Clean(localDir)
 	usePrefix := targetPrefix != "" && targetPrefix != "."
@@ -76,7 +76,7 @@ func TarDirectoryToWriter(localDir string, targetPrefix string, w io.Writer) err
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		hdr.Size = info.Size()
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err

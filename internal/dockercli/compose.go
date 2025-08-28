@@ -19,7 +19,7 @@ func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profil
 	chosenFiles := files
 	if c.identifier != "" {
 		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier, inlineEnv); err == nil && pth != "" {
-			defer os.Remove(pth)
+			defer func() { _ = os.Remove(pth) }()
 			chosenFiles = []string{pth}
 		}
 	}
@@ -139,7 +139,7 @@ func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files
 	chosenFiles := files
 	if identifier != "" {
 		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, identifier, inlineEnv); err == nil && pth != "" {
-			defer os.Remove(pth)
+			defer func() { _ = os.Remove(pth) }()
 			chosenFiles = []string{pth}
 		}
 	}

@@ -91,7 +91,7 @@ exit 0
 
 func TestPlan_InvalidConfigPath_ReturnsError(t *testing.T) {
 	// Clear any env that could affect Render/Load warnings to keep error surface small
-	os.Unsetenv("AGE_KEY_FILE")
+	_ = os.Unsetenv("AGE_KEY_FILE")
 	root := newRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)

@@ -139,7 +139,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 	}
 	// Set cwd to dir so relative path in output is deterministic
 	oldCwd, _ := os.Getwd()
-	defer os.Chdir(oldCwd)
+	defer func() { _ = os.Chdir(oldCwd) }()
 	_ = os.Chdir(dir)
 
 	out.Reset()

@@ -200,9 +200,9 @@ func newSecretRekeyCmd() *cobra.Command {
 			unset := prev == ""
 			_ = os.Setenv("SOPS_AGE_KEY_FILE", key)
 			if unset {
-				defer os.Unsetenv("SOPS_AGE_KEY_FILE")
+				defer func() { _ = os.Unsetenv("SOPS_AGE_KEY_FILE") }()
 			} else {
-				defer os.Setenv("SOPS_AGE_KEY_FILE", prev)
+				defer func() { _ = os.Setenv("SOPS_AGE_KEY_FILE", prev) }()
 			}
 
 			cwd, _ := os.Getwd()
@@ -226,7 +226,7 @@ func newSecretRekeyCmd() *cobra.Command {
 				tmp := tmpf.Name()
 				_ = tmpf.Chmod(0o600)
 				if _, err := tmpf.Write(plaintext); err != nil {
-					tmpf.Close()
+					_ = tmpf.Close()
 					_ = os.Remove(tmp)
 					return apperr.Wrap("cli.secret.rekey", apperr.Internal, err, "write temp plaintext")
 				}

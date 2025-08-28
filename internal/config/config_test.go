@@ -109,7 +109,7 @@ func TestLoad_DirectoryResolution(t *testing.T) {
 	}
 	// Empty path discovers file in cwd
 	old, _ := os.Getwd()
-	defer os.Chdir(old)
+	defer func() { _ = os.Chdir(old) }()
 	_ = os.Chdir(dir)
 	if _, err := Load(""); err != nil {
 		t.Fatalf("load from cwd: %v", err)

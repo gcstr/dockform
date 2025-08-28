@@ -37,7 +37,7 @@ func AgeRecipientsFromKeyFile(ageKeyFile string) ([]string, error) {
 	if err != nil {
 		return nil, apperr.Wrap("secrets.AgeRecipientsFromKeyFile", apperr.NotFound, err, "open age key file")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	identities, err := age.ParseIdentities(f)
 	if err != nil {
 		return nil, apperr.Wrap("secrets.AgeRecipientsFromKeyFile", apperr.InvalidInput, err, "parse age identities")

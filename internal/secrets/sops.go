@@ -39,15 +39,15 @@ func DecryptAndParse(ctx context.Context, path string, format string, ageKeyFile
 			prevKey := os.Getenv("SOPS_AGE_KEY")
 			_ = os.Setenv("SOPS_AGE_KEY", string(b))
 			if prevKey == "" {
-				defer os.Unsetenv("SOPS_AGE_KEY")
+				defer func() { _ = os.Unsetenv("SOPS_AGE_KEY") }()
 			} else {
-				defer os.Setenv("SOPS_AGE_KEY", prevKey)
+				defer func() { _ = os.Setenv("SOPS_AGE_KEY", prevKey) }()
 			}
 		}
 		if unset {
-			defer os.Unsetenv("SOPS_AGE_KEY_FILE")
+			defer func() { _ = os.Unsetenv("SOPS_AGE_KEY_FILE") }()
 		} else {
-			defer os.Setenv("SOPS_AGE_KEY_FILE", prev)
+			defer func() { _ = os.Setenv("SOPS_AGE_KEY_FILE", prev) }()
 		}
 	}
 
