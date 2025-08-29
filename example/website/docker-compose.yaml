@@ -1,6 +1,7 @@
 services:
   nginx:
     image: nginx:1.12 
+    name: nginx
     ports:
       - "8000:80"
     environment:

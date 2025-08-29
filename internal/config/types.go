@@ -64,10 +64,11 @@ type TopLevelResourceSpec struct{}
 
 // AssetSpec defines a local directory to sync into a docker volume at a target path.
 type AssetSpec struct {
-	Source       string `yaml:"source"`
-	TargetVolume string `yaml:"target_volume"`
-	TargetPath   string `yaml:"target_path"`
-	SourceAbs    string `yaml:"-"`
+	Source          string   `yaml:"source"`
+	TargetVolume    string   `yaml:"target_volume"`
+	TargetPath      string   `yaml:"target_path"`
+	RestartServices []string `yaml:"restart_services"`
+	SourceAbs       string   `yaml:"-"`
 }
 
 var (
