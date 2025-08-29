@@ -165,11 +165,11 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 					// Use compose config hash comparison with identifier overlay
 					keys := []string{"com.docker.compose.config-hash"}
 					if cfg.Docker.Identifier != "" {
-						keys = append(keys, "io.dockform/"+cfg.Docker.Identifier)
+						keys = append(keys, "io.dockform.identifier")
 					}
 					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, keys)
 					if cfg.Docker.Identifier != "" {
-						if _, ok := labels["io.dockform/"+cfg.Docker.Identifier]; !ok {
+						if v, ok := labels["io.dockform.identifier"]; !ok || v != cfg.Docker.Identifier {
 							lines = append(lines, ui.Line(ui.Change, "service %s/%s will be reconciled (identifier mismatch)", appName, s))
 							continue
 						}
@@ -273,7 +273,7 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 	identifier := cfg.Docker.Identifier
 	labels := map[string]string{}
 	if identifier != "" {
-		labels["io.dockform/"+identifier] = "1"
+		labels["io.dockform.identifier"] = identifier
 	}
 
 	// Ensure volumes exist
@@ -454,9 +454,9 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 			}
 			// Identifier label mismatch → need apply
 			if identifier != "" {
-				keys := []string{"io.dockform/" + identifier, "com.docker.compose.config-hash"}
+				keys := []string{"io.dockform.identifier", "com.docker.compose.config-hash"}
 				labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, keys)
-				if _, ok := labels["io.dockform/"+identifier]; !ok {
+				if v, ok := labels["io.dockform.identifier"]; !ok || v != identifier {
 					applyNeeded = true
 					break
 				}
@@ -497,9 +497,9 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 		if identifier != "" {
 			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
 				for _, it := range items {
-					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"io.dockform/" + identifier})
-					if _, ok := labels["io.dockform/"+identifier]; !ok {
-						_ = p.docker.UpdateContainerLabels(ctx, it.Name, map[string]string{"io.dockform/" + identifier: "1"})
+					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"io.dockform.identifier"})
+					if v, ok := labels["io.dockform.identifier"]; !ok || v != identifier {
+						_ = p.docker.UpdateContainerLabels(ctx, it.Name, map[string]string{"io.dockform.identifier": identifier})
 					}
 				}
 			}
