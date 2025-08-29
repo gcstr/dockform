@@ -39,7 +39,7 @@ func TestListNetworks_ParsesAndFilters(t *testing.T) {
 	c = &Client{exec: stub, identifier: "demo"}
 	_, _ = c.ListNetworks(context.Background())
 	joined := strings.Join(stub.lastArgs, " ")
-	if !strings.Contains(joined, "--filter label=io.dockform/demo") {
+	if !strings.Contains(joined, "--filter label=io.dockform.identifier=demo") {
 		t.Fatalf("expected identifier filter in args: %s", joined)
 	}
 }
