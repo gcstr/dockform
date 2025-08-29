@@ -1,15 +1,18 @@
 package planner
 
 import (
+	"bytes"
 	"context"
 	"path/filepath"
 	"sort"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/assets"
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/secrets"
 	"github.com/gcstr/dockform/internal/ui"
+	"github.com/gcstr/dockform/internal/util"
 )
 
 // Plan represents a set of diff lines to show to the user.
@@ -198,6 +201,40 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 		}
 	}
 
+	// Assets: show per-file changes using remote manifest when available
+	if p.docker != nil && len(cfg.Assets) > 0 {
+		assetNames := sortedKeys(cfg.Assets)
+		for _, name := range assetNames {
+			a := cfg.Assets[name]
+			// Build local manifest
+			local, err := assets.BuildLocalManifest(a.SourceAbs, a.TargetPath, nil)
+			if err != nil {
+				lines = append(lines, ui.Line(ui.Change, "asset %s: unable to index local files: %v", name, err))
+				continue
+			}
+			// Read remote manifest
+			raw, _ := p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, assets.ManifestFileName)
+			remote, _ := assets.ParseManifestJSON(raw)
+			diff := assets.DiffManifests(local, remote)
+			if local.TreeHash == remote.TreeHash {
+				lines = append(lines, ui.Line(ui.Noop, "asset %s: no file changes", name))
+				continue
+			}
+			for _, f := range diff.ToCreate {
+				lines = append(lines, ui.Line(ui.Add, "asset %s: create %s", name, f.Path))
+			}
+			for _, f := range diff.ToUpdate {
+				lines = append(lines, ui.Line(ui.Change, "asset %s: update %s", name, f.Path))
+			}
+			for _, pth := range diff.ToDelete {
+				lines = append(lines, ui.Line(ui.Remove, "asset %s: delete %s", name, pth))
+			}
+			if len(diff.ToCreate) == 0 && len(diff.ToUpdate) == 0 && len(diff.ToDelete) == 0 {
+				lines = append(lines, ui.Line(ui.Change, "asset %s: changes detected (details unavailable)", name))
+			}
+		}
+	}
+
 	if len(lines) == 0 {
 		lines = append(lines, ui.Line(ui.Noop, "nothing to do"))
 	}
@@ -255,7 +292,7 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 		}
 	}
 
-	// Sync assets into volumes (deterministic order)
+	// Sync assets into volumes selectively using manifest
 	if len(cfg.Assets) > 0 {
 		assetNames := make([]string, 0, len(cfg.Assets))
 		for n := range cfg.Assets {
@@ -267,8 +304,48 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 			if a.SourceAbs == "" {
 				return apperr.New("planner.Apply", apperr.InvalidInput, "asset %s: resolved source path is empty", n)
 			}
-			if err := p.docker.SyncDirToVolume(ctx, a.TargetVolume, a.TargetPath, a.SourceAbs); err != nil {
-				return apperr.Wrap("planner.Apply", apperr.External, err, "sync asset %s to volume %s at %s", n, a.TargetVolume, a.TargetPath)
+			// Local and remote manifests
+			local, err := assets.BuildLocalManifest(a.SourceAbs, a.TargetPath, nil)
+			if err != nil {
+				return apperr.Wrap("planner.Apply", apperr.Internal, err, "index local assets for %s", n)
+			}
+			raw, _ := p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, assets.ManifestFileName)
+			remote, _ := assets.ParseManifestJSON(raw)
+			diff := assets.DiffManifests(local, remote)
+			// If completely equal, skip
+			if local.TreeHash == remote.TreeHash {
+				continue
+			}
+			// Build tar for create+update
+			paths := make([]string, 0, len(diff.ToCreate)+len(diff.ToUpdate))
+			for _, f := range diff.ToCreate {
+				paths = append(paths, f.Path)
+			}
+			for _, f := range diff.ToUpdate {
+				paths = append(paths, f.Path)
+			}
+			if len(paths) > 0 {
+				var buf bytes.Buffer
+				if err := util.TarFilesToWriter(a.SourceAbs, paths, &buf); err != nil {
+					return apperr.Wrap("planner.Apply", apperr.Internal, err, "build tar for asset %s", n)
+				}
+				if err := p.docker.ExtractTarToVolume(ctx, a.TargetVolume, a.TargetPath, &buf); err != nil {
+					return apperr.Wrap("planner.Apply", apperr.External, err, "extract tar for asset %s", n)
+				}
+			}
+			// Deletions
+			if len(diff.ToDelete) > 0 {
+				if err := p.docker.RemovePathsFromVolume(ctx, a.TargetVolume, a.TargetPath, diff.ToDelete); err != nil {
+					return apperr.Wrap("planner.Apply", apperr.External, err, "delete files for asset %s", n)
+				}
+			}
+			// Write manifest last (not part of tree)
+			jsonStr, err := local.ToJSON()
+			if err != nil {
+				return apperr.Wrap("planner.Apply", apperr.Internal, err, "encode manifest for %s", n)
+			}
+			if err := p.docker.WriteFileToVolume(ctx, a.TargetVolume, a.TargetPath, assets.ManifestFileName, jsonStr); err != nil {
+				return apperr.Wrap("planner.Apply", apperr.External, err, "write manifest for asset %s", n)
 			}
 		}
 	}

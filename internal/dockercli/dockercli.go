@@ -186,3 +186,47 @@ func (c *Client) WriteFileToVolume(ctx context.Context, volumeName, targetPath, 
 	_, err := c.exec.RunWithStdin(ctx, strings.NewReader(content), cmd...)
 	return err
 }
+
+// ExtractTarToVolume extracts a tar stream (stdin) into the volume targetPath without clearing existing files.
+// It ensures targetPath exists.
+func (c *Client) ExtractTarToVolume(ctx context.Context, volumeName, targetPath string, r io.Reader) error {
+	if volumeName == "" || !strings.HasPrefix(targetPath, "/") {
+		return apperr.New("dockercli.ExtractTarToVolume", apperr.InvalidInput, "invalid volume or target path")
+	}
+	cmd := []string{
+		"run", "--rm", "-i",
+		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"alpine", "sh", "-c",
+		"mkdir -p '" + targetPath + "' && tar -xpf - -C '" + targetPath + "'",
+	}
+	_, err := c.exec.RunWithStdin(ctx, r, cmd...)
+	return err
+}
+
+// RemovePathsFromVolume removes one or more relative paths from the mounted targetPath.
+func (c *Client) RemovePathsFromVolume(ctx context.Context, volumeName, targetPath string, relPaths []string) error {
+	if volumeName == "" || !strings.HasPrefix(targetPath, "/") {
+		return apperr.New("dockercli.RemovePathsFromVolume", apperr.InvalidInput, "invalid volume or target path")
+	}
+	if len(relPaths) == 0 {
+		return nil
+	}
+	// Build a safe rm command using printf with NUL and xargs -0 to avoid globbing
+	printfArgs := strings.Builder{}
+	for _, p := range relPaths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		full := path.Join(targetPath, p)
+		printfArgs.WriteString(full)
+		printfArgs.WriteByte('\x00')
+	}
+	cmd := []string{
+		"run", "--rm", "-i",
+		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"alpine", "sh", "-eu", "-c",
+		"xargs -0 rm -rf -- 2>/dev/null || true",
+	}
+	_, err := c.exec.RunWithStdin(ctx, strings.NewReader(printfArgs.String()), cmd...)
+	return err
+}

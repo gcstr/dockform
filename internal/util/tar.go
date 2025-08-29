@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 // TarDirectoryToWriter walks localDir and writes a tar stream to w.
@@ -84,4 +85,120 @@ func TarDirectoryToWriter(localDir string, targetPrefix string, w io.Writer) err
 		_, err = io.Copy(tw, f)
 		return err
 	})
+}
+
+// TarFilesToWriter writes a tar stream containing only the provided relative file paths from localRoot.
+// - files must be relative to localRoot and use OS path separators. They will be normalized to forward slashes in the archive.
+// - directories will be created implicitly for files; directory headers are included as needed.
+// - symlinks are preserved if the entries in files reference a symlink path; non-regular special files are skipped.
+func TarFilesToWriter(localRoot string, files []string, w io.Writer) error {
+	tw := tar.NewWriter(w)
+	defer func() { _ = tw.Close() }()
+	localRoot = filepath.Clean(localRoot)
+
+	// Map to ensure we emit needed directory headers once
+	emittedDirs := map[string]bool{}
+
+	// Helper to emit a directory header (name must end with '/'), creating parents first
+	var emitDir func(string, int64) error
+	emitDir = func(dir string, mode int64) error {
+		if dir == "." || dir == "" || dir == "/" {
+			return nil
+		}
+		// Normalize to forward slashes and ensure trailing slash
+		name := filepath.ToSlash(dir)
+		if name[len(name)-1] != '/' {
+			name += "/"
+		}
+		// Recurse to parent
+		parent := filepath.ToSlash(filepath.Dir(dir))
+		if parent != "." && parent != dir && !emittedDirs[parent] {
+			if err := emitDir(parent, 0o755); err != nil {
+				return err
+			}
+		}
+		if emittedDirs[name] {
+			return nil
+		}
+		hdr := &tar.Header{
+			Name:     name,
+			Mode:     mode,
+			Size:     0,
+			Typeflag: tar.TypeDir,
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		emittedDirs[name] = true
+		return nil
+	}
+
+	for _, rel := range files {
+		if rel == "" {
+			continue
+		}
+		// Clean and ensure no path escape
+		cleanRel := filepath.Clean(rel)
+		if strings.HasPrefix(cleanRel, "..") {
+			continue
+		}
+		abs := filepath.Join(localRoot, cleanRel)
+		info, err := os.Lstat(abs)
+		if err != nil {
+			return err
+		}
+		// Ensure parent directories are emitted
+		if err := emitDir(filepath.Dir(cleanRel), 0o755); err != nil {
+			return err
+		}
+		name := filepath.ToSlash(cleanRel)
+		mode := int64(info.Mode().Perm())
+		hdr := &tar.Header{Name: name, Mode: mode, ModTime: info.ModTime()}
+		if info.IsDir() {
+			// Ensure trailing slash
+			if name == "" || name == "/" || name[len(name)-1] != '/' {
+				name += "/"
+			}
+			hdr.Name = name
+			hdr.Typeflag = tar.TypeDir
+			hdr.Size = 0
+			if err := tw.WriteHeader(hdr); err != nil {
+				return err
+			}
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(abs)
+			if err != nil {
+				return err
+			}
+			hdr.Typeflag = tar.TypeSymlink
+			hdr.Linkname = target
+			hdr.Size = 0
+			if err := tw.WriteHeader(hdr); err != nil {
+				return err
+			}
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			// Skip non-regular files
+			continue
+		}
+		f, err := os.Open(abs)
+		if err != nil {
+			return err
+		}
+		hdr.Typeflag = tar.TypeReg
+		hdr.Size = info.Size()
+		if err := tw.WriteHeader(hdr); err != nil {
+			_ = f.Close()
+			return err
+		}
+		if _, err := io.Copy(tw, f); err != nil {
+			_ = f.Close()
+			return err
+		}
+		_ = f.Close()
+	}
+	return nil
 }
