@@ -86,6 +86,22 @@ func newSecretCreateCmd() *cobra.Command {
 				return apperr.Wrap("cli.secret.create", apperr.Internal, err, "write template")
 			}
 
+			// Debug: show sops command about to run
+			if verbose {
+				key := cfg.Sops.Age.KeyFile
+				if strings.HasPrefix(key, "~/") {
+					if home, err := os.UserHomeDir(); err == nil {
+						key = filepath.Join(home, key[2:])
+					}
+				}
+				args := []string{"--encrypt", "--input-type", "dotenv", "--output-type", "dotenv", "--in-place"}
+				for _, rec := range recipients {
+					args = append(args, "--age", rec)
+				}
+				args = append(args, target)
+				fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops %s\n", key, strings.Join(args, " "))
+			}
+
 			if err := secrets.EncryptDotenvFileWithSops(context.Background(), target, recipients, cfg.Sops.Age.KeyFile); err != nil {
 				_ = os.Remove(target)
 				return err
@@ -205,6 +221,10 @@ func newSecretRekeyCmd() *cobra.Command {
 			}
 
 			for _, it := range items {
+				// Debug: show decrypt command
+				if verbose {
+					fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops --decrypt --input-type dotenv %s\n", key, it.path)
+				}
 				// Decrypt existing file (dotenv) using system sops
 				c := exec.CommandContext(cmd.Context(), "sops", "--decrypt", "--input-type", "dotenv", it.path)
 				c.Env = os.Environ()
@@ -232,6 +252,16 @@ func newSecretRekeyCmd() *cobra.Command {
 				if err := tmpf.Close(); err != nil {
 					_ = os.Remove(tmp)
 					return apperr.Wrap("cli.secret.rekey", apperr.Internal, err, "close temp plaintext")
+				}
+
+				// Debug: show encrypt command about to run
+				if verbose {
+					args := []string{"--encrypt", "--input-type", "dotenv", "--output-type", "dotenv", "--in-place"}
+					for _, rec := range recipients {
+						args = append(args, "--age", rec)
+					}
+					args = append(args, tmp)
+					fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops %s\n", key, strings.Join(args, " "))
 				}
 
 				// Encrypt plaintext temp file with new recipients
@@ -305,6 +335,10 @@ func newSecretEditCmd() *cobra.Command {
 				defer func() { _ = os.Unsetenv("SOPS_AGE_KEY_FILE") }()
 			} else {
 				defer func() { _ = os.Setenv("SOPS_AGE_KEY_FILE", prev) }()
+			}
+
+			if verbose {
+				fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops --input-type dotenv --output-type dotenv %s\n", key, target)
 			}
 
 			c := exec.CommandContext(cmd.Context(), "sops", "--input-type", "dotenv", "--output-type", "dotenv", target)
