@@ -2,23 +2,15 @@ package secrets
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	age "filippo.io/age"
 	"github.com/gcstr/dockform/internal/apperr"
-	sopsv3 "github.com/getsops/sops/v3"
-	"github.com/getsops/sops/v3/aes"
-	sopsv3age "github.com/getsops/sops/v3/age"
-	sopsconfig "github.com/getsops/sops/v3/config"
-	"github.com/getsops/sops/v3/keys"
-	"github.com/getsops/sops/v3/stores/dotenv"
-	"github.com/getsops/sops/v3/version"
 )
 
 // AgeRecipientsFromKeyFile reads an age identity file and returns the corresponding recipient(s).
@@ -69,12 +61,20 @@ func AgeRecipientsFromKeyFile(ageKeyFile string) ([]string, error) {
 	return recips, nil
 }
 
-// EncryptDotenvFileWithSops encrypts a plaintext dotenv file in-place using SOPS with provided age recipients.
+// EncryptDotenvFileWithSops encrypts a plaintext dotenv file in-place using the system SOPS binary with provided age recipients.
 func EncryptDotenvFileWithSops(ctx context.Context, path string, recipients []string, ageKeyFile string) error {
 	if len(recipients) == 0 {
 		return apperr.New("secrets.EncryptDotenvFileWithSops", apperr.InvalidInput, "no recipients provided")
 	}
-	// Ensure SOPS_AGE_KEY_FILE set for decrypt compatibility
+	// Ensure file exists
+	if _, err := os.Stat(path); err != nil {
+		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.NotFound, err, "read plaintext")
+	}
+	// Ensure sops binary exists
+	if _, err := exec.LookPath("sops"); err != nil {
+		return apperr.New("secrets.EncryptDotenvFileWithSops", apperr.NotFound, "sops binary not found on PATH; please install sops")
+	}
+	// Ensure SOPS_AGE_KEY_FILE set for decrypt compatibility and environments that need it
 	if ageKeyFile != "" {
 		key := ageKeyFile
 		if strings.HasPrefix(key, "~/") {
@@ -85,58 +85,23 @@ func EncryptDotenvFileWithSops(ctx context.Context, path string, recipients []st
 		_ = os.Setenv("SOPS_AGE_KEY_FILE", key)
 	}
 
-	// Load plaintext dotenv tree
-	store := dotenv.NewStore(&sopsconfig.DotenvStoreConfig{})
-	b, rerr := os.ReadFile(path)
-	if rerr != nil {
-		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.NotFound, rerr, "read plaintext")
-	}
-	branches, err := store.LoadPlainFile(b)
-	if err != nil {
-		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.InvalidInput, err, "load dotenv")
-	}
-	inputTree := sopsv3.Tree{Branches: branches}
-
-	// Build metadata with age recipients as a single keygroup
-	var ageKeys []keys.MasterKey
+	args := []string{"--encrypt", "--input-type", "dotenv", "--output-type", "dotenv", "--in-place"}
 	for _, r := range recipients {
-		k, err := sopsv3age.MasterKeyFromRecipient(r)
-		if err != nil {
-			return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.InvalidInput, err, "age recipient")
+		r = strings.TrimSpace(r)
+		if r == "" {
+			continue
 		}
-		ageKeys = append(ageKeys, k)
+		// Basic recipient format validation to fail fast with a clear message for tests
+		if !strings.HasPrefix(r, "age1") {
+			return apperr.New("secrets.EncryptDotenvFileWithSops", apperr.InvalidInput, "age recipient: invalid format")
+		}
+		args = append(args, "--age", r)
 	}
-	metadata := sopsv3.Metadata{KeyGroups: []sopsv3.KeyGroup{ageKeys}}
-	metadata.Version = version.Version
-	metadata.LastModified = time.Now()
-
-	inputTree.Metadata = metadata
-	// Generate data key and encrypt with master keys per sops common flow
-	dataKey := make([]byte, 32)
-	if _, err := rand.Read(dataKey); err != nil {
-		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.Internal, err, "generate data key")
-	}
-	if errs := inputTree.Metadata.UpdateMasterKeys(dataKey); len(errs) > 0 {
-		return apperr.New("secrets.EncryptDotenvFileWithSops", apperr.External, "update master keys: %v", errs)
-	}
-	mac, err := inputTree.Encrypt(dataKey, aes.NewCipher())
-	if err != nil {
-		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.External, err, "encrypt tree")
-	}
-	// Populate metadata for sops CLI compatibility
-	inputTree.Metadata.LastModified = time.Now().UTC()
-	inputTree.Metadata.Version = version.Version
-	encMac, err := aes.NewCipher().Encrypt(mac, dataKey, inputTree.Metadata.LastModified.Format(time.RFC3339))
-	if err != nil {
-		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.External, err, "encrypt mac")
-	}
-	inputTree.Metadata.MessageAuthenticationCode = encMac
-	out, err := store.EmitEncryptedFile(inputTree)
-	if err != nil {
-		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.External, err, "emit encrypted dotenv")
-	}
-	if err := os.WriteFile(path, []byte(out), 0o600); err != nil {
-		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.Internal, err, "write encrypted")
+	args = append(args, path)
+	cmd := exec.CommandContext(ctx, "sops", args...)
+	cmd.Env = os.Environ()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.External, fmt.Errorf("%s", string(out)), "sops encrypt %s", path)
 	}
 	return nil
 }

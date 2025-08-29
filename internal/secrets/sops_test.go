@@ -8,6 +8,7 @@ import (
 )
 
 func TestDecryptAndParse_Dotenv_Success(t *testing.T) {
+	requireSops(t)
 	dir := t.TempDir()
 	keyPath, recip := writeTempAgeKey(t, dir, true)
 	// Isolate sops config from CI environment
@@ -33,6 +34,7 @@ func TestDecryptAndParse_Dotenv_Success(t *testing.T) {
 }
 
 func TestDecryptAndParse_MissingFile_Error(t *testing.T) {
+	requireSops(t)
 	dir := t.TempDir()
 	keyPath, _ := writeTempAgeKey(t, dir, true)
 	if _, err := DecryptAndParse(context.Background(), filepath.Join(dir, "missing.env"), keyPath); err == nil {

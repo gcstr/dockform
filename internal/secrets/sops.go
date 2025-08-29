@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
-	decrypt "github.com/getsops/sops/v3/decrypt"
 )
 
 // DecryptAndParse returns key=value pairs from a SOPS-encrypted dotenv file.
@@ -45,14 +45,23 @@ func DecryptAndParse(ctx context.Context, path string, ageKeyFile string) ([]str
 		}
 	}
 
-	// Decrypt file
-	// The decrypt package uses env vars and does not need ctx.
-	b, err := decrypt.File(path, "dotenv")
+	// Ensure sops binary exists
+	if _, err := exec.LookPath("sops"); err != nil {
+		return nil, apperr.New("secrets.DecryptAndParse", apperr.NotFound, "sops binary not found on PATH; please install sops")
+	}
+
+	// Decrypt file using system sops
+	cmd := exec.CommandContext(ctx, "sops", "--decrypt", "--input-type", "dotenv", path)
+	cmd.Env = os.Environ()
+	out, err := cmd.Output()
 	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return nil, apperr.Wrap("secrets.DecryptAndParse", apperr.External, fmt.Errorf("%s", string(ee.Stderr)), "sops decrypt %s", path)
+		}
 		return nil, apperr.Wrap("secrets.DecryptAndParse", apperr.External, err, "sops decrypt %s", path)
 	}
 
-	return parseDotenv(string(b)), nil
+	return parseDotenv(string(out)), nil
 }
 
 func parseDotenv(s string) []string {

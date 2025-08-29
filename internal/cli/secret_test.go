@@ -3,11 +3,11 @@ package cli
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	age "filippo.io/age"
-	decrypt "github.com/getsops/sops/v3/decrypt"
 )
 
 func writeTempAgeKey(t *testing.T, dir string) (keyPath string, recipient string) {
@@ -25,7 +25,14 @@ func writeTempAgeKey(t *testing.T, dir string) (keyPath string, recipient string
 	return
 }
 
+func requireSops(t *testing.T) {
+	if _, err := exec.LookPath("sops"); err != nil {
+		t.Skip("sops binary not found in PATH; skipping")
+	}
+}
+
 func TestSecret_Create_Success(t *testing.T) {
+	requireSops(t)
 	dir := t.TempDir()
 	keyPath, _ := writeTempAgeKey(t, dir)
 	// Isolate sops config from CI environment
@@ -58,7 +65,9 @@ func TestSecret_Create_Success(t *testing.T) {
 		}())
 	}
 	// Decrypt to verify contents
-	b, err := decrypt.File(target, "dotenv")
+	cmd := exec.Command("sops", "--decrypt", "--input-type", "dotenv", target)
+	cmd.Env = os.Environ()
+	b, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("decrypt created secret: %v", err)
 	}
@@ -107,6 +116,7 @@ func TestSecret_Create_MissingKeyConfig_Error(t *testing.T) {
 }
 
 func TestSecret_Rekey_Success(t *testing.T) {
+	requireSops(t)
 	dir := t.TempDir()
 	keyPath, recipient := writeTempAgeKey(t, dir)
 	// Isolate sops config from CI environment
@@ -153,7 +163,9 @@ func TestSecret_Rekey_Success(t *testing.T) {
 		t.Fatalf("expected rekey output for secrets.env; got: %q", got)
 	}
 	// Ensure the file remains decryptable
-	if _, err := decrypt.File(target, "dotenv"); err != nil {
+	cmd := exec.Command("sops", "--decrypt", "--input-type", "dotenv", target)
+	cmd.Env = os.Environ()
+	if _, err := cmd.Output(); err != nil {
 		t.Fatalf("decrypt after rekey: %v", err)
 	}
 }

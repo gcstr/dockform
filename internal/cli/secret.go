@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/secrets"
-	decrypt "github.com/getsops/sops/v3/decrypt"
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +22,7 @@ func newSecretCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newSecretCreateCmd())
 	cmd.AddCommand(newSecretRekeyCmd())
+	cmd.AddCommand(newSecretEditCmd())
 	return cmd
 }
 
@@ -198,10 +199,20 @@ func newSecretRekeyCmd() *cobra.Command {
 
 			cwd, _ := os.Getwd()
 
+			// Verify sops binary exists once
+			if _, err := exec.LookPath("sops"); err != nil {
+				return apperr.New("cli.secret.rekey", apperr.NotFound, "sops binary not found on PATH; please install sops")
+			}
+
 			for _, it := range items {
-				// Decrypt existing file (dotenv)
-				plaintext, err := decrypt.File(it.path, "dotenv")
+				// Decrypt existing file (dotenv) using system sops
+				c := exec.CommandContext(cmd.Context(), "sops", "--decrypt", "--input-type", "dotenv", it.path)
+				c.Env = os.Environ()
+				plaintext, err := c.Output()
 				if err != nil {
+					if ee, ok := err.(*exec.ExitError); ok {
+						return apperr.Wrap("cli.secret.rekey", apperr.External, fmt.Errorf("%s", string(ee.Stderr)), "sops decrypt %s", it.path)
+					}
 					return apperr.Wrap("cli.secret.rekey", apperr.External, err, "sops decrypt %s", it.path)
 				}
 
@@ -245,6 +256,68 @@ func newSecretRekeyCmd() *cobra.Command {
 				}
 			}
 
+			return nil
+		},
+	}
+	return cmd
+}
+
+func newSecretEditCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "edit <path>",
+		Short: "Edit a SOPS-encrypted dotenv file interactively",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfgPath, _ := cmd.Flags().GetString("config")
+			cfg, err := config.Load(cfgPath)
+			if err != nil {
+				return err
+			}
+			if cfg.Sops == nil || cfg.Sops.Age == nil || cfg.Sops.Age.KeyFile == "" {
+				return apperr.New("cli.secret.edit", apperr.InvalidInput, "sops age.key_file is not configured in dockform config")
+			}
+
+			target := args[0]
+			if !filepath.IsAbs(target) {
+				cwd, _ := os.Getwd()
+				target = filepath.Clean(filepath.Join(cwd, target))
+			}
+			if _, err := os.Stat(target); err != nil {
+				return apperr.Wrap("cli.secret.edit", apperr.NotFound, err, "secret not found: %s", target)
+			}
+
+			// Ensure sops binary exists
+			if _, err := exec.LookPath("sops"); err != nil {
+				return apperr.New("cli.secret.edit", apperr.NotFound, "sops binary not found on PATH; please install sops")
+			}
+
+			// Ensure SOPS_AGE_KEY_FILE is set for editing
+			key := cfg.Sops.Age.KeyFile
+			if strings.HasPrefix(key, "~/") {
+				if home, err := os.UserHomeDir(); err == nil {
+					key = filepath.Join(home, key[2:])
+				}
+			}
+			prev := os.Getenv("SOPS_AGE_KEY_FILE")
+			unset := prev == ""
+			_ = os.Setenv("SOPS_AGE_KEY_FILE", key)
+			if unset {
+				defer func() { _ = os.Unsetenv("SOPS_AGE_KEY_FILE") }()
+			} else {
+				defer func() { _ = os.Setenv("SOPS_AGE_KEY_FILE", prev) }()
+			}
+
+			c := exec.CommandContext(cmd.Context(), "sops", "--input-type", "dotenv", "--output-type", "dotenv", target)
+			c.Env = os.Environ()
+			c.Stdin = os.Stdin
+			c.Stdout = os.Stdout
+			c.Stderr = os.Stderr
+			if err := c.Run(); err != nil {
+				if ee, ok := err.(*exec.ExitError); ok {
+					return apperr.Wrap("cli.secret.edit", apperr.External, fmt.Errorf("%s", string(ee.Stderr)), "sops edit %s", target)
+				}
+				return apperr.Wrap("cli.secret.edit", apperr.External, err, "sops edit %s", target)
+			}
 			return nil
 		},
 	}

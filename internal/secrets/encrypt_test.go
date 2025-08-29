@@ -3,12 +3,12 @@ package secrets
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	age "filippo.io/age"
-	decrypt "github.com/getsops/sops/v3/decrypt"
 )
 
 func writeTempAgeKey(t *testing.T, dir string, includeComment bool) (keyPath string, recipient string) {
@@ -27,6 +27,12 @@ func writeTempAgeKey(t *testing.T, dir string, includeComment bool) (keyPath str
 		t.Fatalf("write age key: %v", err)
 	}
 	return
+}
+
+func requireSops(t *testing.T) {
+	if _, err := exec.LookPath("sops"); err != nil {
+		t.Skip("sops binary not found in PATH; skipping")
+	}
 }
 
 func TestAgeRecipientsFromKeyFile_ReturnsRecipient(t *testing.T) {
@@ -49,6 +55,7 @@ func TestAgeRecipientsFromKeyFile_ReturnsRecipient(t *testing.T) {
 }
 
 func TestEncryptDotenvFileWithSops_Success_AndDecryptable(t *testing.T) {
+	requireSops(t)
 	dir := t.TempDir()
 	keyPath, recip := writeTempAgeKey(t, dir, true)
 	// Isolate sops config from CI environment
@@ -69,9 +76,11 @@ func TestEncryptDotenvFileWithSops_Success_AndDecryptable(t *testing.T) {
 	if strings.Contains(string(enc), "FOO=bar") {
 		t.Fatalf("ciphertext still contains plaintext: %q", string(enc))
 	}
-	// decrypt using sops, requiring the key file
+	// decrypt using system sops, requiring the key file
 	t.Setenv("SOPS_AGE_KEY_FILE", keyPath)
-	out, err := decrypt.File(path, "dotenv")
+	cmd := exec.Command("sops", "--decrypt", "--input-type", "dotenv", path)
+	cmd.Env = os.Environ()
+	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("decrypt: %v", err)
 	}
