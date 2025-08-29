@@ -90,7 +90,7 @@ func TarDirectoryToWriter(localDir string, targetPrefix string, w io.Writer) err
 // TarFilesToWriter writes a tar stream containing only the provided relative file paths from localRoot.
 // - files must be relative to localRoot and use OS path separators. They will be normalized to forward slashes in the archive.
 // - directories will be created implicitly for files; directory headers are included as needed.
-// - symlinks are preserved if the entries in files reference a symlink path; non-regular special files are skipped.
+// - symlinks are ignored; non-regular special files are skipped.
 func TarFilesToWriter(localRoot string, files []string, w io.Writer) error {
 	tw := tar.NewWriter(w)
 	defer func() { _ = tw.Close() }()
@@ -167,17 +167,8 @@ func TarFilesToWriter(localRoot string, files []string, w io.Writer) error {
 			}
 			continue
 		}
+		// Ignore symlinks entirely for assets
 		if info.Mode()&os.ModeSymlink != 0 {
-			target, err := os.Readlink(abs)
-			if err != nil {
-				return err
-			}
-			hdr.Typeflag = tar.TypeSymlink
-			hdr.Linkname = target
-			hdr.Size = 0
-			if err := tw.WriteHeader(hdr); err != nil {
-				return err
-			}
 			continue
 		}
 		if !info.Mode().IsRegular() {

@@ -80,6 +80,10 @@ func BuildLocalManifest(sourceDir string, targetPath string, excludes []string) 
 		if d.IsDir() {
 			return nil
 		}
+		// Ignore symlinks entirely for assets
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
 		info, err := d.Info()
 		if err != nil {
 			return err
