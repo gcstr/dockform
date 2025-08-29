@@ -85,7 +85,8 @@ func EncryptDotenvFileWithSops(ctx context.Context, path string, recipients []st
 		_ = os.Setenv("SOPS_AGE_KEY_FILE", key)
 	}
 
-	args := []string{"--encrypt", "--input-type", "dotenv", "--output-type", "dotenv", "--in-place"}
+	// Build args with a single --age flag carrying a comma-separated list
+	validRecipients := make([]string, 0, len(recipients))
 	for _, r := range recipients {
 		r = strings.TrimSpace(r)
 		if r == "" {
@@ -95,7 +96,12 @@ func EncryptDotenvFileWithSops(ctx context.Context, path string, recipients []st
 		if !strings.HasPrefix(r, "age1") {
 			return apperr.New("secrets.EncryptDotenvFileWithSops", apperr.InvalidInput, "age recipient: invalid format")
 		}
-		args = append(args, "--age", r)
+		validRecipients = append(validRecipients, r)
+	}
+
+	args := []string{"--encrypt", "--input-type", "dotenv", "--output-type", "dotenv", "--in-place"}
+	if len(validRecipients) > 0 {
+		args = append(args, "--age", strings.Join(validRecipients, ","))
 	}
 	args = append(args, path)
 	cmd := exec.CommandContext(ctx, "sops", args...)

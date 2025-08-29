@@ -95,8 +95,8 @@ func newSecretCreateCmd() *cobra.Command {
 					}
 				}
 				args := []string{"--encrypt", "--input-type", "dotenv", "--output-type", "dotenv", "--in-place"}
-				for _, rec := range recipients {
-					args = append(args, "--age", rec)
+				if len(recipients) > 0 {
+					args = append(args, "--age", strings.Join(recipients, ","))
 				}
 				args = append(args, target)
 				fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops %s\n", key, strings.Join(args, " "))
@@ -257,8 +257,8 @@ func newSecretRekeyCmd() *cobra.Command {
 				// Debug: show encrypt command about to run
 				if verbose {
 					args := []string{"--encrypt", "--input-type", "dotenv", "--output-type", "dotenv", "--in-place"}
-					for _, rec := range recipients {
-						args = append(args, "--age", rec)
+					if len(recipients) > 0 {
+						args = append(args, "--age", strings.Join(recipients, ","))
 					}
 					args = append(args, tmp)
 					fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops %s\n", key, strings.Join(args, " "))
