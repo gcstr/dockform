@@ -213,8 +213,11 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 				lines = append(lines, ui.Line(ui.Change, "asset %s: unable to index local files: %v", name, err))
 				continue
 			}
-			// Read remote manifest
-			raw, _ := p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, assets.ManifestFileName)
+			// Read remote manifest only if the target volume exists. Avoid docker run -v implicit creation during plan.
+			raw := ""
+			if ok, err := p.docker.VolumeExists(ctx, a.TargetVolume); err == nil && ok {
+				raw, _ = p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, assets.ManifestFileName)
+			}
 			remote, _ := assets.ParseManifestJSON(raw)
 			diff := assets.DiffManifests(local, remote)
 			if local.TreeHash == remote.TreeHash {

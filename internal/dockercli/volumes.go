@@ -34,3 +34,21 @@ func (c *Client) RemoveVolume(ctx context.Context, name string) error {
 	_, err := c.exec.Run(ctx, "volume", "rm", name)
 	return err
 }
+
+// VolumeExists returns true if a volume with the given name exists in the Docker context,
+// regardless of labels. This must not create the volume; it only lists existing names.
+func (c *Client) VolumeExists(ctx context.Context, name string) (bool, error) {
+	if name == "" {
+		return false, nil
+	}
+	out, err := c.exec.Run(ctx, "volume", "ls", "--format", "{{.Name}}")
+	if err != nil {
+		return false, err
+	}
+	for _, v := range util.SplitNonEmptyLines(out) {
+		if v == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
