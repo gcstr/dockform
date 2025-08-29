@@ -47,6 +47,33 @@ func withStubDocker(t *testing.T) func() {
 	return func() { _ = os.Setenv("PATH", oldPath) }
 }
 
+func withFailingDocker(t *testing.T) func() {
+	t.Helper()
+	dir := t.TempDir()
+	stub := `#!/bin/sh
+cmd="$1"; shift
+case "$cmd" in
+  version)
+    echo "boom" 1>&2
+    exit 1
+    ;;
+esac
+exit 1
+`
+	path := filepath.Join(dir, "docker")
+	if runtime.GOOS == "windows" {
+		path += ".cmd"
+	}
+	if err := os.WriteFile(path, []byte(stub), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+	oldPath := os.Getenv("PATH")
+	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
+		t.Fatalf("set PATH: %v", err)
+	}
+	return func() { _ = os.Setenv("PATH", oldPath) }
+}
+
 func TestValidate_Succeeds_WithCompleteConfigAndFiles(t *testing.T) {
 	defer withStubDocker(t)()
 	tmp := t.TempDir()
@@ -391,5 +418,102 @@ applications:
 	d := dockercli.New(cfg.Docker.Context)
 	if err := Validate(context.Background(), cfg, d); err == nil {
 		t.Fatalf("expected identifier validation error")
+	}
+}
+
+func TestValidate_Fails_WhenDockerDaemonUnreachable(t *testing.T) {
+	defer withFailingDocker(t)()
+	tmp := t.TempDir()
+	// minimal config to hit daemon check first
+	if err := os.MkdirAll(filepath.Join(tmp, "website"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	yml := []byte(`docker:
+  context: default
+  identifier: test-id
+applications:
+  website:
+    root: website
+    files: []
+`)
+	if err := os.WriteFile(filepath.Join(tmp, "dockform.yml"), yml, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	d := dockercli.New(cfg.Docker.Context)
+	if err := Validate(context.Background(), cfg, d); err == nil {
+		t.Fatalf("expected docker daemon error")
+	}
+}
+
+func TestValidate_Assets_SourceRequired(t *testing.T) {
+	defer withStubDocker(t)()
+	cfg := config.Config{
+		Docker:       config.DockerConfig{Context: "default", Identifier: "test-id"},
+		Volumes:      map[string]config.TopLevelResourceSpec{"v": {}},
+		Networks:     map[string]config.TopLevelResourceSpec{},
+		Applications: map[string]config.Application{},
+		Assets:       map[string]config.AssetSpec{"a": {SourceAbs: "", TargetVolume: "v", TargetPath: "/t"}},
+	}
+	d := dockercli.New(cfg.Docker.Context)
+	if err := Validate(context.Background(), cfg, d); err == nil {
+		t.Fatalf("expected asset source required error")
+	}
+}
+
+func TestValidate_Assets_SourceNotFound_AndNotDir(t *testing.T) {
+	defer withStubDocker(t)()
+	tmp := t.TempDir()
+	d := dockercli.New("")
+	cfg := config.Config{
+		Docker:       config.DockerConfig{Context: "default", Identifier: "test-id"},
+		Volumes:      map[string]config.TopLevelResourceSpec{"v": {}},
+		Networks:     map[string]config.TopLevelResourceSpec{},
+		Applications: map[string]config.Application{},
+	}
+	// Not found
+	cfg.Assets = map[string]config.AssetSpec{"a": {SourceAbs: filepath.Join(tmp, "missing"), TargetVolume: "v", TargetPath: "/t"}}
+	if err := Validate(context.Background(), cfg, d); err == nil {
+		t.Fatalf("expected asset not found error")
+	}
+	// Not a directory: create a regular file
+	filePath := filepath.Join(tmp, "file.txt")
+	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Assets = map[string]config.AssetSpec{"a": {SourceAbs: filePath, TargetVolume: "v", TargetPath: "/t"}}
+	if err := Validate(context.Background(), cfg, d); err == nil {
+		t.Fatalf("expected asset not a directory error")
+	}
+}
+
+func TestValidate_AppRootIsFile_NotDir(t *testing.T) {
+	defer withStubDocker(t)()
+	tmp := t.TempDir()
+	// Create a file at the path intended for app root
+	if err := os.WriteFile(filepath.Join(tmp, "website"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	yml := []byte(`docker:
+  context: default
+  identifier: test-id
+applications:
+  website:
+    root: website
+    files: []
+`)
+	if err := os.WriteFile(filepath.Join(tmp, "dockform.yml"), yml, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	d := dockercli.New(cfg.Docker.Context)
+	if err := Validate(context.Background(), cfg, d); err == nil {
+		t.Fatalf("expected app root not directory error")
 	}
 }
