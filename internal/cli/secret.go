@@ -99,7 +99,9 @@ func newSecretCreateCmd() *cobra.Command {
 					args = append(args, "--age", strings.Join(recipients, ","))
 				}
 				args = append(args, target)
-				fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops %s\n", key, strings.Join(args, " "))
+				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops %s\n", key, strings.Join(args, " ")); err != nil {
+					_ = err // ignore debug print errors
+				}
 			}
 
 			if err := secrets.EncryptDotenvFileWithSops(context.Background(), target, recipients, cfg.Sops.Age.KeyFile); err != nil {
@@ -223,7 +225,9 @@ func newSecretRekeyCmd() *cobra.Command {
 			for _, it := range items {
 				// Debug: show decrypt command
 				if verbose {
-					fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops --decrypt --input-type dotenv %s\n", key, it.path)
+					if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops --decrypt --input-type dotenv %s\n", key, it.path); err != nil {
+						_ = err // ignore debug print errors
+					}
 				}
 				// Decrypt existing file (dotenv) using system sops
 				c := exec.CommandContext(cmd.Context(), "sops", "--decrypt", "--input-type", "dotenv", it.path)
@@ -261,7 +265,9 @@ func newSecretRekeyCmd() *cobra.Command {
 						args = append(args, "--age", strings.Join(recipients, ","))
 					}
 					args = append(args, tmp)
-					fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops %s\n", key, strings.Join(args, " "))
+					if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops %s\n", key, strings.Join(args, " ")); err != nil {
+						_ = err // ignore debug print errors
+					}
 				}
 
 				// Encrypt plaintext temp file with new recipients
@@ -338,7 +344,9 @@ func newSecretEditCmd() *cobra.Command {
 			}
 
 			if verbose {
-				fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops --input-type dotenv --output-type dotenv %s\n", key, target)
+				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "DEBUG: SOPS_AGE_KEY_FILE=%s sops --input-type dotenv --output-type dotenv %s\n", key, target); err != nil {
+					_ = err // ignore debug print errors
+				}
 			}
 
 			c := exec.CommandContext(cmd.Context(), "sops", "--input-type", "dotenv", "--output-type", "dotenv", target)

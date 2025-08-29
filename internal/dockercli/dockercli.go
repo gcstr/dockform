@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
@@ -146,5 +147,42 @@ func (c *Client) SyncDirToVolume(ctx context.Context, volumeName, targetPath, lo
 		_ = pw.CloseWithError(werr)
 	}()
 	_, err := c.exec.RunWithStdin(ctx, pr, cmd...)
+	return err
+}
+
+// ReadFileFromVolume returns the contents of a file inside a mounted volume target path.
+// If the file does not exist, it returns an empty string and no error.
+func (c *Client) ReadFileFromVolume(ctx context.Context, volumeName, targetPath, relFile string) (string, error) {
+	if volumeName == "" || !strings.HasPrefix(targetPath, "/") {
+		return "", apperr.New("dockercli.ReadFileFromVolume", apperr.InvalidInput, "invalid volume or target path")
+	}
+	full := path.Join(targetPath, relFile)
+	cmd := []string{
+		"run", "--rm",
+		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"alpine", "sh", "-c",
+		"cat '" + full + "' 2>/dev/null || true",
+	}
+	out, err := c.exec.Run(ctx, cmd...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(out, "\r\n"), nil
+}
+
+// WriteFileToVolume writes content to a file inside a mounted volume target path, creating parent directories.
+func (c *Client) WriteFileToVolume(ctx context.Context, volumeName, targetPath, relFile, content string) error {
+	if volumeName == "" || !strings.HasPrefix(targetPath, "/") {
+		return apperr.New("dockercli.WriteFileToVolume", apperr.InvalidInput, "invalid volume or target path")
+	}
+	full := path.Join(targetPath, relFile)
+	dir := path.Dir(full)
+	cmd := []string{
+		"run", "--rm", "-i",
+		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"alpine", "sh", "-c",
+		"mkdir -p '" + dir + "' && cat > '" + full + "'",
+	}
+	_, err := c.exec.RunWithStdin(ctx, strings.NewReader(content), cmd...)
 	return err
 }

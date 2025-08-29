@@ -290,7 +290,7 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 		}
 	}
 
-	// Compose up each application
+	// Compose up each application only when changes are needed
 	for appName := range cfg.Applications {
 		app := cfg.Applications[appName]
 		proj := ""
@@ -312,14 +312,93 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 				inline = append(inline, pairs...)
 			}
 		}
+
+		// Determine planned services for the app
+		plannedServices := []string{}
+		if doc, err := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil {
+			for s := range doc.Services {
+				plannedServices = append(plannedServices, s)
+			}
+			sort.Strings(plannedServices)
+		}
+		if len(plannedServices) == 0 {
+			if names, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil && len(names) > 0 {
+				plannedServices = append([]string(nil), names...)
+				sort.Strings(plannedServices)
+			}
+		}
+
+		// If no services determined, skip compose up entirely for this app
+		if len(plannedServices) == 0 {
+			continue
+		}
+
+		// Build map of running services
+		running := map[string]dockercli.ComposePsItem{}
+		if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
+			for _, it := range items {
+				running[it.Service] = it
+			}
+		}
+
+		// Decide if apply is needed for this app
+		applyNeeded := false
+		for _, s := range plannedServices {
+			it, ok := running[s]
+			// Service not running → need apply
+			if !ok {
+				applyNeeded = true
+				break
+			}
+			// Identifier label mismatch → need apply
+			if identifier != "" {
+				keys := []string{"io.dockform/" + identifier, "com.docker.compose.config-hash"}
+				labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, keys)
+				if _, ok := labels["io.dockform/"+identifier]; !ok {
+					applyNeeded = true
+					break
+				}
+				// Hash drift → need apply (only when computable)
+				desiredHash, derr := p.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, s, identifier, inline)
+				if derr == nil && desiredHash != "" {
+					runningHash := labels["com.docker.compose.config-hash"]
+					if runningHash == "" || runningHash != desiredHash {
+						applyNeeded = true
+						break
+					}
+				}
+			} else {
+				// No identifier configured; still check hash drift if available
+				desiredHash, derr := p.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, s, "", inline)
+				if derr == nil && desiredHash != "" {
+					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"com.docker.compose.config-hash"})
+					runningHash := labels["com.docker.compose.config-hash"]
+					if runningHash == "" || runningHash != desiredHash {
+						applyNeeded = true
+						break
+					}
+				}
+			}
+		}
+
+		if !applyNeeded {
+			// Nothing to do for this app
+			continue
+		}
+
+		// Perform compose up
 		if _, err := p.docker.ComposeUp(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err != nil {
 			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s", appName)
 		}
-		// Label running containers for this app with identifier (best-effort)
+
+		// Best-effort: ensure identifier label is present only for missing ones
 		if identifier != "" {
 			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
 				for _, it := range items {
-					_ = p.docker.UpdateContainerLabels(ctx, it.Name, map[string]string{"io.dockform/" + identifier: "1"})
+					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"io.dockform/" + identifier})
+					if _, ok := labels["io.dockform/"+identifier]; !ok {
+						_ = p.docker.UpdateContainerLabels(ctx, it.Name, map[string]string{"io.dockform/" + identifier: "1"})
+					}
 				}
 			}
 		}

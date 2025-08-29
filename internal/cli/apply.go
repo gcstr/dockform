@@ -43,6 +43,11 @@ func newApplyCmd() *cobra.Command {
 				}
 			}
 
+			// Skip Apply when there are no add/change operations and no assets configured
+			if !strings.Contains(out, "[add]") && !strings.Contains(out, "[change]") && len(cfg.Assets) == 0 {
+				return nil
+			}
+
 			if err := planner.NewWithDocker(d).Apply(context.Background(), cfg); err != nil {
 				return err
 			}
