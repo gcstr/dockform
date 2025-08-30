@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestBuildLocalManifest_BasicAndExcludes(t *testing.T) {
+func TestBuildLocalIndex_BasicAndExcludes(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite := func(p, s string) {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -27,23 +27,23 @@ func TestBuildLocalManifest_BasicAndExcludes(t *testing.T) {
 	// symlink should be ignored
 	_ = os.Symlink(filepath.Join(dir, "a.txt"), filepath.Join(dir, "sub", "link-to-a"))
 
-	m, err := BuildLocalManifest(dir, "/target", []string{"ignore.txt", "*.bak", "temp*"})
+	i, err := BuildLocalIndex(dir, "/target", []string{"ignore.txt", "*.bak", "temp*"})
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	if m.Version != "v1" {
-		t.Fatalf("version: %s", m.Version)
+	if i.Version != "v1" {
+		t.Fatalf("version: %s", i.Version)
 	}
-	if m.Target != "/target" {
-		t.Fatalf("target: %s", m.Target)
+	if i.Target != "/target" {
+		t.Fatalf("target: %s", i.Target)
 	}
-	if m.TreeHash == "" {
+	if i.TreeHash == "" {
 		t.Fatalf("expected tree hash")
 	}
 
 	// Expect only a.txt and sub/b.txt
-	paths := make([]string, 0, len(m.Files))
-	for _, f := range m.Files {
+	paths := make([]string, 0, len(i.Files))
+	for _, f := range i.Files {
 		paths = append(paths, f.Path)
 	}
 	if runtime.GOOS == "windows" {
@@ -58,14 +58,14 @@ func TestBuildLocalManifest_BasicAndExcludes(t *testing.T) {
 	if len(paths) != len(want) {
 		t.Fatalf("paths len=%d want=%d (%v)", len(paths), len(want), paths)
 	}
-	for i, p := range paths {
-		if p != want[i] {
-			t.Fatalf("paths[%d]=%s want=%s (all=%v)", i, p, want[i], paths)
+	for i0, p := range paths {
+		if p != want[i0] {
+			t.Fatalf("paths[%d]=%s want=%s (all=%v)", i0, p, want[i0], paths)
 		}
 	}
 	// Ensure sizes are correct
 	sizes := map[string]int64{}
-	for _, f := range m.Files {
+	for _, f := range i.Files {
 		sizes[f.Path] = f.Size
 	}
 	if sizes["a.txt"] != 1 || sizes["sub/b.txt"] != 2 {
@@ -73,22 +73,22 @@ func TestBuildLocalManifest_BasicAndExcludes(t *testing.T) {
 	}
 }
 
-func TestParseManifestJSON_EmptyAndInvalid(t *testing.T) {
-	m, err := ParseManifestJSON("")
+func TestParseIndexJSON_EmptyAndInvalid(t *testing.T) {
+	i, err := ParseIndexJSON("")
 	if err != nil {
 		t.Fatalf("empty parse error: %v", err)
 	}
-	if m.Version != "v1" || m.Files != nil {
-		t.Fatalf("unexpected default: %+v", m)
+	if i.Version != "v1" || i.Files != nil {
+		t.Fatalf("unexpected default: %+v", i)
 	}
 
-	if _, err := ParseManifestJSON("{"); err == nil {
+	if _, err := ParseIndexJSON("{"); err == nil {
 		t.Fatalf("expected error for invalid json")
 	}
 }
 
-func TestManifest_ToJSON_RoundTrip(t *testing.T) {
-	m := Manifest{
+func TestIndex_ToJSON_RoundTrip(t *testing.T) {
+	i := Index{
 		Version:  "v1",
 		Target:   "/t",
 		Exclude:  []string{"*.tmp"},
@@ -97,20 +97,20 @@ func TestManifest_ToJSON_RoundTrip(t *testing.T) {
 		Files:    []FileEntry{{Path: "a.txt", Size: 1, Sha256: "aa"}, {Path: "b.txt", Size: 2, Sha256: "bb"}},
 		TreeHash: "hash",
 	}
-	s, err := m.ToJSON()
+	s, err := i.ToJSON()
 	if err != nil {
 		t.Fatalf("to json: %v", err)
 	}
-	m2, err := ParseManifestJSON(s)
+	i2, err := ParseIndexJSON(s)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if m2.Target != m.Target || m2.UID != m.UID || m2.GID != m.GID || len(m2.Files) != len(m.Files) {
-		t.Fatalf("round trip mismatch: %+v vs %+v", m2, m)
+	if i2.Target != i.Target || i2.UID != i.UID || i2.GID != i.GID || len(i2.Files) != len(i.Files) {
+		t.Fatalf("round trip mismatch: %+v vs %+v", i2, i)
 	}
 }
 
-func TestDiffManifests_CreateUpdateDelete_AndNoChange(t *testing.T) {
+func TestDiffIndexes_CreateUpdateDelete_AndNoChange(t *testing.T) {
 	// Build local from real files to ensure stable ordering
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("NEW"), 0o644); err != nil {
@@ -119,20 +119,20 @@ func TestDiffManifests_CreateUpdateDelete_AndNoChange(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("B"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	local, err := BuildLocalManifest(dir, "/t", nil)
+	local, err := BuildLocalIndex(dir, "/t", nil)
 	if err != nil {
 		t.Fatalf("build local: %v", err)
 	}
 
 	// Case: no change -> empty diff
-	d0 := DiffManifests(local, local)
+	d0 := DiffIndexes(local, local)
 	if len(d0.ToCreate) != 0 || len(d0.ToUpdate) != 0 || len(d0.ToDelete) != 0 {
-		t.Fatalf("expected empty diff for equal manifests: %+v", d0)
+		t.Fatalf("expected empty diff for equal indexes: %+v", d0)
 	}
 
 	// Remote: has a.txt with different size/hash, and has extra c.txt; missing b.txt
-	remote := Manifest{Version: "v1", Target: "/t", Files: []FileEntry{{Path: "a.txt", Size: 1, Sha256: "old"}, {Path: "c.txt", Size: 1, Sha256: "ccc"}}}
-	d := DiffManifests(local, remote)
+	remote := Index{Version: "v1", Target: "/t", Files: []FileEntry{{Path: "a.txt", Size: 1, Sha256: "old"}, {Path: "c.txt", Size: 1, Sha256: "ccc"}}}
+	d := DiffIndexes(local, remote)
 	// ToCreate should include b.txt; ToUpdate include a.txt; ToDelete include c.txt
 	has := func(paths []FileEntry, p string) bool {
 		for _, f := range paths {
@@ -160,10 +160,10 @@ func TestDiffManifests_CreateUpdateDelete_AndNoChange(t *testing.T) {
 		t.Fatalf("expected delete c.txt: %+v", d)
 	}
 	// Ensure sorted order within groups
-	if !sort.SliceIsSorted(d.ToCreate, func(i, j int) bool { return d.ToCreate[i].Path < d.ToCreate[j].Path }) {
+	if !sort.SliceIsSorted(d.ToCreate, func(i0, j int) bool { return d.ToCreate[i0].Path < d.ToCreate[j].Path }) {
 		t.Fatalf("create not sorted: %+v", d.ToCreate)
 	}
-	if !sort.SliceIsSorted(d.ToUpdate, func(i, j int) bool { return d.ToUpdate[i].Path < d.ToUpdate[j].Path }) {
+	if !sort.SliceIsSorted(d.ToUpdate, func(i0, j int) bool { return d.ToUpdate[i0].Path < d.ToUpdate[j].Path }) {
 		t.Fatalf("update not sorted: %+v", d.ToUpdate)
 	}
 	if !sort.StringsAreSorted(d.ToDelete) {
@@ -171,7 +171,7 @@ func TestDiffManifests_CreateUpdateDelete_AndNoChange(t *testing.T) {
 	}
 }
 
-func TestBuildLocalManifest_DirectoryPatternsAndGlobDoubleStar(t *testing.T) {
+func TestBuildLocalIndex_DirectoryPatternsAndGlobDoubleStar(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite := func(p, s string) {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -187,12 +187,12 @@ func TestBuildLocalManifest_DirectoryPatternsAndGlobDoubleStar(t *testing.T) {
 	mustWrite(filepath.Join(dir, "secrets", "secret.txt"), "S")
 
 	// Exclude tmp/** subtree and secrets/ directory via trailing slash semantics
-	m, err := BuildLocalManifest(dir, "/assets", []string{"tmp/**", "secrets/"})
+	i, err := BuildLocalIndex(dir, "/assets", []string{"tmp/**", "secrets/"})
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	got := make([]string, 0, len(m.Files))
-	for _, f := range m.Files {
+	got := make([]string, 0, len(i.Files))
+	for _, f := range i.Files {
 		got = append(got, f.Path)
 	}
 	sort.Strings(got)
@@ -202,7 +202,7 @@ func TestBuildLocalManifest_DirectoryPatternsAndGlobDoubleStar(t *testing.T) {
 	}
 }
 
-func TestBuildLocalManifest_DeterministicTwice(t *testing.T) {
+func TestBuildLocalIndex_DeterministicTwice(t *testing.T) {
 	dir := t.TempDir()
 	files := []struct{ p, s string }{
 		{"a.txt", "1"},
@@ -220,19 +220,19 @@ func TestBuildLocalManifest_DeterministicTwice(t *testing.T) {
 		}
 	}
 	excludes := []string{"**/.DS_Store", "*.bak", "c/"}
-	m1, err := BuildLocalManifest(dir, "/t", excludes)
+	i1, err := BuildLocalIndex(dir, "/t", excludes)
 	if err != nil {
-		t.Fatalf("m1: %v", err)
+		t.Fatalf("i1: %v", err)
 	}
-	m2, err := BuildLocalManifest(dir, "/t", excludes)
+	i2, err := BuildLocalIndex(dir, "/t", excludes)
 	if err != nil {
-		t.Fatalf("m2: %v", err)
+		t.Fatalf("i2: %v", err)
 	}
-	if m1.TreeHash != m2.TreeHash {
-		t.Fatalf("tree hash mismatch: %s vs %s", m1.TreeHash, m2.TreeHash)
+	if i1.TreeHash != i2.TreeHash {
+		t.Fatalf("tree hash mismatch: %s vs %s", i1.TreeHash, i2.TreeHash)
 	}
 	// Ensure files are sorted lexicographically
-	if !sort.SliceIsSorted(m1.Files, func(i, j int) bool { return m1.Files[i].Path < m1.Files[j].Path }) {
-		t.Fatalf("files not sorted: %+v", m1.Files)
+	if !sort.SliceIsSorted(i1.Files, func(i0, j int) bool { return i1.Files[i0].Path < i1.Files[j].Path }) {
+		t.Fatalf("files not sorted: %+v", i1.Files)
 	}
 }

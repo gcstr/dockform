@@ -13,7 +13,7 @@ import (
 	"github.com/gcstr/dockform/internal/util"
 )
 
-const ManifestFileName = ".dockform-manifest.json"
+const IndexFileName = ".dockform-index.json"
 
 type FileEntry struct {
 	Path   string `json:"path"`
@@ -21,7 +21,7 @@ type FileEntry struct {
 	Sha256 string `json:"sha256"`
 }
 
-type Manifest struct {
+type Index struct {
 	Version   string      `json:"version"`
 	Target    string      `json:"target_path"`
 	CreatedAt string      `json:"created_at"`
@@ -32,8 +32,8 @@ type Manifest struct {
 	TreeHash  string      `json:"tree_hash"`
 }
 
-func BuildLocalManifest(sourceDir string, targetPath string, excludes []string) (Manifest, error) {
-	m := Manifest{
+func BuildLocalIndex(sourceDir string, targetPath string, excludes []string) (Index, error) {
+	i := Index{
 		Version:   "v1",
 		Target:    targetPath,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
@@ -45,8 +45,8 @@ func BuildLocalManifest(sourceDir string, targetPath string, excludes []string) 
 
 	// Normalize and freeze exclude patterns for determinism
 	normEx := normalizeExcludePatterns(excludes)
-	// Persist effective excludes into the manifest
-	m.Exclude = append(m.Exclude, normEx...)
+	// Persist effective excludes into the index
+	i.Exclude = append(i.Exclude, normEx...)
 	files := []FileEntry{}
 
 	// Exclude matcher using doublestar against slash-normalized relative paths
@@ -106,10 +106,10 @@ func BuildLocalManifest(sourceDir string, targetPath string, excludes []string) 
 		return nil
 	})
 	if err != nil {
-		return Manifest{}, err
+		return Index{}, err
 	}
-	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-	m.Files = files
+	sort.Slice(files, func(i0, j int) bool { return files[i0].Path < files[j].Path })
+	i.Files = files
 	// Build tree hash: path + "\x00" + size + "\x00" + sha256 + "\n"
 	var b strings.Builder
 	for _, f := range files {
@@ -120,8 +120,8 @@ func BuildLocalManifest(sourceDir string, targetPath string, excludes []string) 
 		b.WriteString(f.Sha256)
 		b.WriteByte('\n')
 	}
-	m.TreeHash = util.Sha256StringHex(b.String())
-	return m, nil
+	i.TreeHash = util.Sha256StringHex(b.String())
+	return i, nil
 }
 
 // normalizeExcludePatterns returns a deterministic slice of patterns normalized to gitignore-like semantics:
@@ -158,19 +158,19 @@ func normalizeExcludePatterns(in []string) []string {
 	return out
 }
 
-func ParseManifestJSON(s string) (Manifest, error) {
+func ParseIndexJSON(s string) (Index, error) {
 	if strings.TrimSpace(s) == "" {
-		return Manifest{Version: "v1", Files: nil}, nil
+		return Index{Version: "v1", Files: nil}, nil
 	}
-	var m Manifest
-	if err := json.Unmarshal([]byte(s), &m); err != nil {
-		return Manifest{}, err
+	var i Index
+	if err := json.Unmarshal([]byte(s), &i); err != nil {
+		return Index{}, err
 	}
-	return m, nil
+	return i, nil
 }
 
-func (m Manifest) ToJSON() (string, error) {
-	b, err := json.Marshal(m)
+func (i Index) ToJSON() (string, error) {
+	b, err := json.Marshal(i)
 	if err != nil {
 		return "", err
 	}
@@ -183,7 +183,7 @@ type Diff struct {
 	ToDelete []string
 }
 
-func DiffManifests(local, remote Manifest) Diff {
+func DiffIndexes(local, remote Index) Diff {
 	if local.TreeHash != "" && local.TreeHash == remote.TreeHash {
 		return Diff{}
 	}
@@ -208,8 +208,8 @@ func DiffManifests(local, remote Manifest) Diff {
 			d.ToDelete = append(d.ToDelete, rf.Path)
 		}
 	}
-	sort.Slice(d.ToCreate, func(i, j int) bool { return d.ToCreate[i].Path < d.ToCreate[j].Path })
-	sort.Slice(d.ToUpdate, func(i, j int) bool { return d.ToUpdate[i].Path < d.ToUpdate[j].Path })
+	sort.Slice(d.ToCreate, func(i0, j int) bool { return d.ToCreate[i0].Path < d.ToCreate[j].Path })
+	sort.Slice(d.ToUpdate, func(i0, j int) bool { return d.ToUpdate[i0].Path < d.ToUpdate[j].Path })
 	sort.Strings(d.ToDelete)
 	return d
 }

@@ -15,7 +15,7 @@ import (
 
 // withFilesetsDockerStub installs a minimal docker stub that supports the subset
 // of commands used by filesets planning/apply. It uses REMOTE_JSON env to serve
-// the remote manifest content and DOCKER_STUB_LOG to log operations.
+// the remote index content and DOCKER_STUB_LOG to log operations.
 func withFilesetsDockerStub(t *testing.T) func() {
 	t.Helper()
 	dir := t.TempDir()
@@ -28,8 +28,8 @@ case "$cmd" in
     if [ "$sub" = "ls" ]; then echo "data"; exit 0; fi ;;
   run)
     # WriteFileToVolume: detect cat > and log
-    for a in "$@"; do echo "$a" | grep -q "cat > "; if [ $? -eq 0 ]; then echo "write_manifest" >> "$log"; exit 0; fi; done
-    # ReadFileFromVolume: cat manifest (non-redirect)
+    for a in "$@"; do echo "$a" | grep -q "cat > "; if [ $? -eq 0 ]; then echo "write_index" >> "$log"; exit 0; fi; done
+    # ReadFileFromVolume: cat index (non-redirect)
     for a in "$@"; do echo "$a" | grep -q "cat "; if [ $? -eq 0 ]; then printf '%s' "$REMOTE_JSON"; exit 0; fi; done
     # Extract tar
     for a in "$@"; do echo "$a" | grep -q "tar -xpf" && { echo "extract" >> "$log"; exit 0; }; done
@@ -67,13 +67,13 @@ func TestBuildPlan_Filesets_DiffChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "b.txt"), []byte("B"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	local, err := filesets.BuildLocalManifest(src, "/target", nil)
+	local, err := filesets.BuildLocalIndex(src, "/target", nil)
 	if err != nil {
-		t.Fatalf("build local manifest: %v", err)
+		t.Fatalf("build local index: %v", err)
 	}
 
-	// Remote manifest: c.txt extra (should delete). Keep a.txt absent so it appears as create
-	remote := filesets.Manifest{Version: "v1", Target: "/target", Files: []filesets.FileEntry{
+	// Remote index: c.txt extra (should delete). Keep a.txt absent so it appears as create
+	remote := filesets.Index{Version: "v1", Target: "/target", Files: []filesets.FileEntry{
 		{Path: "c.txt", Size: 1, Sha256: "cafebabe"},
 	}}
 	remoteJSON, err := remote.ToJSON()
@@ -110,7 +110,7 @@ func TestBuildPlan_Filesets_NoChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "index.html"), []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	local, err := filesets.BuildLocalManifest(src, "/site", nil)
+	local, err := filesets.BuildLocalIndex(src, "/site", nil)
 	if err != nil {
 		t.Fatalf("build local: %v", err)
 	}
@@ -141,17 +141,17 @@ func TestBuildPlan_Filesets_NoChanges(t *testing.T) {
 }
 
 func TestApply_Filesets_SyncAndRestart(t *testing.T) {
-	// Local has foo.txt; remote has bar.txt -> expect create foo, delete bar, write manifest, then restart
+	// Local has foo.txt; remote has bar.txt -> expect create foo, delete bar, write index, then restart
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "foo.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	local, err := filesets.BuildLocalManifest(src, "/opt/data", nil)
+	local, err := filesets.BuildLocalIndex(src, "/opt/data", nil)
 	if err != nil {
 		t.Fatalf("build local: %v", err)
 	}
 	// Remote contains only bar.txt
-	remote := filesets.Manifest{Version: "v1", Target: "/opt/data", Files: []filesets.FileEntry{{Path: "bar.txt", Size: 1, Sha256: "abcd"}}}
+	remote := filesets.Index{Version: "v1", Target: "/opt/data", Files: []filesets.FileEntry{{Path: "bar.txt", Size: 1, Sha256: "abcd"}}}
 	remoteJSON, err := remote.ToJSON()
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -180,8 +180,8 @@ func TestApply_Filesets_SyncAndRestart(t *testing.T) {
 	if !strings.Contains(s, "extract") {
 		t.Fatalf("expected tar extract logged; got: %s", s)
 	}
-	if !strings.Contains(s, "write_manifest") {
-		t.Fatalf("expected manifest write logged; got: %s", s)
+	if !strings.Contains(s, "write_index") {
+		t.Fatalf("expected index write logged; got: %s", s)
 	}
 	if !strings.Contains(s, "restart app_nginx_1") && !strings.Contains(s, "restart nginx") {
 		t.Fatalf("expected restart logged; got: %s", s)

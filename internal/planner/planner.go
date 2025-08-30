@@ -202,24 +202,24 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 		}
 	}
 
-	// Filesets: show per-file changes using remote manifest when available
+	// Filesets: show per-file changes using remote index when available
 	if p.docker != nil && len(cfg.Filesets) > 0 {
 		filesetNames := sortedKeys(cfg.Filesets)
 		for _, name := range filesetNames {
 			a := cfg.Filesets[name]
-			// Build local manifest
-			local, err := filesets.BuildLocalManifest(a.SourceAbs, a.TargetPath, a.Exclude)
+			// Build local index
+			local, err := filesets.BuildLocalIndex(a.SourceAbs, a.TargetPath, a.Exclude)
 			if err != nil {
 				lines = append(lines, ui.Line(ui.Change, "fileset %s: unable to index local files: %v", name, err))
 				continue
 			}
-			// Read remote manifest only if the target volume exists. Avoid docker run -v implicit creation during plan.
+			// Read remote index only if the target volume exists. Avoid docker run -v implicit creation during plan.
 			raw := ""
 			if ok, err := p.docker.VolumeExists(ctx, a.TargetVolume); err == nil && ok {
-				raw, _ = p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.ManifestFileName)
+				raw, _ = p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
 			}
-			remote, _ := filesets.ParseManifestJSON(raw)
-			diff := filesets.DiffManifests(local, remote)
+			remote, _ := filesets.ParseIndexJSON(raw)
+			diff := filesets.DiffIndexes(local, remote)
 			if local.TreeHash == remote.TreeHash {
 				lines = append(lines, ui.Line(ui.Noop, "fileset %s: no file changes", name))
 				continue
@@ -296,7 +296,7 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 		}
 	}
 
-	// Sync filesets into volumes selectively using manifest
+	// Sync filesets into volumes selectively using index
 	if len(cfg.Filesets) > 0 {
 		filesetNames := make([]string, 0, len(cfg.Filesets))
 		for n := range cfg.Filesets {
@@ -308,14 +308,14 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 			if a.SourceAbs == "" {
 				return apperr.New("planner.Apply", apperr.InvalidInput, "fileset %s: resolved source path is empty", n)
 			}
-			// Local and remote manifests
-			local, err := filesets.BuildLocalManifest(a.SourceAbs, a.TargetPath, a.Exclude)
+			// Local and remote indexes
+			local, err := filesets.BuildLocalIndex(a.SourceAbs, a.TargetPath, a.Exclude)
 			if err != nil {
 				return apperr.Wrap("planner.Apply", apperr.Internal, err, "index local filesets for %s", n)
 			}
-			raw, _ := p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.ManifestFileName)
-			remote, _ := filesets.ParseManifestJSON(raw)
-			diff := filesets.DiffManifests(local, remote)
+			raw, _ := p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
+			remote, _ := filesets.ParseIndexJSON(raw)
+			diff := filesets.DiffIndexes(local, remote)
 			// If completely equal, skip
 			if local.TreeHash == remote.TreeHash {
 				continue
@@ -345,13 +345,13 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 					return apperr.Wrap("planner.Apply", apperr.External, err, "delete files for fileset %s", n)
 				}
 			}
-			// Write manifest last (not part of tree)
+			// Write index last (not part of tree)
 			jsonStr, err := local.ToJSON()
 			if err != nil {
-				return apperr.Wrap("planner.Apply", apperr.Internal, err, "encode manifest for %s", n)
+				return apperr.Wrap("planner.Apply", apperr.Internal, err, "encode index for %s", n)
 			}
-			if err := p.docker.WriteFileToVolume(ctx, a.TargetVolume, a.TargetPath, filesets.ManifestFileName, jsonStr); err != nil {
-				return apperr.Wrap("planner.Apply", apperr.External, err, "write manifest for fileset %s", n)
+			if err := p.docker.WriteFileToVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName, jsonStr); err != nil {
+				return apperr.Wrap("planner.Apply", apperr.External, err, "write index for fileset %s", n)
 			}
 
 			// Restart services if configured for this fileset group
