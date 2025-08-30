@@ -132,7 +132,7 @@ func TestExecute_ReturnCodes_ByErrorKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(badFile.Name())
+	defer func() { _ = os.Remove(badFile.Name()) }()
 	_, _ = badFile.WriteString("docker: 123\n")
 	_ = badFile.Close()
 	oldArgs := os.Args
