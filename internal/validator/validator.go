@@ -8,15 +8,15 @@ import (
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
-	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/manifest"
 )
 
 // Validate performs comprehensive validation of the user config and environment.
-// - Verifies docker daemon connectivity for the configured context
+// - Verifies docker daemon liveness for the configured context
 // - Ensures application roots and referenced files exist (compose files, env files, sops secrets)
 // - Verifies SOPS key file exists when SOPS is configured
-func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error {
+func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) error {
 	// 1) Docker daemon liveness
 	if err := d.CheckDaemon(ctx); err != nil {
 		return err
@@ -122,7 +122,7 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 	// 6) Filesets: ensure sources exist and are directories
 	for name, a := range cfg.Filesets {
 		if a.SourceAbs == "" {
-			return apperr.Wrap("validator.Validate", apperr.InvalidInput, config.ErrMissingRequired, "fileset %s: source path is required", name)
+			return apperr.Wrap("validator.Validate", apperr.InvalidInput, manifest.ErrMissingRequired, "fileset %s: source path is required", name)
 		}
 		st, err := os.Stat(a.SourceAbs)
 		if err != nil {

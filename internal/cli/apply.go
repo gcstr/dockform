@@ -6,8 +6,8 @@ import (
 
 	"strings"
 
-	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/planner"
 	"github.com/gcstr/dockform/internal/validator"
 	"github.com/spf13/cobra"
@@ -19,7 +19,7 @@ func newApplyCmd() *cobra.Command {
 		Short: "Apply the desired state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
-			cfg, err := config.Load(file)
+			cfg, err := manifest.Load(file)
 			if err != nil {
 				return err
 			}

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/filesets"
+	"github.com/gcstr/dockform/internal/manifest"
 )
 
 // withFilesetsDockerStub installs a minimal docker stub that supports the subset
@@ -88,7 +88,7 @@ func TestBuildPlan_Filesets_DiffChanges(t *testing.T) {
 	_ = os.Setenv("REMOTE_JSON", remoteJSON)
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
-	cfg := config.Config{Docker: config.DockerConfig{Identifier: ""}, Filesets: map[string]config.FilesetSpec{
+	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: ""}, Filesets: map[string]manifest.FilesetSpec{
 		"web": {SourceAbs: src, TargetVolume: "data", TargetPath: "/target"},
 	}}
 	d := dockercli.New("")
@@ -126,7 +126,7 @@ func TestBuildPlan_Filesets_NoChanges(t *testing.T) {
 	_ = os.Setenv("REMOTE_JSON", remoteJSON)
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
-	cfg := config.Config{Volumes: map[string]config.TopLevelResourceSpec{"data": {}}, Filesets: map[string]config.FilesetSpec{
+	cfg := manifest.Config{Volumes: map[string]manifest.TopLevelResourceSpec{"data": {}}, Filesets: map[string]manifest.FilesetSpec{
 		"site": {SourceAbs: src, TargetVolume: "data", TargetPath: "/site"},
 	}}
 	d := dockercli.New("")
@@ -164,11 +164,11 @@ func TestApply_Filesets_SyncAndRestart(t *testing.T) {
 	_ = os.Setenv("REMOTE_JSON", remoteJSON)
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
-	cfg := config.Config{
-		Docker:   config.DockerConfig{Identifier: "demo"},
-		Filesets: map[string]config.FilesetSpec{"data": {SourceAbs: src, TargetVolume: "data", TargetPath: "/opt/data", RestartServices: []string{"nginx"}}},
-		Volumes:  map[string]config.TopLevelResourceSpec{},
-		Networks: map[string]config.TopLevelResourceSpec{},
+	cfg := manifest.Config{
+		Docker:   manifest.DockerConfig{Identifier: "demo"},
+		Filesets: map[string]manifest.FilesetSpec{"data": {SourceAbs: src, TargetVolume: "data", TargetPath: "/opt/data", RestartServices: []string{"nginx"}}},
+		Volumes:  map[string]manifest.TopLevelResourceSpec{},
+		Networks: map[string]manifest.TopLevelResourceSpec{},
 	}
 	d := dockercli.New("").WithIdentifier("demo")
 	if err := NewWithDocker(d).Apply(context.Background(), cfg); err != nil {

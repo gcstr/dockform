@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/gcstr/dockform/internal/config"
+	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +23,7 @@ func newManifestRenderCmd() *cobra.Command {
 		Short: "Render the manifest with environment variables interpolated",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
-			out, err := config.Render(file)
+			out, err := manifest.Render(file)
 			if err != nil {
 				return err
 			}

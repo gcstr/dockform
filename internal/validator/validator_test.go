@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/manifest"
 )
 
 // writeDockerStub creates a minimal stub 'docker' script that simulates daemon liveness
@@ -127,7 +127,7 @@ applications:
 `)
 	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
 
-	cfg, err := config.Load(tmp)
+	cfg, err := manifest.Load(tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -164,7 +164,7 @@ environment:
     - missing.env
 `)
 	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
-	cfg, err := config.Load(tmp)
+	cfg, err := manifest.Load(tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -199,7 +199,7 @@ applications:
       - docker-compose.yaml
 `)
 	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
-	cfg, err := config.Load(tmp)
+	cfg, err := manifest.Load(tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -240,7 +240,7 @@ applications:
       - docker-compose.yaml
 `)
 	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
-	cfg, err := config.Load(tmp)
+	cfg, err := manifest.Load(tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -272,7 +272,7 @@ applications:
       - docker-compose.yaml
 `)
 	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
-	cfg, err := config.Load(tmp)
+	cfg, err := manifest.Load(tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -307,7 +307,7 @@ applications:
       - docker-compose.yaml
 `)
 	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
-	cfg, err := config.Load(tmp)
+	cfg, err := manifest.Load(tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -343,7 +343,7 @@ applications:
         - vars.env
 `)
 	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
-	cfg, err := config.Load(tmp)
+	cfg, err := manifest.Load(tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -378,7 +378,7 @@ applications:
         - secrets.env
 `)
 	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
-	cfg, err := config.Load(tmp)
+	cfg, err := manifest.Load(tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -411,7 +411,7 @@ applications:
       - docker-compose.yaml
 `)
 	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
-	cfg, err := config.Load(tmp)
+	cfg, err := manifest.Load(tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -439,7 +439,7 @@ applications:
 	if err := os.WriteFile(filepath.Join(tmp, "dockform.yml"), yml, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(tmp)
+	cfg, err := manifest.Load(tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -451,12 +451,12 @@ applications:
 
 func TestValidate_Assets_SourceRequired(t *testing.T) {
 	defer withStubDocker(t)()
-	cfg := config.Config{
-		Docker:       config.DockerConfig{Context: "default", Identifier: "test-id"},
-		Volumes:      map[string]config.TopLevelResourceSpec{"v": {}},
-		Networks:     map[string]config.TopLevelResourceSpec{},
-		Applications: map[string]config.Application{},
-		Filesets:     map[string]config.FilesetSpec{"a": {SourceAbs: "", TargetVolume: "v", TargetPath: "/t"}},
+	cfg := manifest.Config{
+		Docker:       manifest.DockerConfig{Context: "default", Identifier: "test-id"},
+		Volumes:      map[string]manifest.TopLevelResourceSpec{"v": {}},
+		Networks:     map[string]manifest.TopLevelResourceSpec{},
+		Applications: map[string]manifest.Application{},
+		Filesets:     map[string]manifest.FilesetSpec{"a": {SourceAbs: "", TargetVolume: "v", TargetPath: "/t"}},
 	}
 	d := dockercli.New(cfg.Docker.Context)
 	if err := Validate(context.Background(), cfg, d); err == nil {
@@ -468,14 +468,14 @@ func TestValidate_Assets_SourceNotFound_AndNotDir(t *testing.T) {
 	defer withStubDocker(t)()
 	tmp := t.TempDir()
 	d := dockercli.New("")
-	cfg := config.Config{
-		Docker:       config.DockerConfig{Context: "default", Identifier: "test-id"},
-		Volumes:      map[string]config.TopLevelResourceSpec{"v": {}},
-		Networks:     map[string]config.TopLevelResourceSpec{},
-		Applications: map[string]config.Application{},
+	cfg := manifest.Config{
+		Docker:       manifest.DockerConfig{Context: "default", Identifier: "test-id"},
+		Volumes:      map[string]manifest.TopLevelResourceSpec{"v": {}},
+		Networks:     map[string]manifest.TopLevelResourceSpec{},
+		Applications: map[string]manifest.Application{},
 	}
 	// Not found
-	cfg.Filesets = map[string]config.FilesetSpec{"a": {SourceAbs: filepath.Join(tmp, "missing"), TargetVolume: "v", TargetPath: "/t"}}
+	cfg.Filesets = map[string]manifest.FilesetSpec{"a": {SourceAbs: filepath.Join(tmp, "missing"), TargetVolume: "v", TargetPath: "/t"}}
 	if err := Validate(context.Background(), cfg, d); err == nil {
 		t.Fatalf("expected fileset not found error")
 	}
@@ -484,7 +484,7 @@ func TestValidate_Assets_SourceNotFound_AndNotDir(t *testing.T) {
 	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg.Filesets = map[string]config.FilesetSpec{"a": {SourceAbs: filePath, TargetVolume: "v", TargetPath: "/t"}}
+	cfg.Filesets = map[string]manifest.FilesetSpec{"a": {SourceAbs: filePath, TargetVolume: "v", TargetPath: "/t"}}
 	if err := Validate(context.Background(), cfg, d); err == nil {
 		t.Fatalf("expected fileset not a directory error")
 	}
@@ -508,7 +508,7 @@ applications:
 	if err := os.WriteFile(filepath.Join(tmp, "dockform.yml"), yml, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(tmp)
+	cfg, err := manifest.Load(tmp)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

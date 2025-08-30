@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/planner"
 	"github.com/gcstr/dockform/internal/validator"
 	"github.com/spf13/cobra"
@@ -19,11 +19,11 @@ func newPlanCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
 			prune, _ := cmd.Flags().GetBool("prune")
-			cfg, err := config.Load(file)
+
+			cfg, err := manifest.Load(file)
 			if err != nil {
 				return err
 			}
-			// Use Docker context from config and scope by identifier if present
 			d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
 			if err := validator.Validate(context.Background(), cfg, d); err != nil {
 				return err
@@ -44,6 +44,6 @@ func newPlanCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().Bool("prune", false, "Show removal guidance if not set; no deletions occur in plan mode")
+	cmd.Flags().Bool("prune", false, "Show removals that would be applied with --prune")
 	return cmd
 }

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/manifest"
 )
 
 func writeDockerStubFile(t *testing.T, dir string, script string) string {
@@ -154,13 +154,13 @@ exit 0
 
 func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 	defer withPlannerDockerStub_Basic(t)()
-	cfg := config.Config{
-		Docker: config.DockerConfig{Context: "", Identifier: "demo"},
-		Applications: map[string]config.Application{
+	cfg := manifest.Config{
+		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
+		Applications: map[string]manifest.Application{
 			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
-		Volumes:  map[string]config.TopLevelResourceSpec{"v1": {}},
-		Networks: map[string]config.TopLevelResourceSpec{"n1": {}},
+		Volumes:  map[string]manifest.TopLevelResourceSpec{"v1": {}},
+		Networks: map[string]manifest.TopLevelResourceSpec{"n1": {}},
 	}
 	d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
@@ -181,9 +181,9 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 
 func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
 	defer withPlannerDockerStub_Mismatch(t)()
-	cfg := config.Config{
-		Docker: config.DockerConfig{Context: "", Identifier: "demo"},
-		Applications: map[string]config.Application{
+	cfg := manifest.Config{
+		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
+		Applications: map[string]manifest.Application{
 			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
 	}
@@ -198,9 +198,9 @@ func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
 
 func TestApply_PropagatesVolumeListError(t *testing.T) {
 	defer withPlannerDockerStub_VolumeLsError(t)()
-	cfg := config.Config{
-		Docker:       config.DockerConfig{Context: "", Identifier: "demo"},
-		Applications: map[string]config.Application{},
+	cfg := manifest.Config{
+		Docker:       manifest.DockerConfig{Context: "", Identifier: "demo"},
+		Applications: map[string]manifest.Application{},
 	}
 	d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
 	err := NewWithDocker(d).Apply(context.Background(), cfg)

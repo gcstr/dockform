@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/planner"
 	"github.com/gcstr/dockform/internal/validator"
 	"github.com/spf13/cobra"
@@ -28,7 +28,7 @@ func newFilesetPlanCmd() *cobra.Command {
 		Short: "Show fileset diffs only",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
-			cfg, err := config.Load(file)
+			cfg, err := manifest.Load(file)
 			if err != nil {
 				return err
 			}
@@ -59,7 +59,7 @@ func newFilesetApplyCmd() *cobra.Command {
 		Short: "Apply fileset diffs only",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
-			cfg, err := config.Load(file)
+			cfg, err := manifest.Load(file)
 			if err != nil {
 				return err
 			}
@@ -79,7 +79,7 @@ func newFilesetApplyCmd() *cobra.Command {
 			// Apply only the fileset part. We reuse Planner.Apply but constrain to filesets
 			// by creating a copy of config with applications cleared so only filesets + top-level are touched.
 			cfgApps := cfg.Applications
-			cfg.Applications = map[string]config.Application{}
+			cfg.Applications = map[string]manifest.Application{}
 			defer func() { cfg.Applications = cfgApps }()
 			if err := planner.NewWithDocker(d).Apply(context.Background(), cfg); err != nil {
 				return err

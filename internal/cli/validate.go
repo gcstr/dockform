@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/validator"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +16,7 @@ func newValidateCmd() *cobra.Command {
 		Short: "Validate configuration and environment",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
-			cfg, err := config.Load(file)
+			cfg, err := manifest.Load(file)
 			if err != nil {
 				return err
 			}

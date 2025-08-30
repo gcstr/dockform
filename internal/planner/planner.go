@@ -8,9 +8,9 @@ import (
 	"sort"
 
 	"github.com/gcstr/dockform/internal/apperr"
-	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/filesets"
+	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/secrets"
 	"github.com/gcstr/dockform/internal/ui"
 	"github.com/gcstr/dockform/internal/util"
@@ -32,7 +32,7 @@ func NewWithDocker(client *dockercli.Client) *Planner { return &Planner{docker: 
 
 // BuildPlan currently produces a minimal plan for top-level volumes and networks.
 // Future: inspect docker for current state and diff services/apps.
-func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, error) {
+func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, error) {
 	var lines []ui.DiffLine
 
 	// Accumulate existing sets when docker client is available
@@ -269,7 +269,7 @@ func sortedKeys[T any](m map[string]T) []string {
 // Port comparison helpers removed in favor of hash-based comparison.
 
 // Apply creates missing top-level resources with labels and performs compose up, labeling containers with identifier.
-func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
+func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	if p.docker == nil {
 		return apperr.New("planner.Apply", apperr.Precondition, "docker client not configured")
 	}
@@ -515,7 +515,7 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 
 // Prune removes unmanaged resources labeled with the identifier.
 // It deletes volumes, networks, and containers that are labeled but not present in cfg.
-func (p *Planner) Prune(ctx context.Context, cfg config.Config) error {
+func (p *Planner) Prune(ctx context.Context, cfg manifest.Config) error {
 	if p.docker == nil {
 		return apperr.New("planner.Prune", apperr.Precondition, "docker client not configured")
 	}
