@@ -1,4 +1,4 @@
-package assets
+package filesets
 
 import (
 	"os"

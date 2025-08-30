@@ -12,20 +12,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newAssetCmd() *cobra.Command {
+func newFilesetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "asset",
-		Short: "Asset-only operations",
+		Use:   "filesets",
+		Short: "Fileset-only operations",
 	}
-	cmd.AddCommand(newAssetPlanCmd())
-	cmd.AddCommand(newAssetApplyCmd())
+	cmd.AddCommand(newFilesetPlanCmd())
+	cmd.AddCommand(newFilesetApplyCmd())
 	return cmd
 }
 
-func newAssetPlanCmd() *cobra.Command {
+func newFilesetPlanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plan",
-		Short: "Show asset diffs only",
+		Short: "Show fileset diffs only",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
 			cfg, err := config.Load(file)
@@ -41,9 +41,9 @@ func newAssetPlanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Filter plan output to only asset lines
+			// Filter plan output to only fileset lines
 			out := pln.String()
-			filtered := filterAssetLines(out)
+			filtered := filterFilesetLines(out)
 			if _, err := fmt.Fprintln(cmd.OutOrStdout(), filtered); err != nil {
 				return err
 			}
@@ -53,10 +53,10 @@ func newAssetPlanCmd() *cobra.Command {
 	return cmd
 }
 
-func newAssetApplyCmd() *cobra.Command {
+func newFilesetApplyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apply",
-		Short: "Apply asset diffs only",
+		Short: "Apply fileset diffs only",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
 			cfg, err := config.Load(file)
@@ -71,13 +71,13 @@ func newAssetApplyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Print only asset lines of the plan
+			// Print only fileset lines of the plan
 			out := pln.String()
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), filterAssetLines(out)); err != nil {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), filterFilesetLines(out)); err != nil {
 				return err
 			}
-			// Apply only the asset part. We reuse Planner.Apply but constrain to assets
-			// by creating a copy of config with applications cleared so only assets + top-level are touched.
+			// Apply only the fileset part. We reuse Planner.Apply but constrain to filesets
+			// by creating a copy of config with applications cleared so only filesets + top-level are touched.
 			cfgApps := cfg.Applications
 			cfg.Applications = map[string]config.Application{}
 			defer func() { cfg.Applications = cfgApps }()
@@ -90,17 +90,17 @@ func newAssetApplyCmd() *cobra.Command {
 	return cmd
 }
 
-func filterAssetLines(s string) string {
+func filterFilesetLines(s string) string {
 	lines := strings.Split(strings.TrimRight(s, "\r\n"), "\n")
 	out := make([]string, 0, len(lines))
 	for _, l := range lines {
-		// keep lines starting with asset plan messages
-		if strings.Contains(l, "asset ") {
+		// keep lines starting with fileset plan messages
+		if strings.Contains(l, "fileset ") {
 			out = append(out, l)
 		}
 	}
 	if len(out) == 0 {
-		return "[no-op] no assets defined or no asset changes"
+		return "[no-op] no filesets defined or no fileset changes"
 	}
 	return strings.Join(out, "\n")
 }

@@ -8,15 +8,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gcstr/dockform/internal/assets"
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/filesets"
 )
 
-// withAssetsDockerStub installs a minimal docker stub that supports the subset
-// of commands used by assets planning/apply. It uses REMOTE_JSON env to serve
+// withFilesetsDockerStub installs a minimal docker stub that supports the subset
+// of commands used by filesets planning/apply. It uses REMOTE_JSON env to serve
 // the remote manifest content and DOCKER_STUB_LOG to log operations.
-func withAssetsDockerStub(t *testing.T) func() {
+func withFilesetsDockerStub(t *testing.T) func() {
 	t.Helper()
 	dir := t.TempDir()
 	script := `#!/bin/sh
@@ -58,8 +58,8 @@ exit 0
 	return func() { _ = os.Setenv("PATH", oldPath) }
 }
 
-func TestBuildPlan_Assets_DiffChanges(t *testing.T) {
-	// Prepare local assets: a.txt (content A), b.txt (content B)
+func TestBuildPlan_Filesets_DiffChanges(t *testing.T) {
+	// Prepare local files: a.txt (content A), b.txt (content B)
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("A"), 0o644); err != nil {
 		t.Fatal(err)
@@ -67,13 +67,13 @@ func TestBuildPlan_Assets_DiffChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "b.txt"), []byte("B"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	local, err := assets.BuildLocalManifest(src, "/target", nil)
+	local, err := filesets.BuildLocalManifest(src, "/target", nil)
 	if err != nil {
 		t.Fatalf("build local manifest: %v", err)
 	}
 
 	// Remote manifest: c.txt extra (should delete). Keep a.txt absent so it appears as create
-	remote := assets.Manifest{Version: "v1", Target: "/target", Files: []assets.FileEntry{
+	remote := filesets.Manifest{Version: "v1", Target: "/target", Files: []filesets.FileEntry{
 		{Path: "c.txt", Size: 1, Sha256: "cafebabe"},
 	}}
 	remoteJSON, err := remote.ToJSON()
@@ -82,13 +82,13 @@ func TestBuildPlan_Assets_DiffChanges(t *testing.T) {
 	}
 
 	log := filepath.Join(t.TempDir(), "log.txt")
-	undo := withAssetsDockerStub(t)
+	undo := withFilesetsDockerStub(t)
 	defer undo()
 	_ = os.Setenv("DOCKER_STUB_LOG", log)
 	_ = os.Setenv("REMOTE_JSON", remoteJSON)
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
-	cfg := config.Config{Docker: config.DockerConfig{Identifier: ""}, Assets: map[string]config.AssetSpec{
+	cfg := config.Config{Docker: config.DockerConfig{Identifier: ""}, Filesets: map[string]config.FilesetSpec{
 		"web": {SourceAbs: src, TargetVolume: "data", TargetPath: "/target"},
 	}}
 	d := dockercli.New("")
@@ -98,19 +98,19 @@ func TestBuildPlan_Assets_DiffChanges(t *testing.T) {
 	}
 	out := pln.String()
 	// Expect create for both local files and delete for c.txt
-	mustContain(t, out, "asset web: create a.txt")
-	mustContain(t, out, "asset web: create b.txt")
-	mustContain(t, out, "asset web: delete c.txt")
+	mustContain(t, out, "fileset web: create a.txt")
+	mustContain(t, out, "fileset web: create b.txt")
+	mustContain(t, out, "fileset web: delete c.txt")
 	_ = local // silence unused in case of future ref
 }
 
-func TestBuildPlan_Assets_NoChanges(t *testing.T) {
+func TestBuildPlan_Filesets_NoChanges(t *testing.T) {
 	// Local and remote are equal
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "index.html"), []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	local, err := assets.BuildLocalManifest(src, "/site", nil)
+	local, err := filesets.BuildLocalManifest(src, "/site", nil)
 	if err != nil {
 		t.Fatalf("build local: %v", err)
 	}
@@ -120,13 +120,13 @@ func TestBuildPlan_Assets_NoChanges(t *testing.T) {
 	}
 
 	log := filepath.Join(t.TempDir(), "log.txt")
-	undo := withAssetsDockerStub(t)
+	undo := withFilesetsDockerStub(t)
 	defer undo()
 	_ = os.Setenv("DOCKER_STUB_LOG", log)
 	_ = os.Setenv("REMOTE_JSON", remoteJSON)
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
-	cfg := config.Config{Volumes: map[string]config.TopLevelResourceSpec{"data": {}}, Assets: map[string]config.AssetSpec{
+	cfg := config.Config{Volumes: map[string]config.TopLevelResourceSpec{"data": {}}, Filesets: map[string]config.FilesetSpec{
 		"site": {SourceAbs: src, TargetVolume: "data", TargetPath: "/site"},
 	}}
 	d := dockercli.New("")
@@ -135,30 +135,30 @@ func TestBuildPlan_Assets_NoChanges(t *testing.T) {
 		t.Fatalf("build plan: %v", err)
 	}
 	out := pln.String()
-	if !strings.Contains(out, "asset site: no file changes") {
+	if !strings.Contains(out, "fileset site: no file changes") {
 		t.Fatalf("expected no file changes line; got:\n%s", out)
 	}
 }
 
-func TestApply_Assets_SyncAndRestart(t *testing.T) {
+func TestApply_Filesets_SyncAndRestart(t *testing.T) {
 	// Local has foo.txt; remote has bar.txt -> expect create foo, delete bar, write manifest, then restart
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "foo.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	local, err := assets.BuildLocalManifest(src, "/opt/data", nil)
+	local, err := filesets.BuildLocalManifest(src, "/opt/data", nil)
 	if err != nil {
 		t.Fatalf("build local: %v", err)
 	}
 	// Remote contains only bar.txt
-	remote := assets.Manifest{Version: "v1", Target: "/opt/data", Files: []assets.FileEntry{{Path: "bar.txt", Size: 1, Sha256: "abcd"}}}
+	remote := filesets.Manifest{Version: "v1", Target: "/opt/data", Files: []filesets.FileEntry{{Path: "bar.txt", Size: 1, Sha256: "abcd"}}}
 	remoteJSON, err := remote.ToJSON()
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 
 	log := filepath.Join(t.TempDir(), "log.txt")
-	undo := withAssetsDockerStub(t)
+	undo := withFilesetsDockerStub(t)
 	defer undo()
 	_ = os.Setenv("DOCKER_STUB_LOG", log)
 	_ = os.Setenv("REMOTE_JSON", remoteJSON)
@@ -166,7 +166,7 @@ func TestApply_Assets_SyncAndRestart(t *testing.T) {
 
 	cfg := config.Config{
 		Docker:   config.DockerConfig{Identifier: "demo"},
-		Assets:   map[string]config.AssetSpec{"data": {SourceAbs: src, TargetVolume: "data", TargetPath: "/opt/data", RestartServices: []string{"nginx"}}},
+		Filesets: map[string]config.FilesetSpec{"data": {SourceAbs: src, TargetVolume: "data", TargetPath: "/opt/data", RestartServices: []string{"nginx"}}},
 		Volumes:  map[string]config.TopLevelResourceSpec{},
 		Networks: map[string]config.TopLevelResourceSpec{},
 	}

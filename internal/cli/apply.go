@@ -43,8 +43,8 @@ func newApplyCmd() *cobra.Command {
 				}
 			}
 
-			// Skip Apply when there are no add/change operations and no assets configured
-			if !strings.Contains(out, "[add]") && !strings.Contains(out, "[change]") && len(cfg.Assets) == 0 {
+			// Skip Apply when there are no add/change operations and no filesets configured
+			if !strings.Contains(out, "[add]") && !strings.Contains(out, "[change]") && len(cfg.Filesets) == 0 {
 				return nil
 			}
 

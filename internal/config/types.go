@@ -13,7 +13,7 @@ type Config struct {
 	Applications map[string]Application          `yaml:"applications" validate:"dive"`
 	Volumes      map[string]TopLevelResourceSpec `yaml:"volumes"`
 	Networks     map[string]TopLevelResourceSpec `yaml:"networks"`
-	Assets       map[string]AssetSpec            `yaml:"assets"`
+	Filesets     map[string]FilesetSpec          `yaml:"filesets"`
 	BaseDir      string                          `yaml:"-"`
 }
 
@@ -62,8 +62,8 @@ type Secrets struct {
 // TopLevelResourceSpec mirrors YAML for volumes/networks.
 type TopLevelResourceSpec struct{}
 
-// AssetSpec defines a local directory to sync into a docker volume at a target path.
-type AssetSpec struct {
+// FilesetSpec defines a local directory to sync into a docker volume at a target path.
+type FilesetSpec struct {
 	Source          string   `yaml:"source"`
 	TargetVolume    string   `yaml:"target_volume"`
 	TargetPath      string   `yaml:"target_path"`

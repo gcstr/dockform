@@ -8,9 +8,9 @@ import (
 	"sort"
 
 	"github.com/gcstr/dockform/internal/apperr"
-	"github.com/gcstr/dockform/internal/assets"
 	"github.com/gcstr/dockform/internal/config"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/filesets"
 	"github.com/gcstr/dockform/internal/secrets"
 	"github.com/gcstr/dockform/internal/ui"
 	"github.com/gcstr/dockform/internal/util"
@@ -202,39 +202,39 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 		}
 	}
 
-	// Assets: show per-file changes using remote manifest when available
-	if p.docker != nil && len(cfg.Assets) > 0 {
-		assetNames := sortedKeys(cfg.Assets)
-		for _, name := range assetNames {
-			a := cfg.Assets[name]
+	// Filesets: show per-file changes using remote manifest when available
+	if p.docker != nil && len(cfg.Filesets) > 0 {
+		filesetNames := sortedKeys(cfg.Filesets)
+		for _, name := range filesetNames {
+			a := cfg.Filesets[name]
 			// Build local manifest
-			local, err := assets.BuildLocalManifest(a.SourceAbs, a.TargetPath, a.Exclude)
+			local, err := filesets.BuildLocalManifest(a.SourceAbs, a.TargetPath, a.Exclude)
 			if err != nil {
-				lines = append(lines, ui.Line(ui.Change, "asset %s: unable to index local files: %v", name, err))
+				lines = append(lines, ui.Line(ui.Change, "fileset %s: unable to index local files: %v", name, err))
 				continue
 			}
 			// Read remote manifest only if the target volume exists. Avoid docker run -v implicit creation during plan.
 			raw := ""
 			if ok, err := p.docker.VolumeExists(ctx, a.TargetVolume); err == nil && ok {
-				raw, _ = p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, assets.ManifestFileName)
+				raw, _ = p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.ManifestFileName)
 			}
-			remote, _ := assets.ParseManifestJSON(raw)
-			diff := assets.DiffManifests(local, remote)
+			remote, _ := filesets.ParseManifestJSON(raw)
+			diff := filesets.DiffManifests(local, remote)
 			if local.TreeHash == remote.TreeHash {
-				lines = append(lines, ui.Line(ui.Noop, "asset %s: no file changes", name))
+				lines = append(lines, ui.Line(ui.Noop, "fileset %s: no file changes", name))
 				continue
 			}
 			for _, f := range diff.ToCreate {
-				lines = append(lines, ui.Line(ui.Add, "asset %s: create %s", name, f.Path))
+				lines = append(lines, ui.Line(ui.Add, "fileset %s: create %s", name, f.Path))
 			}
 			for _, f := range diff.ToUpdate {
-				lines = append(lines, ui.Line(ui.Change, "asset %s: update %s", name, f.Path))
+				lines = append(lines, ui.Line(ui.Change, "fileset %s: update %s", name, f.Path))
 			}
 			for _, pth := range diff.ToDelete {
-				lines = append(lines, ui.Line(ui.Remove, "asset %s: delete %s", name, pth))
+				lines = append(lines, ui.Line(ui.Remove, "fileset %s: delete %s", name, pth))
 			}
 			if len(diff.ToCreate) == 0 && len(diff.ToUpdate) == 0 && len(diff.ToDelete) == 0 {
-				lines = append(lines, ui.Line(ui.Change, "asset %s: changes detected (details unavailable)", name))
+				lines = append(lines, ui.Line(ui.Change, "fileset %s: changes detected (details unavailable)", name))
 			}
 		}
 	}
@@ -245,9 +245,9 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 	return &Plan{Lines: lines}, nil
 }
 
-func (p *Plan) String() string {
+func (pln *Plan) String() string {
 	out := ""
-	for i, l := range p.Lines {
+	for i, l := range pln.Lines {
 		if i > 0 {
 			out += "\n"
 		}
@@ -296,26 +296,26 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 		}
 	}
 
-	// Sync assets into volumes selectively using manifest
-	if len(cfg.Assets) > 0 {
-		assetNames := make([]string, 0, len(cfg.Assets))
-		for n := range cfg.Assets {
-			assetNames = append(assetNames, n)
+	// Sync filesets into volumes selectively using manifest
+	if len(cfg.Filesets) > 0 {
+		filesetNames := make([]string, 0, len(cfg.Filesets))
+		for n := range cfg.Filesets {
+			filesetNames = append(filesetNames, n)
 		}
-		sort.Strings(assetNames)
-		for _, n := range assetNames {
-			a := cfg.Assets[n]
+		sort.Strings(filesetNames)
+		for _, n := range filesetNames {
+			a := cfg.Filesets[n]
 			if a.SourceAbs == "" {
-				return apperr.New("planner.Apply", apperr.InvalidInput, "asset %s: resolved source path is empty", n)
+				return apperr.New("planner.Apply", apperr.InvalidInput, "fileset %s: resolved source path is empty", n)
 			}
 			// Local and remote manifests
-			local, err := assets.BuildLocalManifest(a.SourceAbs, a.TargetPath, a.Exclude)
+			local, err := filesets.BuildLocalManifest(a.SourceAbs, a.TargetPath, a.Exclude)
 			if err != nil {
-				return apperr.Wrap("planner.Apply", apperr.Internal, err, "index local assets for %s", n)
+				return apperr.Wrap("planner.Apply", apperr.Internal, err, "index local filesets for %s", n)
 			}
-			raw, _ := p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, assets.ManifestFileName)
-			remote, _ := assets.ParseManifestJSON(raw)
-			diff := assets.DiffManifests(local, remote)
+			raw, _ := p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.ManifestFileName)
+			remote, _ := filesets.ParseManifestJSON(raw)
+			diff := filesets.DiffManifests(local, remote)
 			// If completely equal, skip
 			if local.TreeHash == remote.TreeHash {
 				continue
@@ -333,16 +333,16 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 			if len(paths) > 0 {
 				var buf bytes.Buffer
 				if err := util.TarFilesToWriter(a.SourceAbs, paths, &buf); err != nil {
-					return apperr.Wrap("planner.Apply", apperr.Internal, err, "build tar for asset %s", n)
+					return apperr.Wrap("planner.Apply", apperr.Internal, err, "build tar for fileset %s", n)
 				}
 				if err := p.docker.ExtractTarToVolume(ctx, a.TargetVolume, a.TargetPath, &buf); err != nil {
-					return apperr.Wrap("planner.Apply", apperr.External, err, "extract tar for asset %s", n)
+					return apperr.Wrap("planner.Apply", apperr.External, err, "extract tar for fileset %s", n)
 				}
 			}
 			// Deletions
 			if len(diff.ToDelete) > 0 {
 				if err := p.docker.RemovePathsFromVolume(ctx, a.TargetVolume, a.TargetPath, diff.ToDelete); err != nil {
-					return apperr.Wrap("planner.Apply", apperr.External, err, "delete files for asset %s", n)
+					return apperr.Wrap("planner.Apply", apperr.External, err, "delete files for fileset %s", n)
 				}
 			}
 			// Write manifest last (not part of tree)
@@ -350,11 +350,11 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 			if err != nil {
 				return apperr.Wrap("planner.Apply", apperr.Internal, err, "encode manifest for %s", n)
 			}
-			if err := p.docker.WriteFileToVolume(ctx, a.TargetVolume, a.TargetPath, assets.ManifestFileName, jsonStr); err != nil {
-				return apperr.Wrap("planner.Apply", apperr.External, err, "write manifest for asset %s", n)
+			if err := p.docker.WriteFileToVolume(ctx, a.TargetVolume, a.TargetPath, filesets.ManifestFileName, jsonStr); err != nil {
+				return apperr.Wrap("planner.Apply", apperr.External, err, "write manifest for fileset %s", n)
 			}
 
-			// Restart services if configured for this asset group
+			// Restart services if configured for this fileset group
 			if len(a.RestartServices) > 0 {
 				// Discover running compose services scoped by identifier (client carries identifier filter)
 				items, _ := p.docker.ListComposeContainersAll(ctx)

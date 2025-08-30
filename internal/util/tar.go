@@ -167,7 +167,7 @@ func TarFilesToWriter(localRoot string, files []string, w io.Writer) error {
 			}
 			continue
 		}
-		// Ignore symlinks entirely for assets
+		// Ignore symlinks entirely
 		if info.Mode()&os.ModeSymlink != 0 {
 			continue
 		}

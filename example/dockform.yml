@@ -2,7 +2,7 @@ docker:
   context: oracle
   identifier: demo
 
-assets:
+filesets:
   files:
     source: website/assets/
     target_volume: demo-volume-1

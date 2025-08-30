@@ -456,11 +456,11 @@ func TestValidate_Assets_SourceRequired(t *testing.T) {
 		Volumes:      map[string]config.TopLevelResourceSpec{"v": {}},
 		Networks:     map[string]config.TopLevelResourceSpec{},
 		Applications: map[string]config.Application{},
-		Assets:       map[string]config.AssetSpec{"a": {SourceAbs: "", TargetVolume: "v", TargetPath: "/t"}},
+		Filesets:     map[string]config.FilesetSpec{"a": {SourceAbs: "", TargetVolume: "v", TargetPath: "/t"}},
 	}
 	d := dockercli.New(cfg.Docker.Context)
 	if err := Validate(context.Background(), cfg, d); err == nil {
-		t.Fatalf("expected asset source required error")
+		t.Fatalf("expected fileset source required error")
 	}
 }
 
@@ -475,18 +475,18 @@ func TestValidate_Assets_SourceNotFound_AndNotDir(t *testing.T) {
 		Applications: map[string]config.Application{},
 	}
 	// Not found
-	cfg.Assets = map[string]config.AssetSpec{"a": {SourceAbs: filepath.Join(tmp, "missing"), TargetVolume: "v", TargetPath: "/t"}}
+	cfg.Filesets = map[string]config.FilesetSpec{"a": {SourceAbs: filepath.Join(tmp, "missing"), TargetVolume: "v", TargetPath: "/t"}}
 	if err := Validate(context.Background(), cfg, d); err == nil {
-		t.Fatalf("expected asset not found error")
+		t.Fatalf("expected fileset not found error")
 	}
 	// Not a directory: create a regular file
 	filePath := filepath.Join(tmp, "file.txt")
 	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg.Assets = map[string]config.AssetSpec{"a": {SourceAbs: filePath, TargetVolume: "v", TargetPath: "/t"}}
+	cfg.Filesets = map[string]config.FilesetSpec{"a": {SourceAbs: filePath, TargetVolume: "v", TargetPath: "/t"}}
 	if err := Validate(context.Background(), cfg, d); err == nil {
-		t.Fatalf("expected asset not a directory error")
+		t.Fatalf("expected fileset not a directory error")
 	}
 }
 

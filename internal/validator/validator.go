@@ -119,17 +119,17 @@ func Validate(ctx context.Context, cfg config.Config, d *dockercli.Client) error
 		}
 	}
 
-	// 6) Assets: ensure sources exist and are directories
-	for name, a := range cfg.Assets {
+	// 6) Filesets: ensure sources exist and are directories
+	for name, a := range cfg.Filesets {
 		if a.SourceAbs == "" {
-			return apperr.Wrap("validator.Validate", apperr.InvalidInput, config.ErrMissingRequired, "asset %s: source path is required", name)
+			return apperr.Wrap("validator.Validate", apperr.InvalidInput, config.ErrMissingRequired, "fileset %s: source path is required", name)
 		}
 		st, err := os.Stat(a.SourceAbs)
 		if err != nil {
-			return apperr.Wrap("validator.Validate", apperr.NotFound, err, "asset %s source", name)
+			return apperr.Wrap("validator.Validate", apperr.NotFound, err, "fileset %s source", name)
 		}
 		if !st.IsDir() {
-			return apperr.New("validator.Validate", apperr.InvalidInput, "asset %s source is not a directory: %s", name, a.SourceAbs)
+			return apperr.New("validator.Validate", apperr.InvalidInput, "fileset %s source is not a directory: %s", name, a.SourceAbs)
 		}
 	}
 

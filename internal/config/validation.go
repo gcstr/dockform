@@ -25,8 +25,8 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 	if c.Networks == nil {
 		c.Networks = map[string]TopLevelResourceSpec{}
 	}
-	if c.Assets == nil {
-		c.Assets = map[string]AssetSpec{}
+	if c.Filesets == nil {
+		c.Filesets = map[string]FilesetSpec{}
 	}
 
 	// Validate application keys and fill defaults
@@ -157,25 +157,25 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		}
 	}
 
-	// Assets validation and normalization
-	for assetName, a := range c.Assets {
-		if !appKeyRegex.MatchString(assetName) {
-			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "invalid asset key %q: must match ^[a-z0-9_.-]+$", assetName)
+	// Filesets validation and normalization
+	for filesetName, a := range c.Filesets {
+		if !appKeyRegex.MatchString(filesetName) {
+			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "invalid fileset key %q: must match ^[a-z0-9_.-]+$", filesetName)
 		}
 		if strings.TrimSpace(a.Source) == "" {
-			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "asset %s: source path is required", assetName)
+			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "fileset %s: source path is required", filesetName)
 		}
 		if a.TargetVolume == "" {
-			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "asset %s: target_volume is required", assetName)
+			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_volume is required", filesetName)
 		}
 		if _, ok := c.Volumes[a.TargetVolume]; !ok {
-			return apperr.New("config.normalizeAndValidate", apperr.NotFound, "asset %s: target_volume %q is not declared under volumes", assetName, a.TargetVolume)
+			return apperr.New("config.normalizeAndValidate", apperr.NotFound, "fileset %s: target_volume %q is not declared under volumes", filesetName, a.TargetVolume)
 		}
 		if a.TargetPath == "" || !filepath.IsAbs(a.TargetPath) {
-			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "asset %s: target_path must be an absolute path", assetName)
+			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_path must be an absolute path", filesetName)
 		}
 		if a.TargetPath == "/" {
-			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "asset %s: target_path cannot be '/'", assetName)
+			return apperr.New("config.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_path cannot be '/'", filesetName)
 		}
 		// Resolve source relative to baseDir
 		srcAbs := a.Source
@@ -183,7 +183,7 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 			srcAbs = filepath.Clean(filepath.Join(baseDir, srcAbs))
 		}
 		a.SourceAbs = srcAbs
-		c.Assets[assetName] = a
+		c.Filesets[filesetName] = a
 	}
 
 	return nil

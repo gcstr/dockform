@@ -1,4 +1,4 @@
-package assets
+package filesets
 
 import (
 	"encoding/json"
@@ -84,7 +84,7 @@ func BuildLocalManifest(sourceDir string, targetPath string, excludes []string) 
 			}
 			return nil
 		}
-		// Ignore symlinks entirely for assets
+		// Ignore symlinks entirely for filesets
 		if d.Type()&fs.ModeSymlink != 0 {
 			return nil
 		}

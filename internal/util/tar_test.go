@@ -55,7 +55,7 @@ func TestTarDirectoryToWriter_BasicAndPrefix(t *testing.T) {
 
 func TestTarFilesToWriter_SkipsSymlinks(t *testing.T) {
 	// Skip on Windows where symlinks are not reliably supported in tests
-	// The asset tar behavior must ignore symlinks regardless.
+	// The tar behavior must ignore symlinks regardless.
 	if isWindows() {
 		t.Skip("symlinks not supported on windows in tests")
 	}

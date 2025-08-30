@@ -41,7 +41,7 @@ func TestLoad_NormalizesAndMerges(t *testing.T) {
 		"        - FOO=2",
 		"volumes:",
 		"  v1: {}",
-		"assets:",
+		"filesets:",
 		"  files:",
 		"    source: app",
 		"    target_volume: v1",
@@ -78,13 +78,13 @@ func TestLoad_NormalizesAndMerges(t *testing.T) {
 	if len(app.SopsSecrets) != 1 || app.SopsSecrets[0] != "../rootsecret.env" {
 		t.Fatalf("unexpected sops secrets: %#v", app.SopsSecrets)
 	}
-	// Assets source resolved to absolute path
-	a, ok := cfg.Assets["files"]
+	// Fileset source resolved to absolute path
+	a, ok := cfg.Filesets["files"]
 	if !ok {
-		t.Fatalf("missing assets.files")
+		t.Fatalf("missing filesets.files")
 	}
 	if a.SourceAbs != appDir {
-		t.Fatalf("asset SourceAbs not resolved: %q != %q", a.SourceAbs, appDir)
+		t.Fatalf("fileset SourceAbs not resolved: %q != %q", a.SourceAbs, appDir)
 	}
 }
 
@@ -119,13 +119,13 @@ func TestLoad_DirectoryResolution(t *testing.T) {
 func TestAssets_ValidationErrors(t *testing.T) {
 	dir := t.TempDir()
 	// target_volume not declared under volumes
-	yml := "docker:\n  identifier: test-id\nassets:\n  bad:\n    source: .\n    target_volume: missing\n    target_path: /data\n"
+	yml := "docker:\n  identifier: test-id\nfilesets:\n  bad:\n    source: .\n    target_volume: missing\n    target_path: /data\n"
 	mustWrite(t, filepath.Join(dir, "dockform.yml"), yml)
 	if _, err := Load(dir); err == nil {
 		t.Fatalf("expected error for missing target_volume")
 	}
 	// target_path must be absolute
-	yml2 := "docker:\n  identifier: test-id\nvolumes:\n  v: {}\nassets:\n  bad:\n    source: .\n    target_volume: v\n    target_path: data\n"
+	yml2 := "docker:\n  identifier: test-id\nvolumes:\n  v: {}\nfilesets:\n  bad:\n    source: .\n    target_volume: v\n    target_path: data\n"
 	mustWrite(t, filepath.Join(dir, "dockform.yml"), yml2)
 	if _, err := Load(dir); err == nil {
 		t.Fatalf("expected error for non-absolute target_path")

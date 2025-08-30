@@ -89,7 +89,7 @@ func withStubDocker(t *testing.T) func() {
 }
 
 // basicConfigPath creates a minimal valid dockform config and file layout
-// in a temporary directory suitable for CLI tests without external assets.
+// in a temporary directory suitable for CLI tests without external filesets.
 func basicConfigPath(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
