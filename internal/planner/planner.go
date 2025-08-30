@@ -208,7 +208,7 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg config.Config) (*Plan, erro
 		for _, name := range assetNames {
 			a := cfg.Assets[name]
 			// Build local manifest
-			local, err := assets.BuildLocalManifest(a.SourceAbs, a.TargetPath, nil)
+			local, err := assets.BuildLocalManifest(a.SourceAbs, a.TargetPath, a.Exclude)
 			if err != nil {
 				lines = append(lines, ui.Line(ui.Change, "asset %s: unable to index local files: %v", name, err))
 				continue
@@ -309,7 +309,7 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 				return apperr.New("planner.Apply", apperr.InvalidInput, "asset %s: resolved source path is empty", n)
 			}
 			// Local and remote manifests
-			local, err := assets.BuildLocalManifest(a.SourceAbs, a.TargetPath, nil)
+			local, err := assets.BuildLocalManifest(a.SourceAbs, a.TargetPath, a.Exclude)
 			if err != nil {
 				return apperr.Wrap("planner.Apply", apperr.Internal, err, "index local assets for %s", n)
 			}
@@ -328,6 +328,8 @@ func (p *Planner) Apply(ctx context.Context, cfg config.Config) error {
 			for _, f := range diff.ToUpdate {
 				paths = append(paths, f.Path)
 			}
+			// Deterministic order for tar emission
+			sort.Strings(paths)
 			if len(paths) > 0 {
 				var buf bytes.Buffer
 				if err := util.TarFilesToWriter(a.SourceAbs, paths, &buf); err != nil {

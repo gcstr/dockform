@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	filippo.io/age v1.2.1
+	github.com/bmatcuk/doublestar/v4 v4.6.1
 	github.com/charmbracelet/lipgloss v0.10.0
 	github.com/go-playground/validator/v10 v10.20.0
 	github.com/goccy/go-yaml v1.18.0

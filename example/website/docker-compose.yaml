@@ -1,7 +1,6 @@
 services:
   nginx:
     image: nginx:1.12 
-    name: nginx
     ports:
       - "8000:80"
     environment:
@@ -13,4 +12,3 @@ services:
       - GBAZ=${GBAZ}
       - SECRET_KEY=${SECRET_KEY}
       - LOCAL_SECRET_KEY=${LOCAL_SECRET_KEY}
-

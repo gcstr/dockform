@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/gcstr/dockform/internal/util"
 )
 
@@ -36,36 +37,30 @@ func BuildLocalManifest(sourceDir string, targetPath string, excludes []string) 
 		Version:   "v1",
 		Target:    targetPath,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		Exclude:   append([]string(nil), excludes...),
+		Exclude:   nil,
 		UID:       0,
 		GID:       0,
 	}
 	src := filepath.Clean(sourceDir)
+
+	// Normalize and freeze exclude patterns for determinism
+	normEx := normalizeExcludePatterns(excludes)
+	// Persist effective excludes into the manifest
+	m.Exclude = append(m.Exclude, normEx...)
 	files := []FileEntry{}
-	// Basic exclude matcher: only supports exact basename matches or simple suffixes like *.bak
-	shouldExclude := func(rel string, d fs.DirEntry) bool {
-		base := filepath.Base(rel)
-		for _, pat := range excludes {
-			pat = strings.TrimSpace(pat)
-			if pat == "" {
-				continue
-			}
-			if strings.Contains(pat, "*") {
-				// Very small glob support: prefix*suffix on basename
-				if strings.HasPrefix(pat, "*") && strings.HasSuffix(base, strings.TrimPrefix(pat, "*")) {
-					return true
-				}
-				if strings.HasSuffix(pat, "*") && strings.HasPrefix(base, strings.TrimSuffix(pat, "*")) {
-					return true
-				}
-			}
-			if base == pat {
+
+	// Exclude matcher using doublestar against slash-normalized relative paths
+	isExcluded := func(relSlash string, isDir bool) bool {
+		for _, pat := range normEx {
+			// Directory patterns already expanded to /** in normalization
+			match, _ := doublestar.PathMatch(pat, relSlash)
+			if match {
 				return true
 			}
 		}
-		_ = d
 		return false
 	}
+
 	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -77,7 +72,16 @@ func BuildLocalManifest(sourceDir string, targetPath string, excludes []string) 
 		if rel == "." {
 			return nil
 		}
+		// Guard against path traversal escapes
+		cleanRel := filepath.Clean(rel)
+		if strings.HasPrefix(cleanRel, "..") {
+			return fs.ErrInvalid
+		}
+		relSlash := filepath.ToSlash(cleanRel)
 		if d.IsDir() {
+			if isExcluded(relSlash, true) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		// Ignore symlinks entirely for assets
@@ -91,14 +95,14 @@ func BuildLocalManifest(sourceDir string, targetPath string, excludes []string) 
 		if !info.Mode().IsRegular() {
 			return nil
 		}
-		if shouldExclude(rel, d) {
+		if isExcluded(relSlash, false) {
 			return nil
 		}
 		sum, err := util.Sha256FileHex(p)
 		if err != nil {
 			return err
 		}
-		files = append(files, FileEntry{Path: filepath.ToSlash(rel), Size: info.Size(), Sha256: sum})
+		files = append(files, FileEntry{Path: relSlash, Size: info.Size(), Sha256: sum})
 		return nil
 	})
 	if err != nil {
@@ -118,6 +122,40 @@ func BuildLocalManifest(sourceDir string, targetPath string, excludes []string) 
 	}
 	m.TreeHash = util.Sha256StringHex(b.String())
 	return m, nil
+}
+
+// normalizeExcludePatterns returns a deterministic slice of patterns normalized to gitignore-like semantics:
+// - trim spaces and skip empty
+// - convert OS-specific separators to forward slashes
+// - if a pattern ends with '/', expand to pattern + "**" to exclude dir and all contents
+// - ensure order is stable by sorting unique patterns
+func normalizeExcludePatterns(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	uniq := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		p := strings.TrimSpace(raw)
+		if p == "" {
+			continue
+		}
+		// convert to slash-normalized pattern
+		p = filepath.ToSlash(p)
+		// directory pattern ending with '/'
+		if strings.HasSuffix(p, "/") {
+			p = p + "**"
+		}
+		if _, ok := uniq[p]; ok {
+			continue
+		}
+		uniq[p] = struct{}{}
+		out = append(out, p)
+	}
+	if len(out) > 1 {
+		sort.Strings(out)
+	}
+	return out
 }
 
 func ParseManifestJSON(s string) (Manifest, error) {

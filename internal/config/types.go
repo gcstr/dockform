@@ -68,6 +68,7 @@ type AssetSpec struct {
 	TargetVolume    string   `yaml:"target_volume"`
 	TargetPath      string   `yaml:"target_path"`
 	RestartServices []string `yaml:"restart_services"`
+	Exclude         []string `yaml:"exclude"`
 	SourceAbs       string   `yaml:"-"`
 }
 

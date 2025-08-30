@@ -9,6 +9,11 @@ assets:
     target_path: /assets
     restart_services:
       - nginx
+    exclude:
+      - "**/.DS_Store"
+      - "*.bak"
+      - "tmp/**"
+      - "secrets/"
 
 sops:
   age:

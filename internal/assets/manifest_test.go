@@ -170,3 +170,69 @@ func TestDiffManifests_CreateUpdateDelete_AndNoChange(t *testing.T) {
 		t.Fatalf("delete not sorted: %+v", d.ToDelete)
 	}
 }
+
+func TestBuildLocalManifest_DirectoryPatternsAndGlobDoubleStar(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite := func(p, s string) {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	mustWrite(filepath.Join(dir, "keep.txt"), "K")
+	mustWrite(filepath.Join(dir, "tmp", "a.txt"), "A")
+	mustWrite(filepath.Join(dir, "tmp", "sub", "b.txt"), "B")
+	mustWrite(filepath.Join(dir, "secrets", "secret.txt"), "S")
+
+	// Exclude tmp/** subtree and secrets/ directory via trailing slash semantics
+	m, err := BuildLocalManifest(dir, "/assets", []string{"tmp/**", "secrets/"})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	got := make([]string, 0, len(m.Files))
+	for _, f := range m.Files {
+		got = append(got, f.Path)
+	}
+	sort.Strings(got)
+	want := []string{"keep.txt"}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("paths=%v want=%v", got, want)
+	}
+}
+
+func TestBuildLocalManifest_DeterministicTwice(t *testing.T) {
+	dir := t.TempDir()
+	files := []struct{ p, s string }{
+		{"a.txt", "1"},
+		{"b/b.txt", "22"},
+		{"c/c.tmp", "333"},
+		{"c/d.tmp", "4444"},
+	}
+	for _, it := range files {
+		p := filepath.Join(dir, it.p)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(it.s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	excludes := []string{"**/.DS_Store", "*.bak", "c/"}
+	m1, err := BuildLocalManifest(dir, "/t", excludes)
+	if err != nil {
+		t.Fatalf("m1: %v", err)
+	}
+	m2, err := BuildLocalManifest(dir, "/t", excludes)
+	if err != nil {
+		t.Fatalf("m2: %v", err)
+	}
+	if m1.TreeHash != m2.TreeHash {
+		t.Fatalf("tree hash mismatch: %s vs %s", m1.TreeHash, m2.TreeHash)
+	}
+	// Ensure files are sorted lexicographically
+	if !sort.SliceIsSorted(m1.Files, func(i, j int) bool { return m1.Files[i].Path < m1.Files[j].Path }) {
+		t.Fatalf("files not sorted: %+v", m1.Files)
+	}
+}
