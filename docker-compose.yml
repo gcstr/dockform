@@ -1,0 +1,17 @@
+services:
+  tests:
+    image: golang:1.22-alpine
+    working_dir: /work
+    volumes:
+      - .:/work
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - E2E_ALLOW_HOST
+    entrypoint:
+      - /bin/sh
+      - -lc
+      - |
+        set -e
+        apk add --no-cache docker-cli make git bash sops age
+        make e2e
+

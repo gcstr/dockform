@@ -12,7 +12,7 @@ LINT ?= golangci-lint
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build run install fmt vet lint deps tidy test coverage coverhtml ci clean
+.PHONY: help all build run install fmt vet lint deps tidy test coverage coverhtml ci clean e2e e2e-dood
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_.-]+:.*?## / {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -57,6 +57,13 @@ tidy: ## Tidy go.mod/go.sum
 
 test: vet ## Run tests with coverage
 	$(GO) test $(PKGS) -v -coverprofile=$(COVER_OUT)
+
+e2e: ## Run end-to-end tests
+	$(GO) test ./test/e2e -v -count=1
+
+e2e-dood: ## Run e2e inside Docker (DooD)
+	docker compose -f docker-compose.yml up --abort-on-container-exit
+	docker compose -f docker-compose.yml down -v
 
 coverage: ## Show coverage summary (requires cover.out)
 	$(GO) tool cover -func=$(COVER_OUT)
