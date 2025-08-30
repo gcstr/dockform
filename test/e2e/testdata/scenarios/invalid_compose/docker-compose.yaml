@@ -1,0 +1,6 @@
+# intentionally invalid compose file (missing colon after services)
+services:
+  ${DOCKFORM_RUN_ID}:
+    image: alpine
+    command: ["sh","-c","sleep 1"]
+

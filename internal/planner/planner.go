@@ -125,12 +125,19 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 				}
 			}
 
-			// Desired config (images, ports) from compose config
+			// Validate compose config; if invalid, return error instead of TBD
 			doc, derr := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
+			if derr != nil {
+				return nil, apperr.Wrap("planner.BuildPlan", apperr.External, derr, "invalid compose file for application %s", appName)
+			}
 			plannedServices := sortedKeys(doc.Services)
-			// Fallback to services list if no services parsed or error occurred
-			if derr != nil || len(plannedServices) == 0 {
-				if names, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil && len(names) > 0 {
+			// If no services parsed, try listing services; if that fails, treat as invalid
+			if len(plannedServices) == 0 {
+				names, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
+				if err != nil {
+					return nil, apperr.Wrap("planner.BuildPlan", apperr.External, err, "invalid compose file for application %s", appName)
+				}
+				if len(names) > 0 {
 					plannedServices = append([]string(nil), names...)
 					sort.Strings(plannedServices)
 				}
@@ -422,14 +429,20 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 
 		// Determine planned services for the app
 		plannedServices := []string{}
-		if doc, err := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil {
-			for s := range doc.Services {
-				plannedServices = append(plannedServices, s)
-			}
-			sort.Strings(plannedServices)
+		doc, cfgErr := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
+		if cfgErr != nil {
+			return apperr.Wrap("planner.Apply", apperr.External, cfgErr, "invalid compose file for application %s", appName)
 		}
+		for s := range doc.Services {
+			plannedServices = append(plannedServices, s)
+		}
+		sort.Strings(plannedServices)
 		if len(plannedServices) == 0 {
-			if names, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil && len(names) > 0 {
+			names, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
+			if err != nil {
+				return apperr.Wrap("planner.Apply", apperr.External, err, "invalid compose file for application %s", appName)
+			}
+			if len(names) > 0 {
 				plannedServices = append([]string(nil), names...)
 				sort.Strings(plannedServices)
 			}

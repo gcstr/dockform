@@ -63,7 +63,7 @@ func TestSimplePlanApplyLifecycle(t *testing.T) {
 		t.Fatalf("plan missing add network:\n%s", out)
 	}
 	// Service detection may vary per compose; require at least one application/service hint
-	if !(strings.Contains(out, "service app/hello") || strings.Contains(out, "application app")) {
+	if !strings.Contains(out, "service app/hello") && !strings.Contains(out, "application app") {
 		t.Fatalf("plan missing application/service lines:\n%s", out)
 	}
 
@@ -92,7 +92,7 @@ func TestSimplePlanApplyLifecycle(t *testing.T) {
 
 	// Re-PLAN should show up-to-date/noop items
 	out2 := runCmd(t, tempDir, env, bin, "plan", "-c", tempDir)
-	if !(strings.Contains(out2, "[noop] service app/hello up-to-date") || strings.Contains(out2, "[noop] service app/hello running")) {
+	if !strings.Contains(out2, "[noop] service app/hello up-to-date") && !strings.Contains(out2, "[noop] service app/hello running") {
 		if strings.Contains(out2, "[add] service app/hello will be started") {
 			t.Fatalf("service should not require start after apply, got plan:\n%s", out2)
 		}
@@ -218,12 +218,12 @@ func copyTree(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		defer in.Close()
+		defer func() { _ = in.Close() }()
 		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 		if err != nil {
 			return err
 		}
-		defer out.Close()
+		defer func() { _ = out.Close() }()
 		if _, err := io.Copy(out, in); err != nil {
 			return err
 		}
