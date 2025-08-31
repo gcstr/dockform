@@ -1,0 +1,22 @@
+services:
+  noop:
+    image: alpine
+    command: ["sh","-c","sleep 1"]
+    labels:
+      io.dockform.identifier: ${DOCKFORM_RUN_ID}
+    volumes:
+      - data:/data
+    networks:
+      - net
+
+volumes:
+  data:
+    external: true
+    name: "df_e2e_${DOCKFORM_RUN_ID}_fsvol"
+
+networks:
+  net:
+    external: true
+    name: "df_e2e_${DOCKFORM_RUN_ID}_fsnet"
+
+
