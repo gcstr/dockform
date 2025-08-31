@@ -18,7 +18,7 @@ func TestPlan_PrintsRemovalGuidance_WhenRemovalsPresent_AndNoPrune_Solo(t *testi
 		t.Fatalf("plan execute: %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "[remove]") {
+	if !(strings.Contains(got, "[remove]") || strings.Contains(got, "↓ ") || strings.Contains(got, " will be removed")) {
 		t.Fatalf("expected remove lines in plan; got: %s", got)
 	}
 	if !strings.Contains(got, "No resources will be removed. Include --prune to delete them") {
@@ -37,7 +37,7 @@ func TestPlan_DoesNotPrintRemovalGuidance_WhenPruneFlagSet(t *testing.T) {
 		t.Fatalf("plan execute with --prune: %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "[remove]") {
+	if !(strings.Contains(got, "[remove]") || strings.Contains(got, "↓ ") || strings.Contains(got, " will be removed")) {
 		t.Fatalf("expected remove lines in plan; got: %s", got)
 	}
 	if strings.Contains(got, "No resources will be removed. Include --prune to delete them") {
@@ -81,7 +81,7 @@ exit 0
 		t.Fatalf("plan execute: %v", err)
 	}
 	got := out.String()
-	if strings.Contains(got, "[remove]") {
+	if strings.Contains(got, "[remove]") || strings.Contains(got, "↓ ") || strings.Contains(got, " will be removed") {
 		t.Fatalf("did not expect any remove lines; got: %s", got)
 	}
 	if strings.Contains(got, "No resources will be removed. Include --prune to delete them") {

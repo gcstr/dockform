@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/charmbracelet/lipgloss"
+	lglist "github.com/charmbracelet/lipgloss/list"
 )
 
 var (
@@ -18,7 +19,77 @@ var (
 	styleInfoPrefix  = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true) // blue
 	styleWarnPrefix  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // yellow
 	styleErrorPrefix = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)  // red
+
+	styleSectionTitle = lipgloss.NewStyle().Bold(true)
 )
+
+// Section represents a header and its list of items for rendering.
+type Section struct {
+	Title string
+	Items []DiffLine
+}
+
+// ListStyles centralizes lipgloss list styles for consistent UX.
+var ListStyles = struct {
+	OuterEnumStyle lipgloss.Style
+	OuterItemStyle lipgloss.Style
+	InnerEnumStyle lipgloss.Style
+	InnerItemStyle lipgloss.Style
+}{
+	OuterEnumStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("99")).MarginRight(1),
+	OuterItemStyle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")),
+	InnerEnumStyle: lipgloss.NewStyle().MarginRight(1), // margin only; color per-item
+	InnerItemStyle: lipgloss.NewStyle(),
+}
+
+// RenderSectionedList renders sections as a nested lipgloss list with configured styles.
+func RenderSectionedList(sections []Section) string {
+	// Build alternating args: Title, innerList, Title, innerList, ...
+	args := make([]any, 0, len(sections)*2)
+	for _, s := range sections {
+		if len(s.Items) == 0 {
+			continue
+		}
+		vals := make([]any, len(s.Items))
+		for i, it := range s.Items {
+			vals[i] = it.String()
+		}
+		// Per-item colored enumerator based on s.Items index
+		itemsRef := s.Items
+		enum := func(_ lglist.Items, i int) string {
+			if i < 0 || i >= len(itemsRef) {
+				return ""
+			}
+			switch itemsRef[i].Type {
+			case Noop:
+				return styleNoop.Render("○")
+			case Add:
+				return styleAdd.Render("↑")
+			case Remove:
+				return styleRemove.Render("↓")
+			case Change:
+				return styleChange.Render("→")
+			default:
+				return ""
+			}
+		}
+		inner := lglist.New(vals...).
+			Enumerator(enum).
+			EnumeratorStyle(ListStyles.InnerEnumStyle).
+			ItemStyle(ListStyles.InnerItemStyle)
+		args = append(args, s.Title, inner)
+	}
+	if len(args) == 0 {
+		return ""
+	}
+	outer := lglist.New(args...).
+		Enumerator(lglist.Bullet).
+		EnumeratorStyle(ListStyles.OuterEnumStyle).
+		ItemStyle(ListStyles.OuterItemStyle)
+	return outer.String()
+}
+
+// --- existing change-line utilities below ---
 
 type ChangeType int
 
@@ -35,18 +106,7 @@ type DiffLine struct {
 }
 
 func (d DiffLine) String() string {
-	switch d.Type {
-	case Noop:
-		return styleNoop.Render("[no-op]") + " " + d.Message
-	case Add:
-		return styleAdd.Render("[add]") + "  " + d.Message
-	case Remove:
-		return styleRemove.Render("[remove]") + " " + d.Message
-	case Change:
-		return styleChange.Render("[change]") + " " + d.Message
-	default:
-		return d.Message
-	}
+	return d.Message
 }
 
 func Line(t ChangeType, format string, a ...any) DiffLine {
@@ -63,8 +123,13 @@ func StripANSI(s string) string {
 // Printer centralizes user-facing output. It routes informational messages to
 // stdout and warnings/errors to stderr, ready for future styling via lipgloss.
 type Printer interface {
+	// Plain writes to stdout without any prefix or styling.
+	Plain(format string, a ...any)
+	// Info writes to stdout with an [info] prefix.
 	Info(format string, a ...any)
+	// Warn writes to stderr with a [warn] prefix.
 	Warn(format string, a ...any)
+	// Error writes to stderr with an [error] prefix.
 	Error(format string, a ...any)
 }
 
@@ -72,6 +137,13 @@ type Printer interface {
 type StdPrinter struct {
 	Out io.Writer
 	Err io.Writer
+}
+
+func (p StdPrinter) Plain(format string, a ...any) {
+	if p.Out == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(p.Out, format+"\n", a...)
 }
 
 func (p StdPrinter) Info(format string, a ...any) {
@@ -101,6 +173,12 @@ func (p StdPrinter) Error(format string, a ...any) {
 // NoopPrinter discards all output; useful as a default or in tests.
 type NoopPrinter struct{}
 
+func (NoopPrinter) Plain(string, ...any) {}
 func (NoopPrinter) Info(string, ...any)  {}
 func (NoopPrinter) Warn(string, ...any)  {}
 func (NoopPrinter) Error(string, ...any) {}
+
+// SectionTitle renders a bold section header for grouped output.
+func SectionTitle(title string) string {
+	return styleSectionTitle.Render(title)
+}

@@ -48,7 +48,7 @@ func newFilesetPlanCmd() *cobra.Command {
 			// Filter plan output to only fileset lines
 			out := pln.String()
 			filtered := filterFilesetLines(out)
-			pr.Info("%s", filtered)
+			pr.Plain("%s", filtered)
 			return nil
 		},
 	}
@@ -79,7 +79,7 @@ func newFilesetApplyCmd() *cobra.Command {
 			}
 			// Print only fileset lines of the plan
 			out := pln.String()
-			pr.Info("%s", filterFilesetLines(out))
+			pr.Plain("%s", filterFilesetLines(out))
 
 			// Apply only the fileset part. We reuse Planner.Apply but constrain to filesets
 			// by creating a copy of config with applications cleared so only filesets + top-level are touched.

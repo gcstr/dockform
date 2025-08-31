@@ -37,9 +37,9 @@ func newPlanCmd() *cobra.Command {
 				return err
 			}
 			out := pln.String()
-			pr.Info("%s", out)
-			if !prune && strings.Contains(out, "[remove]") {
-				pr.Info("No resources will be removed. Include --prune to delete them")
+			pr.Plain("%s", out)
+			if !prune && strings.Contains(out, "↓ ") {
+				pr.Plain("No resources will be removed. Include --prune to delete them")
 			}
 			return nil
 		},

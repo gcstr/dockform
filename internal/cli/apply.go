@@ -37,13 +37,16 @@ func newApplyCmd() *cobra.Command {
 				return err
 			}
 			out := pln.String()
-			pr.Info("%s", out)
-			if !prune && strings.Contains(out, "[remove]") {
-				pr.Info("No resources will be removed. Include --prune to delete them")
+			pr.Plain("%s", out)
+			// Print guidance only when removals are present and --prune not set
+			if !prune && strings.Contains(out, "↓ ") {
+				pr.Plain("No resources will be removed. Include --prune to delete them")
 			}
 
 			// Skip Apply when there are no add/change operations and no filesets configured
-			if !strings.Contains(out, "[add]") && !strings.Contains(out, "[change]") && len(cfg.Filesets) == 0 {
+			noAdds := !strings.Contains(out, "↑ ")
+			noChanges := !strings.Contains(out, "→ ")
+			if noAdds && noChanges && len(cfg.Filesets) == 0 {
 				return nil
 			}
 

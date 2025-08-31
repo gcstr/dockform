@@ -113,12 +113,12 @@ func TestPlanner_BuildPlan_AddRemoveStart(t *testing.T) {
 		t.Fatalf("build plan: %v", err)
 	}
 	out := pln.String()
-	contains(t, out, "[add]  volume v1 will be created")
-	contains(t, out, "[remove] volume vOld will be removed")
-	contains(t, out, "[add]  network n1 will be created")
-	contains(t, out, "[remove] network nOld will be removed")
-	contains(t, out, "[add]  service app/nginx will be started")
-	contains(t, out, "[remove] container other_name will be removed")
+	contains(t, out, "↑ volume v1 will be created")
+	contains(t, out, "↓ volume vOld will be removed")
+	contains(t, out, "↑ network n1 will be created")
+	contains(t, out, "↓ network nOld will be removed")
+	contains(t, out, "↑ service app/nginx will be started")
+	contains(t, out, "↓ container other_name will be removed")
 }
 
 func TestPlanner_BuildPlan_IdentifierMismatch(t *testing.T) {

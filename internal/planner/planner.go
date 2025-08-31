@@ -5,6 +5,7 @@ import (
 	"context"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/dockercli"
@@ -259,14 +260,37 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 }
 
 func (pln *Plan) String() string {
-	out := ""
-	for i, l := range pln.Lines {
-		if i > 0 {
-			out += "\n"
+	// Group lines by high-level category based on message prefix
+	vols := []ui.DiffLine{}
+	nets := []ui.DiffLine{}
+	apps := []ui.DiffLine{}
+	files := []ui.DiffLine{}
+	other := []ui.DiffLine{}
+	for _, l := range pln.Lines {
+		m := l.Message
+		switch {
+		case strings.HasPrefix(m, "volume "):
+			vols = append(vols, l)
+		case strings.HasPrefix(m, "network "):
+			nets = append(nets, l)
+		case strings.HasPrefix(m, "fileset "):
+			files = append(files, l)
+		case strings.HasPrefix(m, "service ") || strings.HasPrefix(m, "application ") || strings.HasPrefix(m, "container "):
+			apps = append(apps, l)
+		default:
+			other = append(other, l)
 		}
-		out += l.String()
 	}
-	return out
+	sections := []ui.Section{
+		{Title: "Volumes", Items: vols},
+		{Title: "Networks", Items: nets},
+		{Title: "Applications", Items: apps},
+		{Title: "Filesets", Items: files},
+	}
+	if len(other) > 0 {
+		sections = append(sections, ui.Section{Title: "Other", Items: other})
+	}
+	return ui.RenderSectionedList(sections)
 }
 
 // sortedKeys returns sorted keys of a map[string]T

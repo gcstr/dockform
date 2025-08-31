@@ -168,15 +168,15 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 		t.Fatalf("build plan: %v", err)
 	}
 	out := pln.String()
-	// Check volume/network adds and removals
-	mustContain(t, out, "[add] volume v1 will be created")
-	mustContain(t, out, "[remove] volume vOld will be removed")
-	mustContain(t, out, "[add] network n1 will be created")
-	mustContain(t, out, "[remove] network nOld will be removed")
+	// Check volume/network adds and removals (new icon-based UI)
+	mustContain(t, out, "↑ volume v1 will be created")
+	mustContain(t, out, "↓ volume vOld will be removed")
+	mustContain(t, out, "↑ network n1 will be created")
+	mustContain(t, out, "↓ network nOld will be removed")
 	// Service to be started
-	mustContain(t, out, "[add] service app/nginx will be started")
+	mustContain(t, out, "↑ service app/nginx will be started")
 	// Container removal from ListComposeContainersAll
-	mustContain(t, out, "[remove] container other_name will be removed")
+	mustContain(t, out, "↓ container other_name will be removed")
 }
 
 func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
@@ -193,7 +193,7 @@ func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
 		t.Fatalf("build plan: %v", err)
 	}
 	out := pln.String()
-	mustContain(t, out, "[change] service app/nginx will be reconciled (identifier mismatch)")
+	mustContain(t, out, "→ service app/nginx will be reconciled (identifier mismatch)")
 }
 
 func TestApply_PropagatesVolumeListError(t *testing.T) {
