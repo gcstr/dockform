@@ -63,7 +63,7 @@ Successfully created context "my-remote-docker"
   - Running: reads `com.docker.compose.config-hash` from the container labels.
   - If hashes match → `[noop]`; otherwise → `[change]`.
 - Top-level resources (volumes/networks): presence and identifier labeling are verified.
-- Orphan management: resources labeled with the identifier but no longer in the config are listed as `[remove]` in plan.
+- Orphan management: resources labeled with the identifier but no longer in the config are listed as ↓ in plan.
 
 ### Commands
 
