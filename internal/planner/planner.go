@@ -286,6 +286,9 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 		labels["io.dockform.identifier"] = identifier
 	}
 
+	// Queue services that should be restarted due to fileset updates.
+	restartPending := map[string]struct{}{}
+
 	// Ensure volumes exist
 	existingVolumes := map[string]struct{}{}
 	if vols, err := p.docker.ListVolumes(ctx); err == nil {
@@ -361,27 +364,13 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 				return apperr.Wrap("planner.Apply", apperr.External, err, "write index for fileset %s", n)
 			}
 
-			// Restart services if configured for this fileset group
+			// Queue restart for configured services. We'll restart after compose up.
 			if len(a.RestartServices) > 0 {
-				// Discover running compose services scoped by identifier (client carries identifier filter)
-				items, _ := p.docker.ListComposeContainersAll(ctx)
 				for _, svc := range a.RestartServices {
 					if svc == "" {
 						continue
 					}
-					found := false
-					for _, it := range items {
-						if it.Service == svc {
-							found = true
-							fmt.Printf("restarting service %s...\n", svc)
-							if err := p.docker.RestartContainer(ctx, it.Name); err != nil {
-								return apperr.Wrap("planner.Apply", apperr.External, err, "restart service %s", svc)
-							}
-						}
-					}
-					if !found {
-						fmt.Printf("Warning: %s not found.\n", svc)
-					}
+					restartPending[svc] = struct{}{}
 				}
 			}
 		}
@@ -520,6 +509,26 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 						_ = p.docker.UpdateContainerLabels(ctx, it.Name, map[string]string{"io.dockform.identifier": identifier})
 					}
 				}
+			}
+		}
+	}
+
+	// Perform any pending restarts after compose has ensured containers exist.
+	if len(restartPending) > 0 {
+		items, _ := p.docker.ListComposeContainersAll(ctx)
+		for svc := range restartPending {
+			found := false
+			for _, it := range items {
+				if it.Service == svc {
+					found = true
+					fmt.Printf("restarting service %s...\n", svc)
+					if err := p.docker.RestartContainer(ctx, it.Name); err != nil {
+						return apperr.Wrap("planner.Apply", apperr.External, err, "restart service %s", svc)
+					}
+				}
+			}
+			if !found {
+				fmt.Printf("Warning: %s not found.\n", svc)
 			}
 		}
 	}
