@@ -1,0 +1,8 @@
+services:
+  app:
+    image: alpine
+    command: ["sh","-c","echo -n \"$SECRET_KEY\" > /tmp/secret && sleep 60"]
+    labels:
+      io.dockform.identifier: ${DOCKFORM_RUN_ID}
+
+
