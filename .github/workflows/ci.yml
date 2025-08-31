@@ -25,6 +25,7 @@ jobs:
           version: latest
           args: --timeout=5m
   test:
+    needs: lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -50,6 +51,27 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test ./... -v
+        run: go test ./internal/... -v
+  e2e:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      
+      - name: Setup SOPS
+        uses: nhedger/setup-sops@v2
+        with:
+          version: "latest"
 
+      - name: Setup Age
+        uses: alessiodionisi/setup-age-action@v1.3.0
+
+      - name: Run e2e tests
+        run: go test ./test/e2e -v

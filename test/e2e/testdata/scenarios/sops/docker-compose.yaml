@@ -4,5 +4,7 @@ services:
     command: ["sh","-c","echo -n \"$SECRET_KEY\" > /tmp/secret && sleep 60"]
     labels:
       io.dockform.identifier: ${DOCKFORM_RUN_ID}
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
 
 
