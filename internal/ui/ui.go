@@ -36,9 +36,9 @@ var ListStyles = struct {
 	InnerEnumStyle lipgloss.Style
 	InnerItemStyle lipgloss.Style
 }{
-	OuterEnumStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("99")).MarginRight(1),
-	OuterItemStyle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")),
-	InnerEnumStyle: lipgloss.NewStyle().MarginRight(1), // margin only; color per-item
+	OuterEnumStyle: lipgloss.NewStyle(),
+	OuterItemStyle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).MarginTop(1),
+	InnerEnumStyle: lipgloss.NewStyle().MarginRight(1).MarginLeft(1), // margin only; color per-item
 	InnerItemStyle: lipgloss.NewStyle(),
 }
 
@@ -82,8 +82,10 @@ func RenderSectionedList(sections []Section) string {
 	if len(args) == 0 {
 		return ""
 	}
+	// Empty enumerator for section headers (no leading bullet)
+	emptyEnum := func(_ lglist.Items, _ int) string { return "" }
 	outer := lglist.New(args...).
-		Enumerator(lglist.Bullet).
+		Enumerator(emptyEnum).
 		EnumeratorStyle(ListStyles.OuterEnumStyle).
 		ItemStyle(ListStyles.OuterItemStyle)
 	return outer.String()
