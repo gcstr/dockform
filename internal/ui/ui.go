@@ -5,9 +5,11 @@ import (
 	"regexp"
 
 	"io"
+	"os"
 
 	"github.com/charmbracelet/lipgloss"
 	lglist "github.com/charmbracelet/lipgloss/list"
+	"github.com/mattn/go-isatty"
 )
 
 var (
@@ -37,7 +39,7 @@ var ListStyles = struct {
 	InnerItemStyle lipgloss.Style
 }{
 	OuterEnumStyle: lipgloss.NewStyle(),
-	OuterItemStyle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99")).MarginTop(1),
+	OuterItemStyle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69")).MarginTop(1),
 	InnerEnumStyle: lipgloss.NewStyle().MarginRight(1).MarginLeft(1), // margin only; color per-item
 	InnerItemStyle: lipgloss.NewStyle(),
 }
@@ -62,7 +64,7 @@ func RenderSectionedList(sections []Section) string {
 			}
 			switch itemsRef[i].Type {
 			case Noop:
-				return styleNoop.Render("○")
+				return styleNoop.Render("●")
 			case Add:
 				return styleAdd.Render("↑")
 			case Remove:
@@ -82,13 +84,13 @@ func RenderSectionedList(sections []Section) string {
 	if len(args) == 0 {
 		return ""
 	}
-	// Empty enumerator for section headers (no leading bullet)
+	// Empty enumerator for section headers
 	emptyEnum := func(_ lglist.Items, _ int) string { return "" }
 	outer := lglist.New(args...).
 		Enumerator(emptyEnum).
 		EnumeratorStyle(ListStyles.OuterEnumStyle).
 		ItemStyle(ListStyles.OuterItemStyle)
-	return outer.String()
+	return outer.String() + "\n"
 }
 
 // --- existing change-line utilities below ---
@@ -122,6 +124,14 @@ func StripANSI(s string) string {
 	return ansiRegexp.ReplaceAllString(s, "")
 }
 
+// clearCurrentLineIfTTY clears the current terminal line when writing to a TTY.
+func clearCurrentLineIfTTY(w io.Writer) {
+	if f, ok := w.(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+		// Carriage return and clear line escape
+		_, _ = fmt.Fprint(w, "\r\x1b[2K")
+	}
+}
+
 // Printer centralizes user-facing output. It routes informational messages to
 // stdout and warnings/errors to stderr, ready for future styling via lipgloss.
 type Printer interface {
@@ -152,6 +162,8 @@ func (p StdPrinter) Info(format string, a ...any) {
 	if p.Out == nil {
 		return
 	}
+	// Avoid mixing with any active spinner on TTY
+	clearCurrentLineIfTTY(p.Out)
 	prefix := styleInfoPrefix.Render("[info]")
 	_, _ = fmt.Fprintf(p.Out, "%s "+format+"\n", append([]any{prefix}, a...)...)
 }
@@ -160,6 +172,8 @@ func (p StdPrinter) Warn(format string, a ...any) {
 	if p.Err == nil {
 		return
 	}
+	// Avoid mixing with any active spinner on TTY
+	clearCurrentLineIfTTY(p.Err)
 	prefix := styleWarnPrefix.Render("[warn]")
 	_, _ = fmt.Fprintf(p.Err, "%s "+format+"\n", append([]any{prefix}, a...)...)
 }
@@ -168,6 +182,8 @@ func (p StdPrinter) Error(format string, a ...any) {
 	if p.Err == nil {
 		return
 	}
+	// Avoid mixing with any active spinner on TTY
+	clearCurrentLineIfTTY(p.Err)
 	prefix := styleErrorPrefix.Render("[error]")
 	_, _ = fmt.Fprintf(p.Err, "%s "+format+"\n", append([]any{prefix}, a...)...)
 }

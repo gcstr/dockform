@@ -29,13 +29,18 @@ func newPlanCmd() *cobra.Command {
 				pr.Warn("environment variable %s is not set; replacing with empty string", name)
 			}
 			d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
+			sp := ui.NewSpinner(pr.Out, "Planning...")
+			sp.Start()
 			if err := validator.Validate(context.Background(), cfg, d); err != nil {
+				sp.Stop()
 				return err
 			}
 			pln, err := planner.NewWithDocker(d).WithPrinter(pr).BuildPlan(context.Background(), cfg)
 			if err != nil {
+				sp.Stop()
 				return err
 			}
+			sp.Stop()
 			out := pln.String()
 			pr.Plain("%s", out)
 			if !prune && strings.Contains(out, "↓ ") {

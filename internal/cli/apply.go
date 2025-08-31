@@ -29,13 +29,18 @@ func newApplyCmd() *cobra.Command {
 			prune, _ := cmd.Flags().GetBool("prune")
 
 			d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
+			sp := ui.NewSpinner(pr.Out, "Planning...")
+			sp.Start()
 			if err := validator.Validate(context.Background(), cfg, d); err != nil {
+				sp.Stop()
 				return err
 			}
 			pln, err := planner.NewWithDocker(d).WithPrinter(pr).BuildPlan(context.Background(), cfg)
 			if err != nil {
+				sp.Stop()
 				return err
 			}
+			sp.Stop()
 			out := pln.String()
 			pr.Plain("%s", out)
 			// Print guidance only when removals are present and --prune not set
@@ -50,14 +55,22 @@ func newApplyCmd() *cobra.Command {
 				return nil
 			}
 
+			sp2 := ui.NewSpinner(pr.Out, "Applying...")
+			sp2.Start()
 			if err := planner.NewWithDocker(d).WithPrinter(pr).Apply(context.Background(), cfg); err != nil {
+				sp2.Stop()
 				return err
 			}
+			sp2.Stop()
 
 			if prune {
+				sp3 := ui.NewSpinner(pr.Out, "Pruning...")
+				sp3.Start()
 				if err := planner.NewWithDocker(d).WithPrinter(pr).Prune(context.Background(), cfg); err != nil {
+					sp3.Stop()
 					return err
 				}
+				sp3.Stop()
 			}
 			return nil
 		},
