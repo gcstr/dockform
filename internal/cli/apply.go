@@ -55,13 +55,16 @@ func newApplyCmd() *cobra.Command {
 				return nil
 			}
 
-			sp2 := ui.NewSpinner(pr.Out, "Applying...")
+			sp2 := ui.NewSpinner(pr.Out, "")
 			sp2.Start()
-			if err := planner.NewWithDocker(d).WithPrinter(pr).Apply(context.Background(), cfg); err != nil {
+			pb := ui.NewProgress(pr.Out, "Applying")
+			if err := planner.NewWithDocker(d).WithPrinter(pr).WithProgress(pb).Apply(context.Background(), cfg); err != nil {
 				sp2.Stop()
+				pb.Stop()
 				return err
 			}
 			sp2.Stop()
+			pb.Stop()
 
 			if prune {
 				sp3 := ui.NewSpinner(pr.Out, "Pruning...")

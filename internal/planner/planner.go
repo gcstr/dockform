@@ -25,6 +25,7 @@ type Plan struct {
 type Planner struct {
 	docker *dockercli.Client
 	pr     ui.Printer
+	prog   *ui.Progress
 }
 
 func New() *Planner { return &Planner{} }
@@ -34,6 +35,12 @@ func NewWithDocker(client *dockercli.Client) *Planner { return &Planner{docker: 
 // WithPrinter sets the output printer for user-facing messages during apply/prune.
 func (p *Planner) WithPrinter(pr ui.Printer) *Planner {
 	p.pr = pr
+	return p
+}
+
+// WithProgress sets a progress bar to report stepwise progress during apply.
+func (p *Planner) WithProgress(pb *ui.Progress) *Planner {
+	p.prog = pb
 	return p
 }
 
@@ -319,6 +326,141 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	// Queue services that should be restarted due to fileset updates.
 	restartPending := map[string]struct{}{}
 
+	// Initialize progress: estimate total work items conservatively and refine later.
+	if p.prog != nil {
+		total := 0
+		// Volumes to create
+		existingVolumesForCount := map[string]struct{}{}
+		if vols, err := p.docker.ListVolumes(ctx); err == nil {
+			for _, v := range vols {
+				existingVolumesForCount[v] = struct{}{}
+			}
+		}
+		for name := range cfg.Volumes {
+			if _, ok := existingVolumesForCount[name]; !ok {
+				total++
+			}
+		}
+		// Filesets: 1 unit per fileset; if no changes later, we decrement
+		total += len(cfg.Filesets)
+		// Networks to create
+		existingNetworksForCount := map[string]struct{}{}
+		if nets, err := p.docker.ListNetworks(ctx); err == nil {
+			for _, n := range nets {
+				existingNetworksForCount[n] = struct{}{}
+			}
+		}
+		for name := range cfg.Networks {
+			if _, ok := existingNetworksForCount[name]; !ok {
+				total++
+			}
+		}
+		// Applications requiring compose up
+		for appName := range cfg.Applications {
+			app := cfg.Applications[appName]
+			proj := ""
+			if app.Project != nil {
+				proj = app.Project.Name
+			}
+			// Build inline env same as later
+			inline := append([]string(nil), app.EnvInline...)
+			ageKeyFile := ""
+			if cfg.Sops != nil && cfg.Sops.Age != nil {
+				ageKeyFile = cfg.Sops.Age.KeyFile
+			}
+			for _, pth0 := range app.SopsSecrets {
+				pth := pth0
+				if pth != "" && !filepath.IsAbs(pth) {
+					pth = filepath.Join(app.Root, pth)
+				}
+				if pairs, err := secrets.DecryptAndParse(ctx, pth, ageKeyFile); err == nil {
+					inline = append(inline, pairs...)
+				}
+			}
+			plannedServices := []string{}
+			if doc, err := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil {
+				for s := range doc.Services {
+					plannedServices = append(plannedServices, s)
+				}
+			}
+			if len(plannedServices) == 0 {
+				if names, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil && len(names) > 0 {
+					plannedServices = append([]string(nil), names...)
+				}
+			}
+			if len(plannedServices) == 0 {
+				continue
+			}
+			running := map[string]dockercli.ComposePsItem{}
+			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
+				for _, it := range items {
+					running[it.Service] = it
+				}
+			}
+			applyNeeded := false
+			for _, s := range plannedServices {
+				it, ok := running[s]
+				if !ok {
+					applyNeeded = true
+					break
+				}
+				if identifier != "" {
+					keys := []string{"io.dockform.identifier", "com.docker.compose.config-hash"}
+					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, keys)
+					if v, ok := labels["io.dockform.identifier"]; !ok || v != identifier {
+						applyNeeded = true
+						break
+					}
+					if desiredHash, derr := p.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, s, identifier, inline); derr == nil && desiredHash != "" {
+						runningHash := labels["com.docker.compose.config-hash"]
+						if runningHash == "" || runningHash != desiredHash {
+							applyNeeded = true
+							break
+						}
+					}
+				} else {
+					if desiredHash, derr := p.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, s, "", inline); derr == nil && desiredHash != "" {
+						labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"com.docker.compose.config-hash"})
+						runningHash := labels["com.docker.compose.config-hash"]
+						if runningHash == "" || runningHash != desiredHash {
+							applyNeeded = true
+							break
+						}
+					}
+				}
+			}
+			if applyNeeded {
+				total++
+			}
+		}
+		// Restarts planned: count unique restart services that exist
+		if len(cfg.Filesets) > 0 {
+			set := map[string]struct{}{}
+			for _, fs := range cfg.Filesets {
+				for _, svc := range fs.RestartServices {
+					if strings.TrimSpace(svc) != "" {
+						set[svc] = struct{}{}
+					}
+				}
+			}
+			if len(set) > 0 {
+				if items, err := p.docker.ListComposeContainersAll(ctx); err == nil {
+					for svc := range set {
+						for _, it := range items {
+							if it.Service == svc {
+								total++
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		if total > 0 {
+			p.prog.Start(total)
+		}
+	}
+
 	// Ensure volumes exist
 	existingVolumes := map[string]struct{}{}
 	if vols, err := p.docker.ListVolumes(ctx); err == nil {
@@ -330,8 +472,14 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	}
 	for name := range cfg.Volumes {
 		if _, ok := existingVolumes[name]; !ok {
+			if p.prog != nil {
+				p.prog.SetAction("creating volume " + name)
+			}
 			if err := p.docker.CreateVolume(ctx, name, labels); err != nil {
 				return apperr.Wrap("planner.Apply", apperr.External, err, "create volume %s", name)
+			}
+			if p.prog != nil {
+				p.prog.Increment()
 			}
 		}
 	}
@@ -358,6 +506,9 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 			diff := filesets.DiffIndexes(local, remote)
 			// If completely equal, skip
 			if local.TreeHash == remote.TreeHash {
+				if p.prog != nil {
+					p.prog.AdjustTotal(-1)
+				}
 				continue
 			}
 			// Build tar for create+update
@@ -371,6 +522,9 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 			// Deterministic order for tar emission
 			sort.Strings(paths)
 			if len(paths) > 0 {
+				if p.prog != nil {
+					p.prog.SetAction("syncing fileset " + n)
+				}
 				var buf bytes.Buffer
 				if err := util.TarFilesToWriter(a.SourceAbs, paths, &buf); err != nil {
 					return apperr.Wrap("planner.Apply", apperr.Internal, err, "build tar for fileset %s", n)
@@ -381,17 +535,26 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 			}
 			// Deletions
 			if len(diff.ToDelete) > 0 {
+				if p.prog != nil {
+					p.prog.SetAction("deleting files from fileset " + n)
+				}
 				if err := p.docker.RemovePathsFromVolume(ctx, a.TargetVolume, a.TargetPath, diff.ToDelete); err != nil {
 					return apperr.Wrap("planner.Apply", apperr.External, err, "delete files for fileset %s", n)
 				}
 			}
 			// Write index last (not part of tree)
+			if p.prog != nil {
+				p.prog.SetAction("writing index for fileset " + n)
+			}
 			jsonStr, err := local.ToJSON()
 			if err != nil {
 				return apperr.Wrap("planner.Apply", apperr.Internal, err, "encode index for %s", n)
 			}
 			if err := p.docker.WriteFileToVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName, jsonStr); err != nil {
 				return apperr.Wrap("planner.Apply", apperr.External, err, "write index for fileset %s", n)
+			}
+			if p.prog != nil {
+				p.prog.Increment()
 			}
 
 			// Queue restart for configured services. We'll restart after compose up.
@@ -417,8 +580,14 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	}
 	for name := range cfg.Networks {
 		if _, ok := existingNetworks[name]; !ok {
+			if p.prog != nil {
+				p.prog.SetAction("creating network " + name)
+			}
 			if err := p.docker.CreateNetwork(ctx, name, labels); err != nil {
 				return apperr.Wrap("planner.Apply", apperr.External, err, "create network %s", name)
+			}
+			if p.prog != nil {
+				p.prog.Increment()
 			}
 		}
 	}
@@ -526,8 +695,14 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 		}
 
 		// Perform compose up
+		if p.prog != nil {
+			p.prog.SetAction("docker compose up for " + appName)
+		}
 		if _, err := p.docker.ComposeUp(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err != nil {
 			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s", appName)
+		}
+		if p.prog != nil {
+			p.prog.Increment()
 		}
 
 		// Best-effort: ensure identifier label is present only for missing ones
@@ -557,8 +732,14 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 				if it.Service == svc {
 					found = true
 					pr.Info("restarting service %s...", svc)
+					if p.prog != nil {
+						p.prog.SetAction("restarting service " + svc)
+					}
 					if err := p.docker.RestartContainer(ctx, it.Name); err != nil {
 						return apperr.Wrap("planner.Apply", apperr.External, err, "restart service %s", svc)
+					}
+					if p.prog != nil {
+						p.prog.Increment()
 					}
 				}
 			}

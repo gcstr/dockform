@@ -78,7 +78,8 @@ func (s *Spinner) Start() {
 				frame := s.frames[i%len(s.frames)]
 				i++
 				// Render without newline; carriage return to rewrite line
-				_, _ = fmt.Fprintf(s.out, "\r%s %s", s.style.Render(frame), s.label)
+				// Ensure one space before and after the spinner
+				_, _ = fmt.Fprintf(s.out, "\r %s %s", s.style.Render(frame), s.label)
 			}
 		}
 	}(s.stopCh, s.doneCh)
