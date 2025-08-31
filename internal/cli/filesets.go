@@ -2,12 +2,12 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/planner"
+	"github.com/gcstr/dockform/internal/ui"
 	"github.com/gcstr/dockform/internal/validator"
 	"github.com/spf13/cobra"
 )
@@ -28,25 +28,27 @@ func newFilesetPlanCmd() *cobra.Command {
 		Short: "Show fileset diffs only",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
-			cfg, err := manifest.Load(file)
+			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
+			cfg, missing, err := manifest.LoadWithWarnings(file)
 			if err != nil {
 				return err
+			}
+			for _, name := range missing {
+				pr.Warn("environment variable %s is not set; replacing with empty string", name)
 			}
 			// Use Docker context from config and scope by identifier if present
 			d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
 			if err := validator.Validate(context.Background(), cfg, d); err != nil {
 				return err
 			}
-			pln, err := planner.NewWithDocker(d).BuildPlan(context.Background(), cfg)
+			pln, err := planner.NewWithDocker(d).WithPrinter(pr).BuildPlan(context.Background(), cfg)
 			if err != nil {
 				return err
 			}
 			// Filter plan output to only fileset lines
 			out := pln.String()
 			filtered := filterFilesetLines(out)
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), filtered); err != nil {
-				return err
-			}
+			pr.Info("%s", filtered)
 			return nil
 		},
 	}
@@ -59,29 +61,32 @@ func newFilesetApplyCmd() *cobra.Command {
 		Short: "Apply fileset diffs only",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
-			cfg, err := manifest.Load(file)
+			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
+			cfg, missing, err := manifest.LoadWithWarnings(file)
 			if err != nil {
 				return err
+			}
+			for _, name := range missing {
+				pr.Warn("environment variable %s is not set; replacing with empty string", name)
 			}
 			d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
 			if err := validator.Validate(context.Background(), cfg, d); err != nil {
 				return err
 			}
-			pln, err := planner.NewWithDocker(d).BuildPlan(context.Background(), cfg)
+			pln, err := planner.NewWithDocker(d).WithPrinter(pr).BuildPlan(context.Background(), cfg)
 			if err != nil {
 				return err
 			}
 			// Print only fileset lines of the plan
 			out := pln.String()
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), filterFilesetLines(out)); err != nil {
-				return err
-			}
+			pr.Info("%s", filterFilesetLines(out))
+
 			// Apply only the fileset part. We reuse Planner.Apply but constrain to filesets
 			// by creating a copy of config with applications cleared so only filesets + top-level are touched.
 			cfgApps := cfg.Applications
 			cfg.Applications = map[string]manifest.Application{}
 			defer func() { cfg.Applications = cfgApps }()
-			if err := planner.NewWithDocker(d).Apply(context.Background(), cfg); err != nil {
+			if err := planner.NewWithDocker(d).WithPrinter(pr).Apply(context.Background(), cfg); err != nil {
 				return err
 			}
 			return nil

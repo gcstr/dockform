@@ -2,13 +2,12 @@ package cli
 
 import (
 	"context"
-	"fmt"
-
 	"strings"
 
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/planner"
+	"github.com/gcstr/dockform/internal/ui"
 	"github.com/gcstr/dockform/internal/validator"
 	"github.com/spf13/cobra"
 )
@@ -19,9 +18,13 @@ func newApplyCmd() *cobra.Command {
 		Short: "Apply the desired state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
-			cfg, err := manifest.Load(file)
+			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
+			cfg, missing, err := manifest.LoadWithWarnings(file)
 			if err != nil {
 				return err
+			}
+			for _, name := range missing {
+				pr.Warn("environment variable %s is not set; replacing with empty string", name)
 			}
 			prune, _ := cmd.Flags().GetBool("prune")
 
@@ -29,18 +32,14 @@ func newApplyCmd() *cobra.Command {
 			if err := validator.Validate(context.Background(), cfg, d); err != nil {
 				return err
 			}
-			pln, err := planner.NewWithDocker(d).BuildPlan(context.Background(), cfg)
+			pln, err := planner.NewWithDocker(d).WithPrinter(pr).BuildPlan(context.Background(), cfg)
 			if err != nil {
 				return err
 			}
 			out := pln.String()
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), out); err != nil {
-				return err
-			}
+			pr.Info("%s", out)
 			if !prune && strings.Contains(out, "[remove]") {
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No resources will be removed. Include --prune to delete them"); err != nil {
-					return err
-				}
+				pr.Info("No resources will be removed. Include --prune to delete them")
 			}
 
 			// Skip Apply when there are no add/change operations and no filesets configured
@@ -48,12 +47,12 @@ func newApplyCmd() *cobra.Command {
 				return nil
 			}
 
-			if err := planner.NewWithDocker(d).Apply(context.Background(), cfg); err != nil {
+			if err := planner.NewWithDocker(d).WithPrinter(pr).Apply(context.Background(), cfg); err != nil {
 				return err
 			}
 
 			if prune {
-				if err := planner.NewWithDocker(d).Prune(context.Background(), cfg); err != nil {
+				if err := planner.NewWithDocker(d).WithPrinter(pr).Prune(context.Background(), cfg); err != nil {
 					return err
 				}
 			}

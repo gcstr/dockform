@@ -22,43 +22,73 @@ var (
 // envVarPattern matches ${VARNAME} placeholders for interpolation
 var envVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
-// Load reads and validates configuration from the provided path. When path is empty,
-// it searches for dockform.yml or dockform.yaml in the current working directory.
-func Load(path string) (Config, error) {
+// LoadWithWarnings reads and validates configuration and returns missing env var names instead of printing.
+func LoadWithWarnings(path string) (Config, []string, error) {
 	guessed, err := resolveConfigPath(path)
 	if err != nil {
-		return Config{}, err
+		return Config{}, nil, err
 	}
 
 	// Ensure absolute path for consistent base directory resolution across environments
 	guessedAbs, err := filepath.Abs(guessed)
 	if err != nil {
-		return Config{}, apperr.Wrap("manifest.Load", apperr.InvalidInput, err, "abs path")
+		return Config{}, nil, apperr.Wrap("manifest.Load", apperr.InvalidInput, err, "abs path")
 	}
 
 	b, err := os.ReadFile(guessedAbs)
 	if err != nil {
-		return Config{}, apperr.Wrap("manifest.Load", apperr.NotFound, err, "read config")
+		return Config{}, nil, apperr.Wrap("manifest.Load", apperr.NotFound, err, "read config")
 	}
 
 	// Interpolate env placeholders before decoding YAML
 	interpolated, missing := interpolateEnvPlaceholders(string(b))
-	for _, name := range missing {
-		fmt.Fprintf(os.Stderr, "warning: environment variable %s is not set; replacing with empty string\n", name)
-	}
 
 	var cfg Config
 	dec := yaml.NewDecoder(bytes.NewReader([]byte(interpolated)), yaml.Validator(validate), yaml.Strict())
 	if err := dec.Decode(&cfg); err != nil {
-		return Config{}, apperr.New("manifest.Load", apperr.InvalidInput, "parse yaml: %s", yaml.FormatError(err, true, true))
+		return Config{}, missing, apperr.New("manifest.Load", apperr.InvalidInput, "parse yaml: %s", yaml.FormatError(err, true, true))
 	}
 
 	baseDir := filepath.Dir(guessedAbs)
 	cfg.BaseDir = baseDir
 	if err := cfg.normalizeAndValidate(baseDir); err != nil {
+		return Config{}, missing, err
+	}
+	return cfg, missing, nil
+}
+
+// Load reads and validates configuration from the provided path. When path is empty,
+// it searches for dockform.yml or dockform.yaml in the current working directory.
+func Load(path string) (Config, error) {
+	cfg, missing, err := LoadWithWarnings(path)
+	if err != nil {
 		return Config{}, err
 	}
+	for _, name := range missing {
+		fmt.Fprintf(os.Stderr, "warning: environment variable %s is not set; replacing with empty string\n", name)
+	}
 	return cfg, nil
+}
+
+// RenderWithWarnings reads the manifest file and returns interpolated YAML and the list of missing env var names.
+func RenderWithWarnings(path string) (string, []string, error) {
+	guessed, err := resolveConfigPath(path)
+	if err != nil {
+		return "", nil, err
+	}
+
+	guessedAbs, err := filepath.Abs(guessed)
+	if err != nil {
+		return "", nil, apperr.Wrap("manifest.Render", apperr.InvalidInput, err, "abs path")
+	}
+
+	b, err := os.ReadFile(guessedAbs)
+	if err != nil {
+		return "", nil, apperr.Wrap("manifest.Render", apperr.NotFound, err, "read config")
+	}
+
+	interpolated, missing := interpolateEnvPlaceholders(string(b))
+	return interpolated, missing, nil
 }
 
 // Render reads the manifest file at the provided path (or discovers it like Load)
@@ -66,22 +96,10 @@ func Load(path string) (Config, error) {
 // current environment. Missing variables are replaced with empty strings and a
 // warning is emitted to stderr.
 func Render(path string) (string, error) {
-	guessed, err := resolveConfigPath(path)
+	interpolated, missing, err := RenderWithWarnings(path)
 	if err != nil {
 		return "", err
 	}
-
-	guessedAbs, err := filepath.Abs(guessed)
-	if err != nil {
-		return "", apperr.Wrap("manifest.Render", apperr.InvalidInput, err, "abs path")
-	}
-
-	b, err := os.ReadFile(guessedAbs)
-	if err != nil {
-		return "", apperr.Wrap("manifest.Render", apperr.NotFound, err, "read config")
-	}
-
-	interpolated, missing := interpolateEnvPlaceholders(string(b))
 	for _, name := range missing {
 		fmt.Fprintf(os.Stderr, "warning: environment variable %s is not set; replacing with empty string\n", name)
 	}

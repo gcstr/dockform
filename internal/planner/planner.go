@@ -3,7 +3,6 @@ package planner
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"path/filepath"
 	"sort"
 
@@ -24,11 +23,18 @@ type Plan struct {
 // Planner creates a plan comparing desired and current docker state.
 type Planner struct {
 	docker *dockercli.Client
+	pr     ui.Printer
 }
 
 func New() *Planner { return &Planner{} }
 
 func NewWithDocker(client *dockercli.Client) *Planner { return &Planner{docker: client} }
+
+// WithPrinter sets the output printer for user-facing messages during apply/prune.
+func (p *Planner) WithPrinter(pr ui.Printer) *Planner {
+	p.pr = pr
+	return p
+}
 
 // BuildPlan currently produces a minimal plan for top-level volumes and networks.
 // Future: inspect docker for current state and diff services/apps.
@@ -516,19 +522,24 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	// Perform any pending restarts after compose has ensured containers exist.
 	if len(restartPending) > 0 {
 		items, _ := p.docker.ListComposeContainersAll(ctx)
+		// choose printer (Noop if none provided)
+		pr := p.pr
+		if pr == nil {
+			pr = ui.NoopPrinter{}
+		}
 		for svc := range restartPending {
 			found := false
 			for _, it := range items {
 				if it.Service == svc {
 					found = true
-					fmt.Printf("restarting service %s...\n", svc)
+					pr.Info("restarting service %s...", svc)
 					if err := p.docker.RestartContainer(ctx, it.Name); err != nil {
 						return apperr.Wrap("planner.Apply", apperr.External, err, "restart service %s", svc)
 					}
 				}
 			}
 			if !found {
-				fmt.Printf("Warning: %s not found.\n", svc)
+				pr.Warn("%s not found.", svc)
 			}
 		}
 	}
