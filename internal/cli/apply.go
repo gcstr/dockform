@@ -57,21 +57,22 @@ func newApplyCmd() *cobra.Command {
             }
 
             confirmed := false
-            entered := ""
             if inTTY && outTTY {
                 // Interactive terminal: use Bubble Tea prompt
-                ok, val, err := ui.ConfirmYesTTY(cmd.InOrStdin(), cmd.OutOrStdout())
+                ok, _, err := ui.ConfirmYesTTY(cmd.InOrStdin(), cmd.OutOrStdout())
                 if err != nil {
                     return err
                 }
                 confirmed = ok
-                entered = val
+                // Preserve the user's entered text on screen by moving to a new line
+                // so the spinner/progress doesn't overwrite it.
+                pr.Plain("")
             } else {
                 // Non-interactive: fall back to plain stdin read (keeps tests/scriptability)
                 pr.Plain("Dockform will apply the changes listed above.\nType 'yes' to confirm.\n\nEnter a value:")
                 reader := bufio.NewReader(cmd.InOrStdin())
                 ans, _ := reader.ReadString('\n')
-                entered = strings.TrimRight(ans, "\n")
+                entered := strings.TrimRight(ans, "\n")
                 confirmed = strings.TrimSpace(entered) == "yes"
                 // Echo user input only when stdin isn't a TTY (interactive terminals already echo)
                 if f, ok := cmd.InOrStdin().(*os.File); !ok || !isatty.IsTerminal(f.Fd()) {
