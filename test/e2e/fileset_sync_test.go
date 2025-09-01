@@ -43,7 +43,7 @@ func TestFilesetSyncAndIndex(t *testing.T) {
 	env := append(os.Environ(), "DOCKFORM_RUN_ID="+runID)
 
 	// Apply to sync fileset into volume
-	_ = runCmd(t, tempDir, env, bin, "apply", "-c", tempDir)
+	_ = runCmdWithStdin(t, tempDir, env, bin, "yes\n", "apply", "-c", tempDir)
 
 	// Verify volume exists (labeled)
 	vols := dockerLines(t, ctx, "volume", "ls", "--format", "{{.Name}}", "--filter", "label=io.dockform.identifier="+identifier)

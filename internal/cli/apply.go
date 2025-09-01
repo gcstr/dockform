@@ -1,13 +1,17 @@
 package cli
 
 import (
+	"bufio"
 	"context"
+	"os"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/planner"
 	"github.com/gcstr/dockform/internal/ui"
 	"github.com/gcstr/dockform/internal/validator"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +45,21 @@ func newApplyCmd() *cobra.Command {
 			sp.Stop()
 			out := pln.String()
 			pr.Plain("%s", out)
+
+			// Confirmation prompt before applying changes
+			pr.Plain("Dockform will apply the changes listed above.\nType 'yes' to confirm.\n\nEnter a value:")
+			reader := bufio.NewReader(cmd.InOrStdin())
+			ans, _ := reader.ReadString('\n')
+			if strings.TrimSpace(ans) != "yes" {
+				pr.Plain("canceled")
+				return nil
+			}
+
+			// Echo user input only when stdin isn't a TTY (interactive terminals already echo)
+			if f, ok := cmd.InOrStdin().(*os.File); !ok || !isatty.IsTerminal(f.Fd()) {
+				pr.Plain("%s", strings.TrimRight(ans, "\n"))
+			}
+			pr.Plain("")
 
 			// Always run apply tasks; do not skip based on plan output
 

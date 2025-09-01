@@ -70,7 +70,7 @@ func TestSimplePlanApplyLifecycle(t *testing.T) {
 	// APPLY (verbose + overlay debug to surface compose errors clearly)
 	envApply := append([]string{}, env...)
 	envApply = append(envApply, "DOCKFORM_DEBUG_OVERLAY=1")
-	_ = runCmd(t, tempDir, envApply, bin, "-v", "apply", "-c", tempDir)
+	_ = runCmdWithStdin(t, tempDir, envApply, bin, "yes\n", "-v", "apply", "-c", tempDir)
 
 	// Assert container exists by label
 	names := dockerLines(t, ctx, "ps", "--format", "{{.Names}}", "--filter", "label=io.dockform.identifier="+identifier)
@@ -143,6 +143,21 @@ func runCmd(t *testing.T, dir string, env []string, name string, args ...string)
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = env
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run %s %v failed: %v\n%s", name, args, err, buf.String())
+	}
+	return buf.String()
+}
+
+func runCmdWithStdin(t *testing.T, dir string, env []string, name string, stdin string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = env
+	cmd.Stdin = strings.NewReader(stdin)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf

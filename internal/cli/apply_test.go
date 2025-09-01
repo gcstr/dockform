@@ -15,6 +15,7 @@ func TestApply_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
+	root.SetIn(strings.NewReader("yes\n"))
 	root.SetArgs([]string{"apply", "-c", basicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute: %v", err)
@@ -58,6 +59,7 @@ case "$cmd" in
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
+	root.SetIn(strings.NewReader("yes\n"))
 	root.SetArgs([]string{"apply", "-c", basicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute: %v", err)
@@ -73,6 +75,7 @@ func TestApply_InvalidConfigPath_ReturnsError(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
+	root.SetIn(strings.NewReader("yes\n"))
 	root.SetArgs([]string{"apply", "-c", "does-not-exist.yml"})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for invalid config path, got nil")
@@ -110,6 +113,7 @@ case "$cmd" in
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
+	root.SetIn(strings.NewReader("yes\n"))
 	root.SetArgs([]string{"apply", "-c", basicConfigPath(t)})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error from apply when docker fails, got nil")
