@@ -1,18 +1,18 @@
 package cli
 
 import (
-    "bufio"
-    "context"
-    "os"
-    "strings"
+	"bufio"
+	"context"
+	"os"
+	"strings"
 
-    "github.com/gcstr/dockform/internal/dockercli"
-    "github.com/gcstr/dockform/internal/manifest"
-    "github.com/gcstr/dockform/internal/planner"
-    "github.com/gcstr/dockform/internal/ui"
-    "github.com/gcstr/dockform/internal/validator"
-    "github.com/mattn/go-isatty"
-    "github.com/spf13/cobra"
+	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/manifest"
+	"github.com/gcstr/dockform/internal/planner"
+	"github.com/gcstr/dockform/internal/ui"
+	"github.com/gcstr/dockform/internal/validator"
+	"github.com/mattn/go-isatty"
+	"github.com/spf13/cobra"
 )
 
 func newApplyCmd() *cobra.Command {
@@ -46,45 +46,45 @@ func newApplyCmd() *cobra.Command {
 			out := pln.String()
 			pr.Plain("%s", out)
 
-            // Confirmation prompt before applying changes
-            inTTY := false
-            outTTY := false
-            if f, ok := cmd.InOrStdin().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
-                inTTY = true
-            }
-            if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
-                outTTY = true
-            }
+			// Confirmation prompt before applying changes
+			inTTY := false
+			outTTY := false
+			if f, ok := cmd.InOrStdin().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+				inTTY = true
+			}
+			if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+				outTTY = true
+			}
 
-            confirmed := false
-            if inTTY && outTTY {
-                // Interactive terminal: use Bubble Tea prompt
-                ok, _, err := ui.ConfirmYesTTY(cmd.InOrStdin(), cmd.OutOrStdout())
-                if err != nil {
-                    return err
-                }
-                confirmed = ok
-                // Preserve the user's entered text on screen by moving to a new line
-                // so the spinner/progress doesn't overwrite it.
-                pr.Plain("")
-            } else {
-                // Non-interactive: fall back to plain stdin read (keeps tests/scriptability)
-                pr.Plain("Dockform will apply the changes listed above.\nType 'yes' to confirm.\n\nEnter a value:")
-                reader := bufio.NewReader(cmd.InOrStdin())
-                ans, _ := reader.ReadString('\n')
-                entered := strings.TrimRight(ans, "\n")
-                confirmed = strings.TrimSpace(entered) == "yes"
-                // Echo user input only when stdin isn't a TTY (interactive terminals already echo)
-                if f, ok := cmd.InOrStdin().(*os.File); !ok || !isatty.IsTerminal(f.Fd()) {
-                    pr.Plain("%s", entered)
-                }
-                pr.Plain("")
-            }
+			confirmed := false
+			if inTTY && outTTY {
+				// Interactive terminal: use Bubble Tea prompt
+				ok, entered, err := ui.ConfirmYesTTY(cmd.InOrStdin(), cmd.OutOrStdout())
+				if err != nil {
+					return err
+				}
+				confirmed = ok
+				// Only echo the final input line to avoid duplicating the header prompt.
+				pr.Plain("Enter a value: %s", entered)
+				pr.Plain("")
+			} else {
+				// Non-interactive: fall back to plain stdin read (keeps tests/scriptability)
+				pr.Plain("Dockform will apply the changes listed above.\nType yes to confirm.\n\nEnter a value:")
+				reader := bufio.NewReader(cmd.InOrStdin())
+				ans, _ := reader.ReadString('\n')
+				entered := strings.TrimRight(ans, "\n")
+				confirmed = strings.TrimSpace(entered) == "yes"
+				// Echo user input only when stdin isn't a TTY (interactive terminals already echo)
+				if f, ok := cmd.InOrStdin().(*os.File); !ok || !isatty.IsTerminal(f.Fd()) {
+					pr.Plain("%s", entered)
+				}
+				pr.Plain("")
+			}
 
-            if !confirmed {
-                pr.Plain("canceled")
-                return nil
-            }
+			if !confirmed {
+				pr.Plain("canceled")
+				return nil
+			}
 
 			// Always run apply tasks; do not skip based on plan output
 
