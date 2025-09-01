@@ -85,19 +85,7 @@ func TestRoot_SilenceFlags(t *testing.T) {
 	}
 }
 
-func TestPlan_HasPruneFlag(t *testing.T) {
-	cmd := newPlanCmd()
-	if cmd.Flags().Lookup("prune") == nil {
-		t.Fatalf("expected --prune flag on plan command")
-	}
-}
-
-func TestApply_HasPruneFlag(t *testing.T) {
-	cmd := newApplyCmd()
-	if cmd.Flags().Lookup("prune") == nil {
-		t.Fatalf("expected --prune flag on apply command")
-	}
-}
+// prune flag removed; no longer present on plan/apply
 
 func withFailingDockerRoot(t *testing.T) func() {
 	t.Helper()

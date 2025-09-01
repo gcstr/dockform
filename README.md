@@ -67,14 +67,12 @@ Successfully created context "my-remote-docker"
 
 ### Commands
 
-- `dockform plan [-f config.yml] [--prune]`
+- `dockform plan [-f config.yml]`
   - Parses/validates the config.
   - Compares current Docker state vs desired; prints a colorized plan.
-  - If removals are planned and `--prune` is not set, prints:
-    `No resources will be removed. Include --prune to delete them`.
 
-- `dockform apply [-f config.yml] [--prune]`
+- `dockform apply [-f config.yml]`
   - Runs `plan` and prints the plan.
   - Applies changes (idempotent).
-  - With `--prune`, removes unmanaged resources labeled with the identifier (containers, volumes, networks). Without `--prune`, prints the guidance above and performs no deletions.
+  - Removes unmanaged resources labeled with the identifier (containers, volumes, networks).
 

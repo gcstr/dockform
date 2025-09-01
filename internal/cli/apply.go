@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"strings"
 
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
@@ -26,7 +25,6 @@ func newApplyCmd() *cobra.Command {
 			for _, name := range missing {
 				pr.Warn("environment variable %s is not set; replacing with empty string", name)
 			}
-			prune, _ := cmd.Flags().GetBool("prune")
 
 			d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
 			sp := ui.NewSpinner(pr.Out, "Planning...")
@@ -43,17 +41,8 @@ func newApplyCmd() *cobra.Command {
 			sp.Stop()
 			out := pln.String()
 			pr.Plain("%s", out)
-			// Print guidance only when removals are present and --prune not set
-			if !prune && strings.Contains(out, "↓ ") {
-				pr.Plain("No resources will be removed. Include --prune to delete them")
-			}
 
-			// Skip Apply when there are no add/change operations and no filesets configured
-			noAdds := !strings.Contains(out, "↑ ")
-			noChanges := !strings.Contains(out, "→ ")
-			if noAdds && noChanges && len(cfg.Filesets) == 0 {
-				return nil
-			}
+			// Always run apply tasks; do not skip based on plan output
 
 			sp2 := ui.NewSpinner(pr.Out, "")
 			sp2.Start()
@@ -66,18 +55,16 @@ func newApplyCmd() *cobra.Command {
 			sp2.Stop()
 			pb.Stop()
 
-			if prune {
-				sp3 := ui.NewSpinner(pr.Out, "Pruning...")
-				sp3.Start()
-				if err := planner.NewWithDocker(d).WithPrinter(pr).Prune(context.Background(), cfg); err != nil {
-					sp3.Stop()
-					return err
-				}
+			// Always prune after apply
+			sp3 := ui.NewSpinner(pr.Out, "Pruning...")
+			sp3.Start()
+			if err := planner.NewWithDocker(d).WithPrinter(pr).Prune(context.Background(), cfg); err != nil {
 				sp3.Stop()
+				return err
 			}
+			sp3.Stop()
 			return nil
 		},
 	}
-	cmd.Flags().Bool("prune", false, "Delete unmanaged resources after confirmation")
 	return cmd
 }

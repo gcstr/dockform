@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestApply_PrintsRemovalGuidance_WhenRemovalsPresent_AndNoPrune_Solo(t *testing.T) {
+func TestApply_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
 	defer withStubDocker(t)()
 	root := newRootCmd()
 	var out bytes.Buffer
@@ -23,29 +23,9 @@ func TestApply_PrintsRemovalGuidance_WhenRemovalsPresent_AndNoPrune_Solo(t *test
 	if !strings.Contains(got, "↓ ") && !strings.Contains(got, " will be removed") {
 		t.Fatalf("expected remove lines in apply plan; got: %s", got)
 	}
-	if !strings.Contains(got, "No resources will be removed. Include --prune to delete them") {
-		t.Fatalf("expected prune guidance; got: %s", got)
-	}
 }
 
-func TestApply_DoesNotPrintRemovalGuidance_WhenPruneFlagSet(t *testing.T) {
-	defer withStubDocker(t)()
-	root := newRootCmd()
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&out)
-	root.SetArgs([]string{"apply", "--prune", "-c", basicConfigPath(t)})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("apply execute with --prune: %v", err)
-	}
-	got := out.String()
-	if !strings.Contains(got, "↓ ") && !strings.Contains(got, " will be removed") {
-		t.Fatalf("expected remove lines in apply plan; got: %s", got)
-	}
-	if strings.Contains(got, "No resources will be removed. Include --prune to delete them") {
-		t.Fatalf("did not expect prune guidance when --prune is set; got: %s", got)
-	}
-}
+// prune flag removed; guidance removed; apply always prunes
 
 func TestApply_NoRemovals_NoGuidance(t *testing.T) {
 	undo := withCustomDockerStub(t, `#!/bin/sh
@@ -69,8 +49,8 @@ case "$cmd" in
     exit 0 ;;
   inspect)
     echo "{}"; exit 0 ;;
-esac
-exit 0
+ esac
+ exit 0
 `)
 	defer undo()
 
@@ -85,9 +65,6 @@ exit 0
 	got := out.String()
 	if strings.Contains(got, "↓ ") || strings.Contains(got, " will be removed") {
 		t.Fatalf("did not expect any remove lines; got: %s", got)
-	}
-	if strings.Contains(got, "No resources will be removed. Include --prune to delete them") {
-		t.Fatalf("did not expect prune guidance when no removals are present; got: %s", got)
 	}
 }
 
@@ -124,8 +101,8 @@ case "$cmd" in
     exit 0 ;;
   inspect)
     echo "{}"; exit 0 ;;
-esac
-exit 0
+ esac
+ exit 0
 `)
 	defer undo()
 
@@ -143,6 +120,8 @@ exit 0
 
 // withCustomDockerStub writes a custom docker stub script and prepends it to PATH.
 func withCustomDockerStub(t *testing.T, script string) func() {
+	to := t.Helper
+	_ = to
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "docker")

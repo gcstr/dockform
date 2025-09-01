@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"strings"
 
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
@@ -18,7 +17,6 @@ func newPlanCmd() *cobra.Command {
 		Short: "Show the plan to reach the desired state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
-			prune, _ := cmd.Flags().GetBool("prune")
 
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, missing, err := manifest.LoadWithWarnings(file)
@@ -43,12 +41,8 @@ func newPlanCmd() *cobra.Command {
 			sp.Stop()
 			out := pln.String()
 			pr.Plain("%s", out)
-			if !prune && strings.Contains(out, "↓ ") {
-				pr.Plain("No resources will be removed. Include --prune to delete them")
-			}
 			return nil
 		},
 	}
-	cmd.Flags().Bool("prune", false, "Show removals that would be applied with --prune")
 	return cmd
 }
