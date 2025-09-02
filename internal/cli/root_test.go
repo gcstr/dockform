@@ -85,8 +85,6 @@ func TestRoot_SilenceFlags(t *testing.T) {
 	}
 }
 
-// prune flag removed; no longer present on plan/apply
-
 func withFailingDockerRoot(t *testing.T) func() {
 	t.Helper()
 	dir := t.TempDir()

@@ -23,8 +23,6 @@ func TestPlan_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
 	}
 }
 
-// prune flag removed; guidance removed
-
 func TestPlan_NoRemovals_NoGuidance(t *testing.T) {
 	undo := withCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift

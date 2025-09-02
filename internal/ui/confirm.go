@@ -1,14 +1,14 @@
 package ui
 
 import (
-    "bufio"
-    "io"
-    "os"
-    "strings"
+	"bufio"
+	"io"
+	"os"
+	"strings"
 
-    "github.com/charmbracelet/bubbles/textinput"
-    tea "github.com/charmbracelet/bubbletea"
-    "github.com/mattn/go-isatty"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-isatty"
 )
 
 // ConfirmYesTTY runs a Bubble Tea prompt that asks the user to type "yes" to
@@ -16,29 +16,29 @@ import (
 // provided by the caller. It returns whether the user confirmed and the raw
 // value that was entered.
 func ConfirmYesTTY(in io.Reader, out io.Writer) (bool, string, error) {
-    // If either side isn't a TTY, fall back to simple line read.
-    if fin, ok := in.(*os.File); !ok || !isatty.IsTerminal(fin.Fd()) {
-        rd := bufio.NewReader(in)
-        s, _ := rd.ReadString('\n')
-        v := strings.TrimSpace(s)
-        return v == "yes", v, nil
-    }
-    if fout, ok := out.(*os.File); !ok || !isatty.IsTerminal(fout.Fd()) {
-        rd := bufio.NewReader(in)
-        s, _ := rd.ReadString('\n')
-        v := strings.TrimSpace(s)
-        return v == "yes", v, nil
-    }
+	// If either side isn't a TTY, fall back to simple line read.
+	if fin, ok := in.(*os.File); !ok || !isatty.IsTerminal(fin.Fd()) {
+		rd := bufio.NewReader(in)
+		s, _ := rd.ReadString('\n')
+		v := strings.TrimSpace(s)
+		return v == "yes", v, nil
+	}
+	if fout, ok := out.(*os.File); !ok || !isatty.IsTerminal(fout.Fd()) {
+		rd := bufio.NewReader(in)
+		s, _ := rd.ReadString('\n')
+		v := strings.TrimSpace(s)
+		return v == "yes", v, nil
+	}
 
-    m := newConfirmModel()
-    opts := []tea.ProgramOption{tea.WithInput(in), tea.WithOutput(out)}
-    p := tea.NewProgram(m, opts...)
-    finalModel, err := p.Run()
-    if err != nil {
-        return false, "", err
-    }
-    cm := finalModel.(confirmModel)
-    return cm.confirmed, cm.value, nil
+	m := newConfirmModel()
+	opts := []tea.ProgramOption{tea.WithInput(in), tea.WithOutput(out)}
+	p := tea.NewProgram(m, opts...)
+	finalModel, err := p.Run()
+	if err != nil {
+		return false, "", err
+	}
+	cm := finalModel.(confirmModel)
+	return cm.confirmed, cm.value, nil
 }
 
 type confirmModel struct {

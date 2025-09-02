@@ -26,8 +26,6 @@ func TestApply_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
 	}
 }
 
-// prune flag removed; guidance removed; apply always prunes
-
 func TestApply_NoRemovals_NoGuidance(t *testing.T) {
 	undo := withCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
@@ -123,23 +121,23 @@ case "$cmd" in
 }
 
 func TestApply_SkipConfirmation_BypassesPrompt(t *testing.T) {
-    defer withStubDocker(t)()
-    root := newRootCmd()
-    var out bytes.Buffer
-    root.SetOut(&out)
-    root.SetErr(&out)
-    // No stdin provided; should not prompt when flag is set.
-    root.SetArgs([]string{"apply", "--skip-confirmation", "-c", basicConfigPath(t)})
-    if err := root.Execute(); err != nil {
-        t.Fatalf("apply execute with --skip-confirmation: %v", err)
-    }
-    got := out.String()
-    if strings.Contains(got, "Type yes to confirm") || strings.Contains(got, "Answer:") {
-        t.Fatalf("expected no confirmation prompt in output; got: %s", got)
-    }
-    if strings.Contains(got, "canceled") {
-        t.Fatalf("did not expect apply to be canceled when skipping confirmation; got: %s", got)
-    }
+	defer withStubDocker(t)()
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	// No stdin provided; should not prompt when flag is set.
+	root.SetArgs([]string{"apply", "--skip-confirmation", "-c", basicConfigPath(t)})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("apply execute with --skip-confirmation: %v", err)
+	}
+	got := out.String()
+	if strings.Contains(got, "Type yes to confirm") || strings.Contains(got, "Answer:") {
+		t.Fatalf("expected no confirmation prompt in output; got: %s", got)
+	}
+	if strings.Contains(got, "canceled") {
+		t.Fatalf("did not expect apply to be canceled when skipping confirmation; got: %s", got)
+	}
 }
 
 // withCustomDockerStub writes a custom docker stub script and prepends it to PATH.
