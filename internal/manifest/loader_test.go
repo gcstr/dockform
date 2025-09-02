@@ -1,0 +1,134 @@
+package manifest
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/gcstr/dockform/internal/apperr"
+)
+
+func TestResolveConfigPath_DirectoryPreferenceOrder(t *testing.T) {
+	dir := t.TempDir()
+	// Both files exist; resolver should pick dockform.yaml first
+	yamlPath := filepath.Join(dir, "dockform.yaml")
+	ymlPath := filepath.Join(dir, "dockform.yml")
+	if err := os.WriteFile(yamlPath, []byte("docker:\n  identifier: x\n"), 0o644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	if err := os.WriteFile(ymlPath, []byte("docker:\n  identifier: x\n"), 0o644); err != nil {
+		t.Fatalf("write yml: %v", err)
+	}
+
+	got, err := resolveConfigPath(dir)
+	if err != nil {
+		t.Fatalf("resolveConfigPath: %v", err)
+	}
+	if got != yamlPath {
+		t.Fatalf("expected %q, got %q", yamlPath, got)
+	}
+}
+
+func TestResolveConfigPath_DirectoryNoFiles(t *testing.T) {
+	dir := t.TempDir()
+	_, err := resolveConfigPath(dir)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !apperr.IsKind(err, apperr.NotFound) {
+		t.Fatalf("expected NotFound kind, got: %v", err)
+	}
+}
+
+func TestResolveConfigPath_FileGiven(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dockform.yml")
+	if err := os.WriteFile(path, []byte("docker:\n  identifier: x\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	got, err := resolveConfigPath(path)
+	if err != nil {
+		t.Fatalf("resolveConfigPath(file): %v", err)
+	}
+	if got != path {
+		t.Fatalf("expected same file path, got %q", got)
+	}
+}
+
+func TestResolveConfigPath_NonExistentPathReturned(t *testing.T) {
+	// Should return the path as-is to allow higher level to fail on read
+	bogus := filepath.Join(t.TempDir(), "does-not-exist.yml")
+	got, err := resolveConfigPath(bogus)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != bogus {
+		t.Fatalf("expected path to be returned unchanged; got %q", got)
+	}
+}
+
+func TestResolveConfigPath_EmptyPathUsesCWD(t *testing.T) {
+	dir := t.TempDir()
+	prev, _ := os.Getwd()
+	defer func() { _ = os.Chdir(prev) }()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	path := filepath.Join(dir, "dockform.yml")
+	if err := os.WriteFile(path, []byte("docker:\n  identifier: x\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	got, err := resolveConfigPath("")
+	if err != nil {
+		t.Fatalf("resolveConfigPath(cwd): %v", err)
+	}
+	// Resolve potential macOS /private symlink differences
+	gotResolved, _ := filepath.EvalSymlinks(got)
+	wantResolved, _ := filepath.EvalSymlinks(path)
+	if gotResolved != wantResolved {
+		t.Fatalf("expected %q, got %q", wantResolved, gotResolved)
+	}
+}
+
+func TestLoadWithWarnings_SetsBaseDirAndReportsMissing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dockform.yml")
+	content := "docker:\n  identifier: myapp\n  context: ${CTX}\napplications:\n  web:\n    root: website\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	cfg, missing, err := LoadWithWarnings(path)
+	if err != nil {
+		t.Fatalf("LoadWithWarnings: %v", err)
+	}
+	if cfg.BaseDir != dir {
+		t.Fatalf("BaseDir mismatch: %q", cfg.BaseDir)
+	}
+	if cfg.Docker.Context != "default" {
+		t.Fatalf("expected default docker.context, got %q", cfg.Docker.Context)
+	}
+	app := cfg.Applications["web"]
+	expectedRoot := filepath.Clean(filepath.Join(dir, "website"))
+	if app.Root != expectedRoot {
+		t.Fatalf("app root not resolved; want %q got %q", expectedRoot, app.Root)
+	}
+	if len(missing) != 1 || missing[0] != "CTX" {
+		t.Fatalf("expected missing [CTX], got %#v", missing)
+	}
+}
+
+func TestLoadWithWarnings_InvalidYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dockform.yml")
+	bad := "docker:\n  identifier: [\n"
+	if err := os.WriteFile(path, []byte(bad), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	_, _, err := LoadWithWarnings(path)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !apperr.IsKind(err, apperr.InvalidInput) {
+		t.Fatalf("expected InvalidInput, got: %v", err)
+	}
+}
