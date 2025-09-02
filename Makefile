@@ -4,7 +4,7 @@ SHELL := /bin/zsh
 
 # Configurable variables
 GO ?= go
-PKGS := ./...
+PKGS := ./internal/... ./cmd/...
 E2E_PKGS := ./test/e2e
 MAIN := ./cmd/dockform
 BIN  ?= dockform
