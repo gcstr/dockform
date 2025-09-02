@@ -10,6 +10,7 @@ MAIN := ./cmd/dockform
 BIN  ?= dockform
 COVER_OUT ?= cover.out
 LINT ?= golangci-lint
+GOLANGCI_LINT_PKG ?= github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 .DEFAULT_GOAL := help
 
@@ -35,20 +36,8 @@ fmt: ## Format code
 vet: ## Run go vet
 	$(GO) vet $(PKGS)
 
-lint: ## Run golangci-lint (auto-detect from PATH and Homebrew)
-	@set -e; \
-	if command -v $(LINT) >/dev/null 2>&1; then \
-		LINTBIN="$(LINT)"; \
-	elif [ -x /opt/homebrew/bin/golangci-lint ]; then \
-		LINTBIN="/opt/homebrew/bin/golangci-lint"; \
-	elif [ -x /usr/local/bin/golangci-lint ]; then \
-		LINTBIN="/usr/local/bin/golangci-lint"; \
-	elif command -v brew >/dev/null 2>&1 && [ -x "$$(brew --prefix 2>/dev/null)/bin/golangci-lint" ]; then \
-		LINTBIN="$$(brew --prefix)/bin/golangci-lint"; \
-	else \
-		echo "golangci-lint not found. Install via Homebrew: brew install golangci-lint"; exit 1; \
-	fi; \
-	"$$LINTBIN" run
+lint: ## Run golangci-lint via go run
+	$(GO) run $(GOLANGCI_LINT_PKG) run
 
 deps: ## Download go module dependencies
 	$(GO) mod download
@@ -76,3 +65,4 @@ ci: ## Lint, vet, and test (mirror CI pipeline locally)
 
 clean: ## Remove build artifacts
 	rm -f $(BIN) $(COVER_OUT) cover.html
+

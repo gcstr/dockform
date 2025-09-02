@@ -65,11 +65,11 @@ func newApplyCmd() *cobra.Command {
 				}
 				confirmed = ok
 				// Only echo the final input line to avoid duplicating the header prompt.
-				pr.Plain("Enter a value: %s", entered)
+				pr.Plain("Answer: %s", entered)
 				pr.Plain("")
 			} else {
 				// Non-interactive: fall back to plain stdin read (keeps tests/scriptability)
-				pr.Plain("Dockform will apply the changes listed above.\nType yes to confirm.\n\nEnter a value:")
+				pr.Plain("Dockform will apply the changes listed above.\nType yes to confirm.\n\nAnswer")
 				reader := bufio.NewReader(cmd.InOrStdin())
 				ans, _ := reader.ReadString('\n')
 				entered := strings.TrimRight(ans, "\n")
