@@ -93,3 +93,66 @@ func TestProgress_NoTTY_NoOutput(t *testing.T) {
 		t.Fatalf("expected progress to produce no output when not a TTY, got: %q", out.String())
 	}
 }
+
+func TestRenderSectionedList_EmptyReturnsEmpty(t *testing.T) {
+	got := RenderSectionedList([]Section{{Title: "A", Items: nil}, {Title: "B", Items: []DiffLine{}}})
+	if got != "" {
+		t.Fatalf("expected empty string for empty sections, got: %q", got)
+	}
+}
+
+func TestSectionTitle_StripsToPlain(t *testing.T) {
+	s := SectionTitle("My Title")
+	if StripANSI(s) != "My Title" {
+		t.Fatalf("expected plain title, got: %q", StripANSI(s))
+	}
+}
+
+func TestStdPrinter_NilWriters_NoPanic(t *testing.T) {
+	p := StdPrinter{}
+	// Should be no-ops when writers are nil
+	p.Plain("hello")
+	p.Info("world")
+	p.Warn("warn")
+	p.Error("err")
+}
+
+func TestConfirmModel_ViewContainsPrompts(t *testing.T) {
+	m := newConfirmModel()
+	v := StripANSI(m.View())
+	if v == "" || !containsAll(v, []string{"Dockform will apply", "Type", "Answer:"}) {
+		t.Fatalf("expected view to contain prompt text, got: %q", v)
+	}
+}
+
+func TestSpinner_StartStop_Idempotent_NoTTY(t *testing.T) {
+	var out bytes.Buffer
+	s := NewSpinner(&out, "Working")
+	s.Start()
+	s.Start()
+	s.Stop()
+	s.Stop()
+	if out.Len() != 0 {
+		t.Fatalf("expected no output for non-tty spinner, got: %q", out.String())
+	}
+}
+
+func TestProgress_Methods_NoTTY_NoPanic(t *testing.T) {
+	var out bytes.Buffer
+	p := NewProgress(&out, "Doing")
+	p.Start(2)
+	p.SetAction("step")
+	p.Increment()
+	p.AdjustTotal(-1)
+	p.Stop()
+}
+
+// containsAll reports whether s contains all substrings in subs.
+func containsAll(s string, subs []string) bool {
+	for _, sub := range subs {
+		if !bytes.Contains([]byte(s), []byte(sub)) {
+			return false
+		}
+	}
+	return true
+}
