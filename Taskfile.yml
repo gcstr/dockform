@@ -1,0 +1,108 @@
+version: '3'
+
+vars:
+  GO: '{{.ENV.GO | default "go"}}'
+  PKGS: '{{.ENV.PKGS | default "./internal/... ./cmd/..."}}'
+  E2E_PKGS: '{{.ENV.E2E_PKGS | default "./test/e2e"}}'
+  MAIN: '{{.ENV.MAIN | default "./cmd/dockform"}}'
+  BIN: '{{.ENV.BIN | default "dockform"}}'
+  COVER_OUT: '{{.ENV.COVER_OUT | default "cover.out"}}'
+  GOLANGCI_LINT_PKG: '{{.ENV.GOLANGCI_LINT_PKG | default "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"}}'
+  ARGS: '{{.ENV.ARGS | default ""}}'
+
+tasks:
+  default:
+    desc: Show available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  help:
+    desc: Show available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  all:
+    desc: Format, vet, test, and build
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: test
+      - task: build
+
+  build:
+    desc: Build the dockform binary
+    cmds:
+      - '{{.GO}} build -o {{.BIN}} {{.MAIN}}'
+
+  run:
+    desc: Run the dockform CLI (pass ARGS="..." to forward args)
+    cmds:
+      - '{{.GO}} run {{.MAIN}} {{.ARGS}}'
+
+  install:
+    desc: Install the dockform binary to GOPATH/bin
+    cmds:
+      - '{{.GO}} install {{.MAIN}}'
+
+  fmt:
+    desc: Format code
+    cmds:
+      - '{{.GO}} fmt {{.PKGS}}'
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - '{{.GO}} vet {{.PKGS}}'
+
+  lint:
+    desc: Run golangci-lint via go run
+    cmds:
+      - '{{.GO}} run {{.GOLANGCI_LINT_PKG}} run'
+
+  deps:
+    desc: Download go module dependencies
+    cmds:
+      - '{{.GO}} mod download'
+
+  tidy:
+    desc: Tidy go.mod/go.sum
+    cmds:
+      - '{{.GO}} mod tidy'
+
+  test:
+    desc: Run tests with coverage
+    deps: [vet]
+    cmds:
+      - '{{.GO}} run gotest.tools/gotestsum@latest {{.PKGS}} -- -count=1 -coverprofile={{.COVER_OUT}}'
+
+  e2e:
+    desc: Run end-to-end tests
+    cmds:
+      - '{{.GO}} run gotest.tools/gotestsum@latest --format testname {{.E2E_PKGS}} -- -count=1 -v'
+
+  coverage:
+    desc: Show coverage summary (requires {{.COVER_OUT}})
+    cmds:
+      - '{{.GO}} run gotest.tools/gotestsum@latest -- -coverprofile={{.COVER_OUT}} {{.PKGS}}'
+
+  coverhtml:
+    desc: Generate HTML coverage report at cover.html
+    cmds:
+      - '{{.GO}} tool cover -html={{.COVER_OUT}} -o cover.html'
+
+  ci:
+    desc: Lint, vet, test, and run e2e (mirror CI pipeline locally)
+    cmds:
+      - task: lint
+      - task: vet
+      - task: test
+      - task: e2e
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -f '{{.BIN}}' '{{.COVER_OUT}}' cover.html
+
+
