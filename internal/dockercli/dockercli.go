@@ -131,8 +131,8 @@ func (c *Client) ListComposeContainersAll(ctx context.Context) ([]PsBrief, error
 // SyncDirToVolume streams a tar of localDir to the named volume's targetPath.
 // Requirements:
 // - targetPath must be absolute and not '/'
-// - Ensure targetPath exists in the container (mkdir -p)
-// - Mount the volume at targetPath and operate there
+// - Ensure destination exists in the helper container (mkdir -p)
+// - Mount the volume at a fixed path in the helper container and operate there
 // - Remove current contents then extract tar stream into targetPath
 func (c *Client) SyncDirToVolume(ctx context.Context, volumeName, targetPath, localDir string) error {
 	if volumeName == "" {
@@ -144,11 +144,13 @@ func (c *Client) SyncDirToVolume(ctx context.Context, volumeName, targetPath, lo
 	if targetPath == "/" {
 		return apperr.New("dockercli.SyncDirToVolume", apperr.InvalidInput, "targetPath cannot be '/'")
 	}
+	// Mount the volume at a fixed, known path to avoid quoting user-supplied targetPath in shell
+	const dst = "/.dst"
 	cmd := []string{
 		"run", "--rm", "-i",
-		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"-v", fmt.Sprintf("%s:%s", volumeName, dst),
 		"alpine", "sh", "-c",
-		"mkdir -p '" + targetPath + "' && rm -rf '" + targetPath + "'/* '" + targetPath + "'/.[!.]* '" + targetPath + "'/..?* 2>/dev/null || true; tar -xpf - -C '" + targetPath + "'",
+		"mkdir -p '" + dst + "' && rm -rf '" + dst + "'/* '" + dst + "'/.[!.]* '" + dst + "'/..?* 2>/dev/null || true; tar -xpf - -C '" + dst + "'",
 	}
 	pr, pw := io.Pipe()
 	go func() {
