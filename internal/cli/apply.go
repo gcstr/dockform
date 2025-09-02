@@ -16,16 +16,17 @@ import (
 )
 
 func newApplyCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "apply",
-		Short: "Apply the desired state",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			file, _ := cmd.Flags().GetString("config")
-			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-			cfg, missing, err := manifest.LoadWithWarnings(file)
-			if err != nil {
-				return err
-			}
+    cmd := &cobra.Command{
+        Use:   "apply",
+        Short: "Apply the desired state",
+        RunE: func(cmd *cobra.Command, args []string) error {
+            file, _ := cmd.Flags().GetString("config")
+            skipConfirm, _ := cmd.Flags().GetBool("skip-confirmation")
+            pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
+            cfg, missing, err := manifest.LoadWithWarnings(file)
+            if err != nil {
+                return err
+            }
 			for _, name := range missing {
 				pr.Warn("environment variable %s is not set; replacing with empty string", name)
 			}
@@ -46,40 +47,44 @@ func newApplyCmd() *cobra.Command {
 			out := pln.String()
 			pr.Plain("%s", out)
 
-			// Confirmation prompt before applying changes
-			inTTY := false
-			outTTY := false
-			if f, ok := cmd.InOrStdin().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
-				inTTY = true
-			}
-			if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
-				outTTY = true
-			}
+            // Confirmation prompt before applying changes
+            confirmed := false
+            if skipConfirm {
+                confirmed = true
+            } else {
+                inTTY := false
+                outTTY := false
+                if f, ok := cmd.InOrStdin().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+                    inTTY = true
+                }
+                if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+                    outTTY = true
+                }
 
-			confirmed := false
-			if inTTY && outTTY {
-				// Interactive terminal: use Bubble Tea prompt
-				ok, entered, err := ui.ConfirmYesTTY(cmd.InOrStdin(), cmd.OutOrStdout())
-				if err != nil {
-					return err
-				}
-				confirmed = ok
-				// Only echo the final input line to avoid duplicating the header prompt.
-				pr.Plain("Answer: %s", entered)
-				pr.Plain("")
-			} else {
-				// Non-interactive: fall back to plain stdin read (keeps tests/scriptability)
-				pr.Plain("Dockform will apply the changes listed above.\nType yes to confirm.\n\nAnswer")
-				reader := bufio.NewReader(cmd.InOrStdin())
-				ans, _ := reader.ReadString('\n')
-				entered := strings.TrimRight(ans, "\n")
-				confirmed = strings.TrimSpace(entered) == "yes"
-				// Echo user input only when stdin isn't a TTY (interactive terminals already echo)
-				if f, ok := cmd.InOrStdin().(*os.File); !ok || !isatty.IsTerminal(f.Fd()) {
-					pr.Plain("%s", entered)
-				}
-				pr.Plain("")
-			}
+                if inTTY && outTTY {
+                    // Interactive terminal: use Bubble Tea prompt
+                    ok, entered, err := ui.ConfirmYesTTY(cmd.InOrStdin(), cmd.OutOrStdout())
+                    if err != nil {
+                        return err
+                    }
+                    confirmed = ok
+                    // Only echo the final input line to avoid duplicating the header prompt.
+                    pr.Plain("Answer: %s", entered)
+                    pr.Plain("")
+                } else {
+                    // Non-interactive: fall back to plain stdin read (keeps tests/scriptability)
+                    pr.Plain("Dockform will apply the changes listed above.\nType yes to confirm.\n\nAnswer")
+                    reader := bufio.NewReader(cmd.InOrStdin())
+                    ans, _ := reader.ReadString('\n')
+                    entered := strings.TrimRight(ans, "\n")
+                    confirmed = strings.TrimSpace(entered) == "yes"
+                    // Echo user input only when stdin isn't a TTY (interactive terminals already echo)
+                    if f, ok := cmd.InOrStdin().(*os.File); !ok || !isatty.IsTerminal(f.Fd()) {
+                        pr.Plain("%s", entered)
+                    }
+                    pr.Plain("")
+                }
+            }
 
 			if !confirmed {
 				pr.Plain("canceled")
@@ -108,7 +113,8 @@ func newApplyCmd() *cobra.Command {
 			}
 			sp3.Stop()
 			return nil
-		},
-	}
-	return cmd
+        },
+    }
+    cmd.Flags().Bool("skip-confirmation", false, "Skip confirmation prompt and apply immediately")
+    return cmd
 }

@@ -75,4 +75,4 @@ Successfully created context "my-remote-docker"
   - Runs `plan` and prints the plan.
   - Applies changes (idempotent).
   - Removes unmanaged resources labeled with the identifier (containers, volumes, networks).
-
+  - Requires confirmation by typing `yes`. Use `--skip-confirmation` to bypass the prompt (useful for CI/non-interactive runs).
