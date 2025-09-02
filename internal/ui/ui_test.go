@@ -65,7 +65,7 @@ func TestRenderSectionedList_ShowsItemsWithIcons(t *testing.T) {
 		}
 	}
 	// Ensure icon glyphs are present
-	for _, icon := range []string{"●", "↑", "↓", "→"} {
+	for _, icon := range []string{"●", "↑", "×", "→"} {
 		if !strings.Contains(got, icon) {
 			t.Fatalf("expected sectioned list to contain icon %q, got: %q", icon, got)
 		}

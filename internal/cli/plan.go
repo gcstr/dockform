@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
@@ -26,6 +27,21 @@ func newPlanCmd() *cobra.Command {
 			for _, name := range missing {
 				pr.Warn("environment variable %s is not set; replacing with empty string", name)
 			}
+			// Display Docker info section before planning
+			ctxName := strings.TrimSpace(cfg.Docker.Context)
+			if ctxName == "" {
+				ctxName = "default"
+			}
+			sections := []ui.Section{
+				{
+					Title: "Docker",
+					Items: []ui.DiffLine{
+						ui.Line(ui.Info, "Context: %s", ctxName),
+						ui.Line(ui.Info, "Identifier: %s", cfg.Docker.Identifier),
+					},
+				},
+			}
+			pr.Plain("%s", strings.TrimRight(ui.RenderSectionedList(sections), "\n"))
 			d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
 			sp := ui.NewSpinner(pr.Out, "Planning...")
 			sp.Start()

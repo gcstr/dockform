@@ -13,10 +13,12 @@ import (
 )
 
 var (
-	styleNoop   = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // blue
-	styleAdd    = lipgloss.NewStyle().Foreground(lipgloss.Color("10")) // green
-	styleRemove = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // red
-	styleChange = lipgloss.NewStyle().Foreground(lipgloss.Color("11")) // yellow
+	styleBase   = lipgloss.NewStyle().Margin(0, 1, 0, 1)
+	styleInfo   = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // blue
+	styleNoop   = styleBase.Foreground(lipgloss.Color("12"))           // blue
+	styleAdd    = styleBase.Foreground(lipgloss.Color("10"))           // green
+	styleRemove = styleBase.Foreground(lipgloss.Color("9"))            // red
+	styleChange = styleBase.Foreground(lipgloss.Color("11"))           // yellow
 
 	styleInfoPrefix  = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true) // blue
 	styleWarnPrefix  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // yellow
@@ -40,7 +42,7 @@ var ListStyles = struct {
 }{
 	OuterEnumStyle: lipgloss.NewStyle(),
 	OuterItemStyle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69")).MarginTop(1),
-	InnerEnumStyle: lipgloss.NewStyle().MarginRight(1).MarginLeft(1), // margin only; color per-item
+	InnerEnumStyle: lipgloss.NewStyle(), //.MarginRight(1).MarginLeft(1), // margin only; color per-item
 	InnerItemStyle: lipgloss.NewStyle(),
 }
 
@@ -63,12 +65,14 @@ func RenderSectionedList(sections []Section) string {
 				return ""
 			}
 			switch itemsRef[i].Type {
+			case Info:
+				return styleInfo.Render("")
 			case Noop:
 				return styleNoop.Render("●")
 			case Add:
 				return styleAdd.Render("↑")
 			case Remove:
-				return styleRemove.Render("↓")
+				return styleRemove.Render("×")
 			case Change:
 				return styleChange.Render("→")
 			default:
@@ -98,6 +102,7 @@ func RenderSectionedList(sections []Section) string {
 type ChangeType int
 
 const (
+	Info ChangeType = iota
 	Noop ChangeType = iota
 	Add
 	Remove

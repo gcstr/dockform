@@ -170,13 +170,13 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 	out := pln.String()
 	// Check volume/network adds and removals (new icon-based UI)
 	mustContain(t, out, "↑ volume v1 will be created")
-	mustContain(t, out, "↓ volume vOld will be removed")
+	mustContain(t, out, "× volume vOld will be removed")
 	mustContain(t, out, "↑ network n1 will be created")
-	mustContain(t, out, "↓ network nOld will be removed")
+	mustContain(t, out, "× network nOld will be removed")
 	// Service to be started
 	mustContain(t, out, "↑ service app/nginx will be started")
 	// Container removal from ListComposeContainersAll
-	mustContain(t, out, "↓ container other_name will be removed")
+	mustContain(t, out, "× container other_name will be removed")
 }
 
 func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {

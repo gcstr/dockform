@@ -31,6 +31,22 @@ func newApplyCmd() *cobra.Command {
 				pr.Warn("environment variable %s is not set; replacing with empty string", name)
 			}
 
+			// Display Docker info section before executing any actions
+			ctxName := strings.TrimSpace(cfg.Docker.Context)
+			if ctxName == "" {
+				ctxName = "default"
+			}
+			sections := []ui.Section{
+				{
+					Title: "Docker",
+					Items: []ui.DiffLine{
+						ui.Line(ui.Info, "Context: %s", ctxName),
+						ui.Line(ui.Info, "Identifier: %s", cfg.Docker.Identifier),
+					},
+				},
+			}
+			pr.Plain("%s", strings.TrimRight(ui.RenderSectionedList(sections), "\n"))
+
 			d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
 			sp := ui.NewSpinner(pr.Out, "Planning...")
 			sp.Start()
@@ -69,7 +85,7 @@ func newApplyCmd() *cobra.Command {
 					}
 					confirmed = ok
 					// Only echo the final input line to avoid duplicating the header prompt.
-					pr.Plain("Answer: %s", entered)
+					pr.Plain(" Answer: %s", entered)
 					pr.Plain("")
 				} else {
 					// Non-interactive: fall back to plain stdin read (keeps tests/scriptability)
@@ -87,7 +103,7 @@ func newApplyCmd() *cobra.Command {
 			}
 
 			if !confirmed {
-				pr.Plain("canceled")
+				pr.Plain(" canceled")
 				return nil
 			}
 
