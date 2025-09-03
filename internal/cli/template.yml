@@ -1,0 +1,107 @@
+# Dockform Configuration Template
+# This file defines the desired state for your Docker Compose infrastructure
+
+# Docker configuration
+docker:
+  # Docker context to use (default: default)
+  context: default
+  # Unique identifier for labeling managed resources
+  identifier: my-project
+
+# Global environment variables (optional)
+environment:
+  # Environment files to load globally
+  files:
+    - global.env
+  # Inline environment variables
+  inline:
+    - GLOBAL_VAR=value
+    - ENVIRONMENT=production
+
+# Global secrets configuration (optional)
+# Requires SOPS for encryption: https://github.com/mozilla/sops
+sops:
+  age:
+    # Path to AGE key file for SOPS decryption
+    key_file: ${AGE_KEY_FILE}
+  # AGE recipients for encrypting secrets
+  recipients:
+    - age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
+
+# Global secrets (optional)
+secrets:
+  sops:
+    - secrets.env
+
+# Docker Compose applications
+applications:
+  # Application name (must match ^[a-z0-9_.-]+$)
+  web:
+    # Directory containing docker-compose files (required)
+    root: ./web
+    # Docker Compose files (defaults to docker-compose.yml)
+    files:
+      - docker-compose.yml
+      - docker-compose.override.yml
+    # Compose profiles to activate
+    profiles:
+      - production
+    # Environment files for this application
+    env-file:
+      - .env
+    # Application-specific environment
+    environment:
+      files:
+        - app.env
+      inline:
+        - APP_NAME=web
+        - DEBUG=false
+    # Application-specific secrets
+    secrets:
+      sops:
+        - secrets.env
+    # Docker Compose project configuration
+    project:
+      name: web-project
+
+  # Example second application
+  api:
+    root: ./api
+    environment:
+      inline:
+        - SERVICE_NAME=api
+        - PORT=3000
+
+# Docker volumes to create
+volumes:
+  # Volume name
+  app-data:
+  db-data:
+  cache-data:
+
+# Docker networks to create
+networks:
+  # Network name  
+  app-network:
+  db-network:
+
+# File synchronization from local directories to Docker volumes (optional)
+filesets:
+  # Fileset name (must match ^[a-z0-9_.-]+$)
+  static-assets:
+    # Local source directory
+    source: ./assets
+    # Target volume to sync to
+    target_volume: app-data
+    # Path within the volume
+    target_path: /var/www/html/assets
+    # Services to restart when files change
+    restart_services:
+      - nginx
+      - php-fpm
+    # Files/patterns to exclude from sync
+    exclude:
+      - "**/.DS_Store"
+      - "*.tmp"
+      - "node_modules/**"
+      - ".git/**"
