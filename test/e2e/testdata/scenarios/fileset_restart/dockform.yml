@@ -1,0 +1,32 @@
+docker:
+  context: ""
+  identifier: ${DOCKFORM_RUN_ID}
+
+applications:
+  app:
+    root: .
+    files:
+      - docker-compose.yaml
+    project:
+      name: df_e2e_${DOCKFORM_RUN_ID}
+
+filesets:
+  files:
+    source: files-src
+    target_volume: df_e2e_${DOCKFORM_RUN_ID}_fsvol2
+    target_path: /assets
+    restart_services:
+      - sleeper
+    exclude:
+      - "**/.DS_Store"
+      - "*.bak"
+      - "tmp/**"
+      - "secrets/"
+
+volumes:
+  df_e2e_${DOCKFORM_RUN_ID}_fsvol2: {}
+
+networks:
+  df_e2e_${DOCKFORM_RUN_ID}_fsnet2: {}
+
+

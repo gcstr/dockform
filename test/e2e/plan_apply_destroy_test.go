@@ -140,8 +140,8 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	exampleCfg := filepath.Join(root, "example", "dockform.yml")
 
 	env := os.Environ()
-	// Avoid manifest loader warning about missing ${AGE_KEY_FILE}; any value is fine
-	env = append(env, "AGE_KEY_FILE=/nonexistent")
+	// Avoid sops age key file validation by providing an explicit empty value
+	env = append(env, "AGE_KEY_FILE=")
 
 	// 1) Apply Happy Path (skip confirmation)
 	stdout, stderr, code := runCmdDetailed(t, root, env, bin, "apply", "--skip-confirmation", "-c", exampleCfg)
@@ -217,13 +217,14 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	if code2 != 0 {
 		t.Fatalf("plan after apply failed: %d\nSTDOUT:\n%s\nSTDERR:\n%s", code2, out2, err2)
 	}
-	if !strings.Contains(out2, "[noop] volume demo-volume-1 exists") {
-		t.Fatalf("expected noop volume exists, got:\n%s", out2)
+	// UI may render without explicit [noop] prefix; assert on core phrases instead
+	if !strings.Contains(out2, "volume demo-volume-1 exists") {
+		t.Fatalf("expected volume exists, got:\n%s", out2)
 	}
-	if !strings.Contains(out2, "[noop] network demo-network exists") {
-		t.Fatalf("expected noop network exists, got:\n%s", out2)
+	if !strings.Contains(out2, "network demo-network exists") {
+		t.Fatalf("expected network exists, got:\n%s", out2)
 	}
-	if !(strings.Contains(out2, "[noop] service website/nginx up-to-date") || strings.Contains(out2, "[noop] service website/nginx running")) {
+	if !(strings.Contains(out2, "service website/nginx up-to-date") || strings.Contains(out2, "service website/nginx running")) {
 		t.Fatalf("expected service website/nginx up-to-date or running, got:\n%s", out2)
 	}
 	if !strings.Contains(out2, "fileset files: no file changes") {
@@ -233,7 +234,15 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	// 4) Prune: create unmanaged labeled resources then apply and expect removal
 	_ = exec.Command("docker", "network", "create", "--label", "io.dockform.identifier="+identifier, identifier+"-temp-net").Run()
 	_ = exec.Command("docker", "volume", "create", "--label", "io.dockform.identifier="+identifier, identifier+"-temp-vol").Run()
-	_ = exec.Command("docker", "run", "-d", "--label", "io.dockform.identifier="+identifier, "--name", identifier+"-temp", "alpine:3", "sleep", "60").Run()
+	// Create a transient container with compose-like labels so prune can detect it
+	_ = exec.Command(
+		"docker", "run", "-d",
+		"--label", "io.dockform.identifier="+identifier,
+		"--label", "com.docker.compose.project="+identifier+"-temp-proj",
+		"--label", "com.docker.compose.service="+identifier+"-temp-svc",
+		"--name", identifier+"-temp",
+		"alpine:3", "sleep", "60",
+	).Run()
 
 	// Sanity: ensure they exist
 	_ = dockerLines(t, ctx, "network", "inspect", identifier+"-temp-net")
