@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gcstr/dockform/internal/apperr"
-	"github.com/gcstr/dockform/internal/util"
 )
 
 // Exec abstracts docker command execution for ease of testing.
@@ -112,7 +111,7 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 	}
 
 	if runErr != nil {
-		return res, apperr.Wrap("dockercli.Exec", apperr.External, runErr, "%s", util.Truncate(res.Stderr, 512))
+		return res, apperr.Wrap("dockercli.Exec", apperr.External, runErr, "%s", res.Stderr)
 	}
 	return res, nil
 }
