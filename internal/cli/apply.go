@@ -6,11 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gcstr/dockform/internal/dockercli"
-	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/planner"
 	"github.com/gcstr/dockform/internal/ui"
-	"github.com/gcstr/dockform/internal/validator"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
@@ -20,48 +17,17 @@ func newApplyCmd() *cobra.Command {
 		Use:   "apply",
 		Short: "Apply the desired state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			file, _ := cmd.Flags().GetString("config")
 			skipConfirm, _ := cmd.Flags().GetBool("skip-confirmation")
-			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-			cfg, missing, err := manifest.LoadWithWarnings(file)
+			
+			// Use shared plan building functionality
+			result, err := buildPlanWithUI(cmd)
 			if err != nil {
 				return err
 			}
-			for _, name := range missing {
-				pr.Warn("environment variable %s is not set; replacing with empty string", name)
-			}
-
-			// Display Docker info section before executing any actions
-			ctxName := strings.TrimSpace(cfg.Docker.Context)
-			if ctxName == "" {
-				ctxName = "default"
-			}
-			sections := []ui.Section{
-				{
-					Title: "Docker",
-					Items: []ui.DiffLine{
-						ui.Line(ui.Info, "Context: %s", ctxName),
-						ui.Line(ui.Info, "Identifier: %s", cfg.Docker.Identifier),
-					},
-				},
-			}
-			pr.Plain("%s", strings.TrimRight(ui.RenderSectionedList(sections), "\n"))
-
-			d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
-			sp := ui.NewSpinner(pr.Out, "Planning...")
-			sp.Start()
-			if err := validator.Validate(context.Background(), cfg, d); err != nil {
-				sp.Stop()
-				return err
-			}
-			pln, err := planner.NewWithDocker(d).WithPrinter(pr).BuildPlan(context.Background(), cfg)
-			if err != nil {
-				sp.Stop()
-				return err
-			}
-			sp.Stop()
-			out := pln.String()
-			pr.Plain("%s", out)
+			
+			// Display the plan
+			out := result.Plan.String()
+			result.Printer.Plain("%s", out)
 
 			// Confirmation prompt before applying changes
 			confirmed := false
@@ -85,34 +51,35 @@ func newApplyCmd() *cobra.Command {
 					}
 					confirmed = ok
 					// Only echo the final input line to avoid duplicating the header prompt.
-					pr.Plain(" Answer: %s", entered)
-					pr.Plain("")
+					result.Printer.Plain(" Answer: %s", entered)
+					result.Printer.Plain("")
 				} else {
 					// Non-interactive: fall back to plain stdin read (keeps tests/scriptability)
-					pr.Plain("Dockform will apply the changes listed above.\nType yes to confirm.\n\nAnswer")
+					result.Printer.Plain("Dockform will apply the changes listed above.\nType yes to confirm.\n\nAnswer")
 					reader := bufio.NewReader(cmd.InOrStdin())
 					ans, _ := reader.ReadString('\n')
 					entered := strings.TrimRight(ans, "\n")
 					confirmed = strings.TrimSpace(entered) == "yes"
 					// Echo user input only when stdin isn't a TTY (interactive terminals already echo)
 					if f, ok := cmd.InOrStdin().(*os.File); !ok || !isatty.IsTerminal(f.Fd()) {
-						pr.Plain("%s", entered)
+						result.Printer.Plain("%s", entered)
 					}
-					pr.Plain("")
+					result.Printer.Plain("")
 				}
 			}
 
 			if !confirmed {
-				pr.Plain(" canceled")
+				result.Printer.Plain(" canceled")
 				return nil
 			}
 
 			// Always run apply tasks; do not skip based on plan output
 
-			sp2 := ui.NewSpinner(pr.Out, "")
+			stdPr := result.Printer.(ui.StdPrinter)
+			sp2 := ui.NewSpinner(stdPr.Out, "")
 			sp2.Start()
-			pb := ui.NewProgress(pr.Out, "Applying")
-			if err := planner.NewWithDocker(d).WithPrinter(pr).WithProgress(pb).Apply(context.Background(), cfg); err != nil {
+			pb := ui.NewProgress(stdPr.Out, "Applying")
+			if err := planner.NewWithDocker(result.Docker).WithPrinter(result.Printer).WithProgress(pb).Apply(context.Background(), *result.Config); err != nil {
 				sp2.Stop()
 				pb.Stop()
 				return err
@@ -120,9 +87,9 @@ func newApplyCmd() *cobra.Command {
 			sp2.Stop()
 			pb.Stop()
 
-			sp3 := ui.NewSpinner(pr.Out, "Pruning...")
+			sp3 := ui.NewSpinner(stdPr.Out, "Pruning...")
 			sp3.Start()
-			if err := planner.NewWithDocker(d).WithPrinter(pr).Prune(context.Background(), cfg); err != nil {
+			if err := planner.NewWithDocker(result.Docker).WithPrinter(result.Printer).Prune(context.Background(), *result.Config); err != nil {
 				sp3.Stop()
 				return err
 			}
