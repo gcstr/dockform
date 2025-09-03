@@ -22,8 +22,12 @@ func Test_interpolateEnvPlaceholders_AllPresent(t *testing.T) {
 
 func Test_interpolateEnvPlaceholders_MissingSorted(t *testing.T) {
 	// Ensure variables are not set
-	os.Unsetenv("A")
-	os.Unsetenv("B")
+	if err := os.Unsetenv("A"); err != nil {
+		t.Fatalf("unsetenv A: %v", err)
+	}
+	if err := os.Unsetenv("B"); err != nil {
+		t.Fatalf("unsetenv B: %v", err)
+	}
 	in := "x ${B} y ${A}"
 	out, missing := interpolateEnvPlaceholders(in)
 	if out != "x  y " {

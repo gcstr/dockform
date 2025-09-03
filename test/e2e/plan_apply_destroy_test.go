@@ -137,7 +137,7 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	bin := buildDockform(t)
 
 	root := findRepoRoot(t)
-	exampleCfg := filepath.Join(root, "example", "dockform.yml")
+	exampleCfg := filepath.Join(root, "test", "e2e", "testdata", "scenarios", "example")
 
 	env := os.Environ()
 	// Avoid sops age key file validation by providing an explicit empty value
@@ -224,7 +224,7 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	if !strings.Contains(out2, "network demo-network exists") {
 		t.Fatalf("expected network exists, got:\n%s", out2)
 	}
-	if !(strings.Contains(out2, "service website/nginx up-to-date") || strings.Contains(out2, "service website/nginx running")) {
+	if !strings.Contains(out2, "service website/nginx up-to-date") && !strings.Contains(out2, "service website/nginx running") {
 		t.Fatalf("expected service website/nginx up-to-date or running, got:\n%s", out2)
 	}
 	if !strings.Contains(out2, "fileset files: no file changes") {

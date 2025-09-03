@@ -134,8 +134,14 @@ exit 0
 	}}
 	d := dockercli.New("").WithIdentifier("demo")
 	log := filepath.Join(t.TempDir(), "log.txt")
-	_ = os.Setenv("DOCKER_STUB_LOG", log)
-	defer os.Unsetenv("DOCKER_STUB_LOG")
+	if err := os.Setenv("DOCKER_STUB_LOG", log); err != nil {
+		t.Fatalf("setenv DOCKER_STUB_LOG: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("DOCKER_STUB_LOG"); err != nil {
+			t.Logf("unsetenv DOCKER_STUB_LOG: %v", err)
+		}
+	}()
 	if err := NewWithDocker(d).Apply(context.Background(), cfg); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
