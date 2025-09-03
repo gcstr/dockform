@@ -12,37 +12,44 @@ import (
 )
 
 // DecryptAndParse returns key=value pairs from a SOPS-encrypted dotenv file.
-// Only dotenv format is supported.
+// Only dotenv format is supported. If ageKeyFile is empty, the file is treated as plaintext.
 func DecryptAndParse(ctx context.Context, path string, ageKeyFile string) ([]string, error) {
+	// If no age key file is specified, treat the file as plaintext
+	if ageKeyFile == "" {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, apperr.Wrap("secrets.DecryptAndParse", apperr.NotFound, err, "read plaintext file %s", path)
+		}
+		return parseDotenv(string(b)), nil
+	}
+
 	// Resolve home dir for key file if starts with ~/
 	unset := false
-	if ageKeyFile != "" {
-		key := ageKeyFile
-		if strings.HasPrefix(key, "~/") {
-			if home, err := os.UserHomeDir(); err == nil {
-				key = filepath.Join(home, key[2:])
-			}
+	key := ageKeyFile
+	if strings.HasPrefix(key, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			key = filepath.Join(home, key[2:])
 		}
-		prev := os.Getenv("SOPS_AGE_KEY_FILE")
-		if prev == "" {
-			unset = true
-		}
-		_ = os.Setenv("SOPS_AGE_KEY_FILE", key)
-		// Also set SOPS_AGE_KEY for environments where sops reads the key from env
-		if b, rerr := os.ReadFile(key); rerr == nil {
-			prevKey := os.Getenv("SOPS_AGE_KEY")
-			_ = os.Setenv("SOPS_AGE_KEY", string(b))
-			if prevKey == "" {
-				defer func() { _ = os.Unsetenv("SOPS_AGE_KEY") }()
-			} else {
-				defer func() { _ = os.Setenv("SOPS_AGE_KEY", prevKey) }()
-			}
-		}
-		if unset {
-			defer func() { _ = os.Unsetenv("SOPS_AGE_KEY_FILE") }()
+	}
+	prev := os.Getenv("SOPS_AGE_KEY_FILE")
+	if prev == "" {
+		unset = true
+	}
+	_ = os.Setenv("SOPS_AGE_KEY_FILE", key)
+	// Also set SOPS_AGE_KEY for environments where sops reads the key from env
+	if b, rerr := os.ReadFile(key); rerr == nil {
+		prevKey := os.Getenv("SOPS_AGE_KEY")
+		_ = os.Setenv("SOPS_AGE_KEY", string(b))
+		if prevKey == "" {
+			defer func() { _ = os.Unsetenv("SOPS_AGE_KEY") }()
 		} else {
-			defer func() { _ = os.Setenv("SOPS_AGE_KEY_FILE", prev) }()
+			defer func() { _ = os.Setenv("SOPS_AGE_KEY", prevKey) }()
 		}
+	}
+	if unset {
+		defer func() { _ = os.Unsetenv("SOPS_AGE_KEY_FILE") }()
+	} else {
+		defer func() { _ = os.Setenv("SOPS_AGE_KEY_FILE", prev) }()
 	}
 
 	// Ensure sops binary exists

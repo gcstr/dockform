@@ -42,6 +42,23 @@ func TestDecryptAndParse_MissingFile_Error(t *testing.T) {
 	}
 }
 
+func TestDecryptAndParse_PlaintextWhenEmptyKeyFile(t *testing.T) {
+	// Test that when ageKeyFile is empty, the file is treated as plaintext
+	dir := t.TempDir()
+	plainPath := filepath.Join(dir, "plain.env")
+	if err := os.WriteFile(plainPath, []byte("FOO=bar\nSECRET_KEY=from_sops\n"), 0o600); err != nil {
+		t.Fatalf("write plaintext: %v", err)
+	}
+	// Call DecryptAndParse with empty ageKeyFile
+	pairs, err := DecryptAndParse(context.Background(), plainPath, "")
+	if err != nil {
+		t.Fatalf("DecryptAndParse with empty key file: %v", err)
+	}
+	if len(pairs) != 2 || pairs[0] != "FOO=bar" || pairs[1] != "SECRET_KEY=from_sops" {
+		t.Fatalf("unexpected pairs from plaintext: %#v", pairs)
+	}
+}
+
 func TestParseDotenv_VariousCases(t *testing.T) {
 	in := "\n# comment\nFOO=bar\n export BAR = \"baz\" \nBAZ='qux'\n=invalid\nONLYKEY\n\n"
 	got := parseDotenv(in)
