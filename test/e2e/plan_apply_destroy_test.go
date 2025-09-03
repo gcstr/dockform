@@ -99,6 +99,209 @@ func TestSimplePlanApplyLifecycle(t *testing.T) {
 	}
 }
 
+func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker not found in PATH")
+	}
+
+	// Log context and avoid running on prod-looking hosts
+	ctx := context.Background()
+	_ = logDockerContext(t)
+	if looksProd(t) && os.Getenv("E2E_ALLOW_HOST") != "1" {
+		t.Skip("refusing to run e2e against a production-looking daemon; set E2E_ALLOW_HOST=1 to override")
+	}
+
+	// Ensure the 'default' docker context exists since the example uses it
+	if out := safeOutput(exec.Command("docker", "context", "inspect", "default")); strings.TrimSpace(out) == "" {
+		t.Skip("docker context 'default' not available; skipping example e2e")
+	}
+
+	// Force docker CLI calls in this test to use the 'default' context to match the example manifest
+	prevCtx := os.Getenv("DOCKER_CONTEXT")
+	_ = os.Setenv("DOCKER_CONTEXT", "default")
+	t.Cleanup(func() { _ = os.Setenv("DOCKER_CONTEXT", prevCtx) })
+
+	// Example manifest identifier is static: "demo"
+	identifier := "demo"
+
+	// Always cleanup labeled resources
+	t.Cleanup(func() {
+		cleanupByLabel(t, identifier)
+		// Also remove transient resources if they still exist
+		_ = exec.Command("docker", "rm", "-f", identifier+"-temp").Run()
+		_ = exec.Command("docker", "volume", "rm", identifier+"-temp-vol").Run()
+		_ = exec.Command("docker", "network", "rm", identifier+"-temp-net").Run()
+	})
+
+	// Build dockform once and reuse path
+	bin := buildDockform(t)
+
+	root := findRepoRoot(t)
+	exampleCfg := filepath.Join(root, "example", "dockform.yml")
+
+	env := os.Environ()
+	// Avoid manifest loader warning about missing ${AGE_KEY_FILE}; any value is fine
+	env = append(env, "AGE_KEY_FILE=/nonexistent")
+
+	// 1) Apply Happy Path (skip confirmation)
+	stdout, stderr, code := runCmdDetailed(t, root, env, bin, "apply", "--skip-confirmation", "-c", exampleCfg)
+	if code != 0 {
+		t.Fatalf("apply failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", code, stdout, stderr)
+	}
+	// Only fail if real errors are printed to stderr; warnings are acceptable
+	if strings.Contains(strings.ToLower(stderr), "[error]") {
+		t.Fatalf("unexpected error output on apply:\n%s", stderr)
+	}
+
+	// Assert resources exist
+	vols := dockerLines(t, ctx, "volume", "ls", "--format", "{{.Name}}", "--filter", "label=io.dockform.identifier="+identifier)
+	foundVol := false
+	for _, v := range vols {
+		if v == "demo-volume-1" {
+			foundVol = true
+			break
+		}
+	}
+	if !foundVol {
+		t.Fatalf("expected volume demo-volume-1 to be created and labeled")
+	}
+	nets := dockerLines(t, ctx, "network", "ls", "--format", "{{.Name}}", "--filter", "label=io.dockform.identifier="+identifier)
+	foundNet := false
+	for _, n := range nets {
+		if n == "demo-network" {
+			foundNet = true
+			break
+		}
+	}
+	if !foundNet {
+		t.Fatalf("expected network demo-network to be created and labeled")
+	}
+	names := dockerLines(t, ctx, "ps", "--format", "{{.Names}}", "--filter", "label=io.dockform.identifier="+identifier)
+	if len(names) == 0 {
+		t.Fatalf("expected running container with io.dockform.identifier=%s", identifier)
+	}
+	hasNginx := false
+	for _, n := range names {
+		if strings.Contains(n, "nginx") {
+			hasNginx = true
+			break
+		}
+	}
+	if !hasNginx {
+		t.Fatalf("expected website/nginx container to be running, got: %v", names)
+	}
+	// Inspect first container label value
+	labelVal := safeOutput(exec.Command("docker", "inspect", "-f", "{{ index .Config.Labels \"io.dockform.identifier\" }}", names[0]))
+	if strings.TrimSpace(labelVal) != identifier {
+		t.Fatalf("expected label io.dockform.identifier=%s, got %q", identifier, labelVal)
+	}
+
+	// 2) Plan -> Confirm -> Apply
+	pOut, pErr, pCode := runCmdDetailed(t, root, env, bin, "plan", "-c", exampleCfg)
+	if pCode != 0 {
+		t.Fatalf("plan failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", pCode, pOut, pErr)
+	}
+	if !strings.Contains(pOut, "Docker") || !strings.Contains(pOut, "Context: default") || !strings.Contains(pOut, "Identifier: demo") {
+		t.Fatalf("plan output missing Docker section/context/identifier:\n%s", pOut)
+	}
+	aOut, aErr, aCode := runCmdWithStdinDetailed(t, root, env, bin, "yes\n", "apply", "-c", exampleCfg)
+	if aCode != 0 {
+		t.Fatalf("apply (with confirm) failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", aCode, aOut, aErr)
+	}
+	if !strings.Contains(aOut, "Dockform will apply the changes listed above") || !strings.Contains(aOut, "Answer") {
+		t.Fatalf("confirmation prompt not shown or not respected:\n%s", aOut)
+	}
+
+	// 3) Idempotency: subsequent plan should be noop/up-to-date
+	out2, err2, code2 := runCmdDetailed(t, root, env, bin, "plan", "-c", exampleCfg)
+	if code2 != 0 {
+		t.Fatalf("plan after apply failed: %d\nSTDOUT:\n%s\nSTDERR:\n%s", code2, out2, err2)
+	}
+	if !strings.Contains(out2, "[noop] volume demo-volume-1 exists") {
+		t.Fatalf("expected noop volume exists, got:\n%s", out2)
+	}
+	if !strings.Contains(out2, "[noop] network demo-network exists") {
+		t.Fatalf("expected noop network exists, got:\n%s", out2)
+	}
+	if !(strings.Contains(out2, "[noop] service website/nginx up-to-date") || strings.Contains(out2, "[noop] service website/nginx running")) {
+		t.Fatalf("expected service website/nginx up-to-date or running, got:\n%s", out2)
+	}
+	if !strings.Contains(out2, "fileset files: no file changes") {
+		t.Fatalf("expected fileset no changes, got:\n%s", out2)
+	}
+
+	// 4) Prune: create unmanaged labeled resources then apply and expect removal
+	_ = exec.Command("docker", "network", "create", "--label", "io.dockform.identifier="+identifier, identifier+"-temp-net").Run()
+	_ = exec.Command("docker", "volume", "create", "--label", "io.dockform.identifier="+identifier, identifier+"-temp-vol").Run()
+	_ = exec.Command("docker", "run", "-d", "--label", "io.dockform.identifier="+identifier, "--name", identifier+"-temp", "alpine:3", "sleep", "60").Run()
+
+	// Sanity: ensure they exist
+	_ = dockerLines(t, ctx, "network", "inspect", identifier+"-temp-net")
+	_ = dockerLines(t, ctx, "volume", "inspect", identifier+"-temp-vol")
+	_ = dockerLines(t, ctx, "ps", "-a", "--format", "{{.Names}}", "--filter", "name="+identifier+"-temp")
+
+	// Apply with prune
+	_, _, code3 := runCmdDetailed(t, root, env, bin, "apply", "--skip-confirmation", "-c", exampleCfg)
+	if code3 != 0 {
+		t.Fatalf("apply for prune failed")
+	}
+
+	// Assert transient resources removed
+	namesAfter := dockerLines(t, ctx, "ps", "-a", "--format", "{{.Names}}", "--filter", "name="+identifier+"-temp")
+	if len(namesAfter) != 0 {
+		t.Fatalf("expected transient container to be pruned, still present: %v", namesAfter)
+	}
+	if out := safeOutput(exec.Command("docker", "network", "inspect", identifier+"-temp-net")); strings.TrimSpace(out) != "" {
+		t.Fatalf("expected transient network to be pruned")
+	}
+	if out := safeOutput(exec.Command("docker", "volume", "inspect", identifier+"-temp-vol")); strings.TrimSpace(out) != "" {
+		t.Fatalf("expected transient volume to be pruned")
+	}
+}
+
+// runCmdDetailed executes a command capturing stdout and stderr separately and returns the exit code.
+func runCmdDetailed(t *testing.T, dir string, env []string, name string, args ...string) (string, string, int) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = env
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	code := 0
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else {
+			code = 1
+		}
+	}
+	return stdout.String(), stderr.String(), code
+}
+
+// runCmdWithStdinDetailed executes a command with provided stdin, capturing stdout/stderr and exit code.
+func runCmdWithStdinDetailed(t *testing.T, dir string, env []string, name string, stdin string, args ...string) (string, string, int) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = env
+	cmd.Stdin = strings.NewReader(stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	code := 0
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else {
+			code = 1
+		}
+	}
+	return stdout.String(), stderr.String(), code
+}
+
 func buildDockform(t *testing.T) string {
 	t.Helper()
 	if buildOncePath != "" {
