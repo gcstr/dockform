@@ -134,8 +134,7 @@ func TestNormalize_SopsMergingAndValidation(t *testing.T) {
 func TestFilesets_ValidationAndNormalization(t *testing.T) {
 	base := t.TempDir()
 	cfg := Config{
-		Docker:  DockerConfig{Identifier: "id"},
-		Volumes: map[string]TopLevelResourceSpec{"data": {}},
+		Docker: DockerConfig{Identifier: "id"},
 		Filesets: map[string]FilesetSpec{
 			"code": {Source: "src", TargetVolume: "data", TargetPath: "/app"},
 		},
@@ -149,16 +148,8 @@ func TestFilesets_ValidationAndNormalization(t *testing.T) {
 		t.Fatalf("SourceAbs mismatch: want %q got %q", wantAbs, fs.SourceAbs)
 	}
 
-	// unknown volume
-	cfgBadVol := Config{Docker: DockerConfig{Identifier: "id"}, Volumes: map[string]TopLevelResourceSpec{"data": {}}, Filesets: map[string]FilesetSpec{"x": {Source: "s", TargetVolume: "missing", TargetPath: "/p"}}}
-	if err := cfgBadVol.normalizeAndValidate(base); err == nil {
-		t.Fatalf("expected error for unknown volume")
-	} else if !apperr.IsKind(err, apperr.NotFound) {
-		t.Fatalf("expected NotFound, got %v", err)
-	}
-
 	// target path not absolute
-	cfgRel := Config{Docker: DockerConfig{Identifier: "id"}, Volumes: map[string]TopLevelResourceSpec{"data": {}}, Filesets: map[string]FilesetSpec{"x": {Source: "s", TargetVolume: "data", TargetPath: "rel"}}}
+	cfgRel := Config{Docker: DockerConfig{Identifier: "id"}, Filesets: map[string]FilesetSpec{"x": {Source: "s", TargetVolume: "data", TargetPath: "rel"}}}
 	if err := cfgRel.normalizeAndValidate(base); err == nil {
 		t.Fatalf("expected error for relative target path")
 	} else if !apperr.IsKind(err, apperr.InvalidInput) {
@@ -166,7 +157,7 @@ func TestFilesets_ValidationAndNormalization(t *testing.T) {
 	}
 
 	// target path is /
-	cfgRoot := Config{Docker: DockerConfig{Identifier: "id"}, Volumes: map[string]TopLevelResourceSpec{"data": {}}, Filesets: map[string]FilesetSpec{"x": {Source: "s", TargetVolume: "data", TargetPath: "/"}}}
+	cfgRoot := Config{Docker: DockerConfig{Identifier: "id"}, Filesets: map[string]FilesetSpec{"x": {Source: "s", TargetVolume: "data", TargetPath: "/"}}}
 	if err := cfgRoot.normalizeAndValidate(base); err == nil {
 		t.Fatalf("expected error for target path '/'")
 	} else if !apperr.IsKind(err, apperr.InvalidInput) {
@@ -174,7 +165,7 @@ func TestFilesets_ValidationAndNormalization(t *testing.T) {
 	}
 
 	// missing source
-	cfgNoSrc := Config{Docker: DockerConfig{Identifier: "id"}, Volumes: map[string]TopLevelResourceSpec{"data": {}}, Filesets: map[string]FilesetSpec{"x": {Source: "", TargetVolume: "data", TargetPath: "/p"}}}
+	cfgNoSrc := Config{Docker: DockerConfig{Identifier: "id"}, Filesets: map[string]FilesetSpec{"x": {Source: "", TargetVolume: "data", TargetPath: "/p"}}}
 	if err := cfgNoSrc.normalizeAndValidate(base); err == nil {
 		t.Fatalf("expected error for missing source")
 	} else if !apperr.IsKind(err, apperr.InvalidInput) {
@@ -182,7 +173,7 @@ func TestFilesets_ValidationAndNormalization(t *testing.T) {
 	}
 
 	// invalid fileset key
-	cfgBadKey := Config{Docker: DockerConfig{Identifier: "id"}, Volumes: map[string]TopLevelResourceSpec{"data": {}}, Filesets: map[string]FilesetSpec{"Bad Key": {Source: "s", TargetVolume: "data", TargetPath: "/p"}}}
+	cfgBadKey := Config{Docker: DockerConfig{Identifier: "id"}, Filesets: map[string]FilesetSpec{"Bad Key": {Source: "s", TargetVolume: "data", TargetPath: "/p"}}}
 	if err := cfgBadKey.normalizeAndValidate(base); err == nil {
 		t.Fatalf("expected error for invalid fileset key")
 	} else if !apperr.IsKind(err, apperr.InvalidInput) {

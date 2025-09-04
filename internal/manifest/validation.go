@@ -19,9 +19,6 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 	if c.Applications == nil {
 		c.Applications = map[string]Application{}
 	}
-	if c.Volumes == nil {
-		c.Volumes = map[string]TopLevelResourceSpec{}
-	}
 	if c.Networks == nil {
 		c.Networks = map[string]TopLevelResourceSpec{}
 	}
@@ -167,9 +164,6 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		}
 		if a.TargetVolume == "" {
 			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_volume is required", filesetName)
-		}
-		if _, ok := c.Volumes[a.TargetVolume]; !ok {
-			return apperr.New("manifest.normalizeAndValidate", apperr.NotFound, "fileset %s: target_volume %q is not declared under volumes", filesetName, a.TargetVolume)
 		}
 		if a.TargetPath == "" || !filepath.IsAbs(a.TargetPath) {
 			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_path must be an absolute path", filesetName)

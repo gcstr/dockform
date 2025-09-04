@@ -33,14 +33,18 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	// Initialize progress: estimate total work items conservatively and refine later.
 	if p.prog != nil {
 		total := 0
-		// Volumes to create
+		// Volumes to create (derived from filesets)
 		existingVolumesForCount := map[string]struct{}{}
 		if vols, err := p.docker.ListVolumes(ctx); err == nil {
 			for _, v := range vols {
 				existingVolumesForCount[v] = struct{}{}
 			}
 		}
-		for name := range cfg.Volumes {
+		desiredVolumesForCount := map[string]struct{}{}
+		for _, fileset := range cfg.Filesets {
+			desiredVolumesForCount[fileset.TargetVolume] = struct{}{}
+		}
+		for name := range desiredVolumesForCount {
 			if _, ok := existingVolumesForCount[name]; !ok {
 				total++
 			}
@@ -165,7 +169,7 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 		}
 	}
 
-	// Ensure volumes exist
+	// Ensure volumes exist (derived from filesets)
 	existingVolumes := map[string]struct{}{}
 	if vols, err := p.docker.ListVolumes(ctx); err == nil {
 		for _, v := range vols {
@@ -174,7 +178,11 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	} else {
 		return apperr.Wrap("planner.Apply", apperr.External, err, "list volumes")
 	}
-	for name := range cfg.Volumes {
+	desiredVolumes := map[string]struct{}{}
+	for _, fileset := range cfg.Filesets {
+		desiredVolumes[fileset.TargetVolume] = struct{}{}
+	}
+	for name := range desiredVolumes {
 		if _, ok := existingVolumes[name]; !ok {
 			if p.prog != nil {
 				p.prog.SetAction("creating volume " + name)

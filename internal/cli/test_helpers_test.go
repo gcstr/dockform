@@ -17,12 +17,11 @@ cmd="$1"; shift
 case "$cmd" in
   volume)
     sub="$1"; shift
-    if [ "$sub" = "ls" ]; then
-      # Simulate two volumes: one desired, one orphan (both labeled via filter ignored)
-      echo "demo-volume-1"
-      echo "orphan-vol"
-      exit 0
-    fi
+	    if [ "$sub" = "ls" ]; then
+	      # Simulate orphan volume only since no filesets use volumes in basic config
+	      echo "orphan-vol"
+	      exit 0
+	    fi
     ;;
   network)
     sub="$1"; shift
@@ -102,7 +101,7 @@ func basicConfigPath(t *testing.T) string {
 	if err := os.WriteFile(composePath, []byte("version: '3'\nservices: {}\n"), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
-	// Minimal config referencing the app and declaring volumes/networks
+	// Minimal config referencing the app and declaring networks
 	cfg := strings.Join([]string{
 		"docker:",
 		"  context: default",
@@ -112,8 +111,6 @@ func basicConfigPath(t *testing.T) string {
 		"    root: website",
 		"    files:",
 		"      - docker-compose.yaml",
-		"volumes:",
-		"  demo-volume-1: {}",
 		"networks:",
 		"  demo-network: {}",
 	}, "\n") + "\n"

@@ -10,9 +10,6 @@ applications:
     project:
       name: df_e2e_${DOCKFORM_RUN_ID}
 
-volumes:
-  df_e2e_${DOCKFORM_RUN_ID}_vol: {}
-
 networks:
   df_e2e_${DOCKFORM_RUN_ID}_net: {}
 

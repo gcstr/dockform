@@ -11,7 +11,6 @@ type Config struct {
 	Secrets      *Secrets                        `yaml:"secrets"`
 	Environment  *Environment                    `yaml:"environment"`
 	Applications map[string]Application          `yaml:"applications" validate:"dive"`
-	Volumes      map[string]TopLevelResourceSpec `yaml:"volumes"`
 	Networks     map[string]TopLevelResourceSpec `yaml:"networks"`
 	Filesets     map[string]FilesetSpec          `yaml:"filesets"`
 	BaseDir      string                          `yaml:"-"`

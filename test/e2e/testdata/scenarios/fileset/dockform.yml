@@ -19,9 +19,6 @@ filesets:
       - ignore/
       - "**/*.tmp"
 
-volumes:
-  df_e2e_${DOCKFORM_RUN_ID}_fsvol: {}
-
 networks:
   df_e2e_${DOCKFORM_RUN_ID}_fsnet: {}
 

@@ -53,8 +53,5 @@ applications:
       sops:
         - secrets.env
 
-volumes:
-  demo-volume-1:
-
 networks:
   demo-network:

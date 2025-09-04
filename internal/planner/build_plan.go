@@ -35,8 +35,12 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		}
 	}
 
-	// Deterministic ordering for stable output
-	volNames := sortedKeys(cfg.Volumes)
+	// Deterministic ordering for stable output - derive volumes from filesets
+	desiredVolumes := map[string]struct{}{}
+	for _, fileset := range cfg.Filesets {
+		desiredVolumes[fileset.TargetVolume] = struct{}{}
+	}
+	volNames := sortedKeys(desiredVolumes)
 	for _, name := range volNames {
 		exists := false
 		if existingVolumes != nil {
@@ -48,9 +52,9 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 			lines = append(lines, ui.Line(ui.Add, "volume %s will be created", name))
 		}
 	}
-	// Plan removals for labeled volumes no longer in config
+	// Plan removals for labeled volumes no longer needed by any fileset
 	for name := range existingVolumes {
-		if _, want := cfg.Volumes[name]; !want {
+		if _, want := desiredVolumes[name]; !want {
 			lines = append(lines, ui.Line(ui.Remove, "volume %s will be removed", name))
 		}
 	}

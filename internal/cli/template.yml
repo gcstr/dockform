@@ -72,13 +72,6 @@ applications:
         - SERVICE_NAME=api
         - PORT=3000
 
-# Docker volumes to create
-volumes:
-  # Volume name
-  app-data:
-  db-data:
-  cache-data:
-
 # Docker networks to create
 networks:
   # Network name  
@@ -86,12 +79,13 @@ networks:
   db-network:
 
 # File synchronization from local directories to Docker volumes (optional)
+# Volumes are automatically created/managed based on filesets target_volume
 filesets:
   # Fileset name (must match ^[a-z0-9_.-]+$)
   static-assets:
     # Local source directory
     source: ./assets
-    # Target volume to sync to
+    # Target volume to sync to (will be created automatically)
     target_volume: app-data
     # Path within the volume
     target_path: /var/www/html/assets

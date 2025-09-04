@@ -23,9 +23,6 @@ filesets:
       - "tmp/**"
       - "secrets/"
 
-volumes:
-  df_e2e_${DOCKFORM_RUN_ID}_fsvol2: {}
-
 networks:
   df_e2e_${DOCKFORM_RUN_ID}_fsnet2: {}
 

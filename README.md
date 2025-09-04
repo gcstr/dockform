@@ -59,11 +59,15 @@ applications:
     project:
       name: website
 
-volumes:
-  demo-volume-1: {}
-
 networks:
   demo-network: {}
+
+# Volumes are automatically created/managed via filesets
+filesets:
+  assets:
+    source: ./assets
+    target_volume: website-data
+    target_path: /var/www/html
 ```
 
 Remote Docker? Configure a context first:

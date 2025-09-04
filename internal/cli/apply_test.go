@@ -34,7 +34,7 @@ case "$cmd" in
     exit 0 ;;
   volume)
     sub="$1"; shift
-    if [ "$sub" = "ls" ]; then echo "demo-volume-1"; exit 0; fi ;;
+    if [ "$sub" = "ls" ]; then exit 0; fi ;;
   network)
     sub="$1"; shift
     if [ "$sub" = "ls" ]; then echo "demo-network"; exit 0; fi ;;

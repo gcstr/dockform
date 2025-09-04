@@ -159,7 +159,7 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 		Applications: map[string]manifest.Application{
 			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
-		Volumes:  map[string]manifest.TopLevelResourceSpec{"v1": {}},
+		Filesets: map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app"}},
 		Networks: map[string]manifest.TopLevelResourceSpec{"n1": {}},
 	}
 	d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)

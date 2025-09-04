@@ -126,7 +126,7 @@ func TestBuildPlan_Filesets_NoChanges(t *testing.T) {
 	_ = os.Setenv("REMOTE_JSON", remoteJSON)
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
-	cfg := manifest.Config{Volumes: map[string]manifest.TopLevelResourceSpec{"data": {}}, Filesets: map[string]manifest.FilesetSpec{
+	cfg := manifest.Config{Filesets: map[string]manifest.FilesetSpec{
 		"site": {SourceAbs: src, TargetVolume: "data", TargetPath: "/site"},
 	}}
 	d := dockercli.New("")
@@ -167,7 +167,6 @@ func TestApply_Filesets_SyncAndRestart(t *testing.T) {
 	cfg := manifest.Config{
 		Docker:   manifest.DockerConfig{Identifier: "demo"},
 		Filesets: map[string]manifest.FilesetSpec{"data": {SourceAbs: src, TargetVolume: "data", TargetPath: "/opt/data", RestartServices: []string{"nginx"}}},
-		Volumes:  map[string]manifest.TopLevelResourceSpec{},
 		Networks: map[string]manifest.TopLevelResourceSpec{},
 	}
 	d := dockercli.New("").WithIdentifier("demo")

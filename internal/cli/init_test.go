@@ -51,7 +51,7 @@ func TestInitCmd_CurrentDirectory(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	expectedSections := []string{"docker:", "applications:", "volumes:", "networks:", "filesets:"}
+	expectedSections := []string{"docker:", "applications:", "networks:", "filesets:"}
 	for _, section := range expectedSections {
 		if !strings.Contains(contentStr, section) {
 			t.Fatalf("missing section %q in generated file", section)
