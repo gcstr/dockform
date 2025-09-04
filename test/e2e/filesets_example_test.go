@@ -19,10 +19,18 @@ func TestScenarioFilesets_InitialSync_Index(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not found in PATH")
 	}
+	// Ensure the 'default' docker context exists since empty context is normalized to 'default'
+	if out := safeOutput(exec.Command("docker", "context", "inspect", "default")); strings.TrimSpace(out) == "" {
+		t.Skip("docker context 'default' not available; skipping e2e")
+	}
+	prevCtx := os.Getenv("DOCKER_CONTEXT")
+	_ = os.Setenv("DOCKER_CONTEXT", "default")
+	t.Cleanup(func() { _ = os.Setenv("DOCKER_CONTEXT", prevCtx) })
 
 	_ = context.Background()
 	runID := uniqueID()
 	identifier := runID
+	ensureNetworkCreatableOrSkip(t, identifier)
 
 	// Clean any leftover demo resources
 	t.Cleanup(func() {
@@ -76,10 +84,19 @@ func TestScenarioFilesets_ChangeDetection_And_Restart(t *testing.T) {
 		t.Skip("docker not found in PATH")
 	}
 
+	// Ensure the 'default' docker context exists since empty context is normalized to 'default'
+	if out := safeOutput(exec.Command("docker", "context", "inspect", "default")); strings.TrimSpace(out) == "" {
+		t.Skip("docker context 'default' not available; skipping e2e")
+	}
+	prevCtx := os.Getenv("DOCKER_CONTEXT")
+	_ = os.Setenv("DOCKER_CONTEXT", "default")
+	t.Cleanup(func() { _ = os.Setenv("DOCKER_CONTEXT", prevCtx) })
+
 	ctx := context.Background()
 	runID := uniqueID()
 	identifier := runID
 	t.Cleanup(func() { cleanupByLabel(t, identifier) })
+	ensureNetworkCreatableOrSkip(t, identifier)
 
 	bin := buildDockform(t)
 	tempDir := t.TempDir()
@@ -156,9 +173,18 @@ func TestScenarioFilesets_Excludes_Behavior(t *testing.T) {
 		t.Skip("docker not found in PATH")
 	}
 
+	// Ensure the 'default' docker context exists since empty context is normalized to 'default'
+	if out := safeOutput(exec.Command("docker", "context", "inspect", "default")); strings.TrimSpace(out) == "" {
+		t.Skip("docker context 'default' not available; skipping e2e")
+	}
+	prevCtx := os.Getenv("DOCKER_CONTEXT")
+	_ = os.Setenv("DOCKER_CONTEXT", "default")
+	t.Cleanup(func() { _ = os.Setenv("DOCKER_CONTEXT", prevCtx) })
+
 	runID := uniqueID()
 	identifier := runID
 	t.Cleanup(func() { cleanupByLabel(t, identifier) })
+	ensureNetworkCreatableOrSkip(t, identifier)
 
 	bin := buildDockform(t)
 	tempDir := t.TempDir()

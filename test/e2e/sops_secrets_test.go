@@ -20,9 +20,18 @@ func TestSopsSecretsEndToEnd(t *testing.T) {
 		t.Skip("sops not found in PATH; skipping SOPS e2e test")
 	}
 
+	// Ensure the 'default' docker context exists since manifests normalize empty context to 'default'
+	if out := safeOutput(exec.Command("docker", "context", "inspect", "default")); strings.TrimSpace(out) == "" {
+		t.Skip("docker context 'default' not available; skipping e2e")
+	}
+	prevCtx := os.Getenv("DOCKER_CONTEXT")
+	_ = os.Setenv("DOCKER_CONTEXT", "default")
+	t.Cleanup(func() { _ = os.Setenv("DOCKER_CONTEXT", prevCtx) })
+
 	ctx := context.Background()
 	runID := uniqueID()
 	identifier := runID
+	ensureNetworkCreatableOrSkip(t, identifier)
 
 	// Prepare temp workdir from scenario
 	tempDir := t.TempDir()

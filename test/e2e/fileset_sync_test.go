@@ -17,10 +17,18 @@ func TestFilesetSyncAndIndex(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not found in PATH")
 	}
+	// Ensure the 'default' docker context exists since empty context is normalized to 'default'
+	if out := safeOutput(exec.Command("docker", "context", "inspect", "default")); strings.TrimSpace(out) == "" {
+		t.Skip("docker context 'default' not available; skipping e2e")
+	}
+	prevCtx := os.Getenv("DOCKER_CONTEXT")
+	_ = os.Setenv("DOCKER_CONTEXT", "default")
+	t.Cleanup(func() { _ = os.Setenv("DOCKER_CONTEXT", prevCtx) })
 
 	ctx := context.Background()
 	runID := uniqueID()
 	identifier := runID
+	ensureNetworkCreatableOrSkip(t, identifier)
 
 	// Prepare temp workdir by copying scenario
 	tempDir := t.TempDir()

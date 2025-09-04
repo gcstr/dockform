@@ -1,7 +1,7 @@
 services:
   hello:
     image: alpine
-    command: ["sh","-c","sleep 3600"]
+    command: ["sh","-c","sleep 5m"]
     labels:
       io.dockform.identifier: ${DOCKFORM_RUN_ID}
     volumes:
