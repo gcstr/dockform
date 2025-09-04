@@ -61,14 +61,40 @@ func newRootCmd() *cobra.Command {
 
 func Version() string { return "0.1.0-dev" }
 
+// TestPrintUserFriendly exposes printUserFriendly for testing
+func TestPrintUserFriendly(err error) {
+	printUserFriendly(err)
+}
+
 func printUserFriendly(err error) {
 	var e *apperr.E
 	if errors.As(err, &e) {
-		// Short human message
-		if e.Msg != "" {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", e.Msg)
+		// For External errors (like Docker failures), always show the underlying error
+		// even in non-verbose mode to help users understand what went wrong
+		if apperr.IsKind(err, apperr.External) {
+			// Show both the context message and the underlying error
+			if e.Msg != "" {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", e.Msg)
+			}
+			// Always show the underlying error for External errors
+			if e.Err != nil {
+				// Check if the underlying error has useful information
+				var underlyingAppErr *apperr.E
+				if errors.As(e.Err, &underlyingAppErr) && underlyingAppErr.Msg != "" {
+					// If the underlying error is also an apperr.E with a message, show it
+					fmt.Fprintf(os.Stderr, "%s\n", underlyingAppErr.Msg)
+				} else {
+					// Otherwise show the full error string
+					fmt.Fprintf(os.Stderr, "%s\n", e.Err.Error())
+				}
+			}
 		} else {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+			// Non-External errors: use existing logic
+			if e.Msg != "" {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", e.Msg)
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+			}
 		}
 		// Verbose mode prints chain details
 		if verbose {
