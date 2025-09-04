@@ -49,8 +49,21 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 				total++
 			}
 		}
-		// Filesets: 1 unit per fileset; if no changes later, we decrement
-		total += len(cfg.Filesets)
+		// Filesets: only count ones that actually need updates (check now)
+		for _, fileset := range cfg.Filesets {
+			if fileset.SourceAbs != "" {
+				// Quick check if fileset needs updates by comparing tree hashes
+				local, err := filesets.BuildLocalIndex(fileset.SourceAbs, fileset.TargetPath, fileset.Exclude)
+				if err == nil {
+					raw, _ := p.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
+					remote, _ := filesets.ParseIndexJSON(raw)
+					// Only count if tree hashes differ (fileset needs updates)
+					if local.TreeHash != remote.TreeHash {
+						total++
+					}
+				}
+			}
+		}
 		// Networks to create
 		existingNetworksForCount := map[string]struct{}{}
 		if nets, err := p.docker.ListNetworks(ctx); err == nil {
@@ -218,9 +231,6 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 			diff := filesets.DiffIndexes(local, remote)
 			// If completely equal, skip
 			if local.TreeHash == remote.TreeHash {
-				if p.prog != nil {
-					p.prog.AdjustTotal(-1)
-				}
 				continue
 			}
 			// Build tar for create+update
