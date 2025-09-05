@@ -44,6 +44,10 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 		for _, fileset := range cfg.Filesets {
 			desiredVolumesForCount[fileset.TargetVolume] = struct{}{}
 		}
+		// Add explicit volumes from manifest
+		for name := range cfg.Volumes {
+			desiredVolumesForCount[name] = struct{}{}
+		}
 		for name := range desiredVolumesForCount {
 			if _, ok := existingVolumesForCount[name]; !ok {
 				total++
@@ -198,6 +202,10 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	desiredVolumes := map[string]struct{}{}
 	for _, fileset := range cfg.Filesets {
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
+	}
+	// Add explicit volumes from manifest
+	for name := range cfg.Volumes {
+		desiredVolumes[name] = struct{}{}
 	}
 	for name := range desiredVolumes {
 		if _, ok := existingVolumes[name]; !ok {

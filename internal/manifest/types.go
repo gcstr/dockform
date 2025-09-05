@@ -12,6 +12,7 @@ type Config struct {
 	Environment  *Environment                    `yaml:"environment"`
 	Applications map[string]Application          `yaml:"applications" validate:"dive"`
 	Networks     map[string]TopLevelResourceSpec `yaml:"networks"`
+	Volumes      map[string]TopLevelResourceSpec `yaml:"volumes"`
 	Filesets     map[string]FilesetSpec          `yaml:"filesets"`
 	BaseDir      string                          `yaml:"-"`
 }

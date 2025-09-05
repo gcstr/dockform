@@ -196,6 +196,39 @@ func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
 	mustContain(t, out, "→ service app/nginx will be reconciled (identifier mismatch)")
 }
 
+func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
+	defer withPlannerDockerStub_Basic(t)()
+	cfg := manifest.Config{
+		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
+		Applications: map[string]manifest.Application{
+			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
+		},
+		// Mix of explicit volumes and volumes from filesets
+		Volumes: map[string]manifest.TopLevelResourceSpec{"explicit-vol": {}, "shared-data": {}},
+		Filesets: map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "fileset-vol", TargetPath: "/app"}},
+		Networks: map[string]manifest.TopLevelResourceSpec{"n1": {}},
+	}
+	d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
+	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("build plan: %v", err)
+	}
+	out := pln.String()
+	// Check that all volumes are properly handled:
+	// 1. Explicit volumes should be created
+	mustContain(t, out, "↑ volume explicit-vol will be created")
+	mustContain(t, out, "↑ volume shared-data will be created")
+	// 2. Volumes from filesets should also be created
+	mustContain(t, out, "↑ volume fileset-vol will be created")
+	// 3. Old volume should be removed
+	mustContain(t, out, "× volume vOld will be removed")
+	// Networks should work as before
+	mustContain(t, out, "↑ network n1 will be created")
+	mustContain(t, out, "× network nOld will be removed")
+	// Service should work as before
+	mustContain(t, out, "↑ service app/nginx will be started")
+}
+
 func TestApply_PropagatesVolumeListError(t *testing.T) {
 	defer withPlannerDockerStub_VolumeLsError(t)()
 	cfg := manifest.Config{

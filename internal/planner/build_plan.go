@@ -35,10 +35,14 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		}
 	}
 
-	// Deterministic ordering for stable output - derive volumes from filesets
+	// Deterministic ordering for stable output - combine volumes from filesets and explicit volumes
 	desiredVolumes := map[string]struct{}{}
 	for _, fileset := range cfg.Filesets {
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
+	}
+	// Add explicit volumes from manifest
+	for name := range cfg.Volumes {
+		desiredVolumes[name] = struct{}{}
 	}
 	volNames := sortedKeys(desiredVolumes)
 	for _, name := range volNames {

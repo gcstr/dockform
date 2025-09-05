@@ -44,6 +44,50 @@ func TestNormalize_DefaultsEnvMergingAndFiles(t *testing.T) {
 	}
 }
 
+func TestNormalize_VolumeKeyValidation(t *testing.T) {
+	// Valid volume key
+	cfgValid := Config{
+		Docker:  DockerConfig{Identifier: "id"},
+		Volumes: map[string]TopLevelResourceSpec{"my-volume": {}},
+	}
+	if err := cfgValid.normalizeAndValidate("/base"); err != nil {
+		t.Fatalf("unexpected error for valid volume key: %v", err)
+	}
+
+	// Invalid volume key
+	cfgInvalid := Config{
+		Docker:  DockerConfig{Identifier: "id"},
+		Volumes: map[string]TopLevelResourceSpec{"Bad Volume": {}},
+	}
+	if err := cfgInvalid.normalizeAndValidate("/base"); err == nil {
+		t.Fatalf("expected error for invalid volume key")
+	} else if !apperr.IsKind(err, apperr.InvalidInput) {
+		t.Fatalf("expected InvalidInput, got %v", err)
+	}
+}
+
+func TestNormalize_NetworkKeyValidation(t *testing.T) {
+	// Valid network key
+	cfgValid := Config{
+		Docker:   DockerConfig{Identifier: "id"},
+		Networks: map[string]TopLevelResourceSpec{"my-network": {}},
+	}
+	if err := cfgValid.normalizeAndValidate("/base"); err != nil {
+		t.Fatalf("unexpected error for valid network key: %v", err)
+	}
+
+	// Invalid network key
+	cfgInvalid := Config{
+		Docker:   DockerConfig{Identifier: "id"},
+		Networks: map[string]TopLevelResourceSpec{"Bad Network": {}},
+	}
+	if err := cfgInvalid.normalizeAndValidate("/base"); err == nil {
+		t.Fatalf("expected error for invalid network key")
+	} else if !apperr.IsKind(err, apperr.InvalidInput) {
+		t.Fatalf("expected InvalidInput, got %v", err)
+	}
+}
+
 func TestNormalize_InvalidApplicationKey(t *testing.T) {
 	cfg := Config{
 		Docker:       DockerConfig{Identifier: "x"},

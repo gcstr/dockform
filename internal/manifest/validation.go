@@ -22,8 +22,25 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 	if c.Networks == nil {
 		c.Networks = map[string]TopLevelResourceSpec{}
 	}
+	if c.Volumes == nil {
+		c.Volumes = map[string]TopLevelResourceSpec{}
+	}
 	if c.Filesets == nil {
 		c.Filesets = map[string]FilesetSpec{}
+	}
+
+	// Validate volume names
+	for volumeName := range c.Volumes {
+		if !appKeyRegex.MatchString(volumeName) {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid volume key %q: must match ^[a-z0-9_.-]+$", volumeName)
+		}
+	}
+
+	// Validate network names
+	for networkName := range c.Networks {
+		if !appKeyRegex.MatchString(networkName) {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid network key %q: must match ^[a-z0-9_.-]+$", networkName)
+		}
 	}
 
 	// Validate application keys and fill defaults
