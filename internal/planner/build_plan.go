@@ -207,9 +207,9 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 				lines = append(lines, ui.Line(ui.Change, "fileset %s: unable to index local files: %v", name, err))
 				continue
 			}
-			// Read remote index only if the target volume exists. Avoid docker run -v implicit creation during plan.
+			// Read remote index only if the target volume exists with proper labels. Avoid docker run -v implicit creation during plan.
 			raw := ""
-			if ok, err := p.docker.VolumeExists(ctx, a.TargetVolume); err == nil && ok {
+			if _, volumeExists := existingVolumes[a.TargetVolume]; volumeExists {
 				raw, _ = p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
 			}
 			remote, _ := filesets.ParseIndexJSON(raw)

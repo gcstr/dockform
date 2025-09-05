@@ -55,11 +55,11 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 				// Quick check if fileset needs updates by comparing tree hashes
 				local, err := filesets.BuildLocalIndex(fileset.SourceAbs, fileset.TargetPath, fileset.Exclude)
 				if err == nil {
-					// Avoid implicit volume creation by only reading remote index when volume exists
-					raw := ""
-					if ok, verr := p.docker.VolumeExists(ctx, fileset.TargetVolume); verr == nil && ok {
-						raw, _ = p.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
-					}
+				// Avoid implicit volume creation by only reading remote index when volume exists with proper labels
+				raw := ""
+				if _, volumeExists := existingVolumesForCount[fileset.TargetVolume]; volumeExists {
+					raw, _ = p.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
+				}
 					remote, _ := filesets.ParseIndexJSON(raw)
 					// Only count if tree hashes differ (fileset needs updates)
 					if local.TreeHash != remote.TreeHash {
@@ -230,7 +230,11 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 			if err != nil {
 				return apperr.Wrap("planner.Apply", apperr.Internal, err, "index local filesets for %s", n)
 			}
-			raw, _ := p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
+			// Only read from volume if it exists with proper labels to avoid implicit creation
+			raw := ""
+			if _, volumeExists := existingVolumes[a.TargetVolume]; volumeExists {
+				raw, _ = p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
+			}
 			remote, _ := filesets.ParseIndexJSON(raw)
 			diff := filesets.DiffIndexes(local, remote)
 			// If completely equal, skip
