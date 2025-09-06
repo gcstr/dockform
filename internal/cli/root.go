@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/spf13/cobra"
@@ -66,6 +67,45 @@ func TestPrintUserFriendly(err error) {
 	printUserFriendly(err)
 }
 
+func provideExternalErrorHints(err error) {
+	msg := err.Error()
+	
+	if strings.Contains(msg, "invalid compose file") {
+		fmt.Fprintln(os.Stderr, "\nHint: Check your Docker Compose file syntax")
+		fmt.Fprintln(os.Stderr, "      Try: docker compose config --quiet")
+		fmt.Fprintln(os.Stderr, "      Try: docker compose -f <file> config")
+		return
+	}
+	
+	if strings.Contains(msg, "compose") {
+		fmt.Fprintln(os.Stderr, "\nHint: Docker Compose operation failed")
+		fmt.Fprintln(os.Stderr, "      Check your compose files and Docker daemon status")
+		return
+	}
+}
+
+func provideDockerTroubleshootingHints(err error) {
+	msg := err.Error()
+	
+	fmt.Fprintln(os.Stderr, "\nHint: Is the Docker daemon running and reachable from the selected context?")
+	
+	// Context-specific hints
+	if strings.Contains(msg, "context=") && !strings.Contains(msg, "context=default") {
+		fmt.Fprintln(os.Stderr, "      Try: docker context ls")
+		fmt.Fprintln(os.Stderr, "      Try: docker --context <name> ps")
+	} else {
+		fmt.Fprintln(os.Stderr, "      Try: docker ps")
+	}
+	
+	// OS-specific hints
+	if strings.Contains(msg, "unix:///var/run/docker.sock") {
+		fmt.Fprintln(os.Stderr, "      On macOS/Linux: Check if Docker Desktop is running")
+		fmt.Fprintln(os.Stderr, "      On Linux: Try 'sudo systemctl start docker'")
+	} else if strings.Contains(msg, "npipe") || strings.Contains(msg, "windows") {
+		fmt.Fprintln(os.Stderr, "      On Windows: Check if Docker Desktop is running")
+	}
+}
+
 func printUserFriendly(err error) {
 	var e *apperr.E
 	if errors.As(err, &e) {
@@ -102,7 +142,9 @@ func printUserFriendly(err error) {
 		}
 		// Contextual hints
 		if apperr.IsKind(err, apperr.Unavailable) {
-			fmt.Fprintln(os.Stderr, "Hint: Is the Docker daemon running and reachable from the selected context?")
+			provideDockerTroubleshootingHints(err)
+		} else if apperr.IsKind(err, apperr.External) {
+			provideExternalErrorHints(err)
 		}
 		return
 	}

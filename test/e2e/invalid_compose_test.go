@@ -30,7 +30,7 @@ func TestInvalidComposePlanAndApply(t *testing.T) {
 	if code != 70 {
 		t.Fatalf("expected exit code 70 for invalid compose on plan, got %d\n%s", code, out)
 	}
-	if !strings.Contains(out, "invalid compose file for application app") {
+	if !strings.Contains(out, "invalid compose file") || !strings.Contains(out, "for application app") {
 		t.Fatalf("expected invalid compose error message, got:\n%s", out)
 	}
 
@@ -39,7 +39,7 @@ func TestInvalidComposePlanAndApply(t *testing.T) {
 	if code2 != 70 {
 		t.Fatalf("expected exit code 70 for invalid compose on apply, got %d\n%s", code2, out2)
 	}
-	if !strings.Contains(out2, "invalid compose file for application app") {
+	if !strings.Contains(out2, "invalid compose file") || !strings.Contains(out2, "for application app") {
 		t.Fatalf("expected invalid compose error message, got:\n%s", out2)
 	}
 }

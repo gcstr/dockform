@@ -41,7 +41,7 @@ func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) err
 				p = filepath.Join(cfg.BaseDir, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "env file %s", f)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "environment file %s not found", f)
 			}
 		}
 	}
@@ -57,7 +57,7 @@ func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) err
 				p = filepath.Join(cfg.BaseDir, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "secrets sops file %s", sp)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "SOPS secret file %s not found", sp)
 			}
 		}
 	}
@@ -71,7 +71,7 @@ func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) err
 			}
 		}
 		if _, err := os.Stat(key); err != nil {
-			return apperr.Wrap("validator.Validate", apperr.NotFound, err, "sops age key file")
+			return apperr.Wrap("validator.Validate", apperr.NotFound, err, "SOPS age key file %s not found", key)
 		}
 	}
 
@@ -97,6 +97,11 @@ func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) err
 		
 		// Validate compose file syntax by attempting to parse it with Docker
 		if _, err := d.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, []string{}, []string{}); err != nil {
+			if len(app.Files) == 1 {
+				return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file %s for application %s", app.Files[0], appName)
+			} else if len(app.Files) > 1 {
+				return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose files %v for application %s", app.Files, appName)
+			}
 			return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file for application %s", appName)
 		}
 		// Env files (already rebased to app root semantics in config normalization)

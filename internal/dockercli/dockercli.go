@@ -35,10 +35,10 @@ func (c *Client) WithIdentifier(id string) *Client {
 // CheckDaemon verifies the docker daemon for the configured context is reachable.
 func (c *Client) CheckDaemon(ctx context.Context) error {
 	if _, err := c.exec.Run(ctx, "version", "--format", "{{.Server.Version}}"); err != nil {
-		if c.contextName != "" {
-			return apperr.Wrap("dockercli.CheckDaemon", apperr.Unavailable, err, "docker daemon not reachable (context=%s): %v", c.contextName, err)
+		if c.contextName != "" && c.contextName != "default" {
+			return apperr.Wrap("dockercli.CheckDaemon", apperr.Unavailable, err, "docker daemon not reachable (context=%s)", c.contextName)
 		}
-		return apperr.Wrap("dockercli.CheckDaemon", apperr.Unavailable, err, "docker daemon not reachable: %v", err)
+		return apperr.Wrap("dockercli.CheckDaemon", apperr.Unavailable, err, "docker daemon not reachable")
 	}
 	return nil
 }
