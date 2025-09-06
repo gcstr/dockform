@@ -3,15 +3,12 @@ package planner
 import (
 	"bytes"
 	"context"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
-	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/filesets"
 	"github.com/gcstr/dockform/internal/manifest"
-	"github.com/gcstr/dockform/internal/secrets"
 	"github.com/gcstr/dockform/internal/ui"
 	"github.com/gcstr/dockform/internal/util"
 )
@@ -84,81 +81,11 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 				total++
 			}
 		}
-		// Applications requiring compose up
-		for appName := range cfg.Applications {
-			app := cfg.Applications[appName]
-			proj := ""
-			if app.Project != nil {
-				proj = app.Project.Name
-			}
-			// Build inline env same as later
-			inline := append([]string(nil), app.EnvInline...)
-			ageKeyFile := ""
-			if cfg.Sops != nil && cfg.Sops.Age != nil {
-				ageKeyFile = cfg.Sops.Age.KeyFile
-			}
-			for _, pth0 := range app.SopsSecrets {
-				pth := pth0
-				if pth != "" && !filepath.IsAbs(pth) {
-					pth = filepath.Join(app.Root, pth)
-				}
-				if pairs, err := secrets.DecryptAndParse(ctx, pth, ageKeyFile); err == nil {
-					inline = append(inline, pairs...)
-				}
-			}
-			plannedServices := []string{}
-			if doc, err := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil {
-				for s := range doc.Services {
-					plannedServices = append(plannedServices, s)
-				}
-			}
-			if len(plannedServices) == 0 {
-				if names, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil && len(names) > 0 {
-					plannedServices = append([]string(nil), names...)
-				}
-			}
-			if len(plannedServices) == 0 {
-				continue
-			}
-			running := map[string]dockercli.ComposePsItem{}
-			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
-				for _, it := range items {
-					running[it.Service] = it
-				}
-			}
-			applyNeeded := false
-			for _, s := range plannedServices {
-				it, ok := running[s]
-				if !ok {
-					applyNeeded = true
-					break
-				}
-				if identifier != "" {
-					keys := []string{"io.dockform.identifier", "com.docker.compose.config-hash"}
-					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, keys)
-					if v, ok := labels["io.dockform.identifier"]; !ok || v != identifier {
-						applyNeeded = true
-						break
-					}
-					if desiredHash, derr := p.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, s, identifier, inline); derr == nil && desiredHash != "" {
-						runningHash := labels["com.docker.compose.config-hash"]
-						if runningHash == "" || runningHash != desiredHash {
-							applyNeeded = true
-							break
-						}
-					}
-				} else {
-					if desiredHash, derr := p.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, s, "", inline); derr == nil && desiredHash != "" {
-						labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"com.docker.compose.config-hash"})
-						runningHash := labels["com.docker.compose.config-hash"]
-						if runningHash == "" || runningHash != desiredHash {
-							applyNeeded = true
-							break
-						}
-					}
-				}
-			}
-			if applyNeeded {
+		// Applications requiring compose up (use simplified detector for counting)
+		detector := NewServiceStateDetector(p.docker)
+		for appName, app := range cfg.Applications {
+			services, err := detector.DetectAllServicesState(ctx, appName, app, identifier, cfg.Sops)
+			if err == nil && NeedsApply(services) {
 				total++
 			}
 		}
@@ -330,130 +257,9 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 		}
 	}
 
-	// Compose up each application only when changes are needed
-	for appName := range cfg.Applications {
-		app := cfg.Applications[appName]
-		proj := ""
-		if app.Project != nil {
-			proj = app.Project.Name
-		}
-		// Build inline env same as in planning
-		inline := append([]string(nil), app.EnvInline...)
-		ageKeyFile := ""
-		if cfg.Sops != nil && cfg.Sops.Age != nil {
-			ageKeyFile = cfg.Sops.Age.KeyFile
-		}
-		for _, pth0 := range app.SopsSecrets {
-			pth := pth0
-			if pth != "" && !filepath.IsAbs(pth) {
-				pth = filepath.Join(app.Root, pth)
-			}
-			if pairs, err := secrets.DecryptAndParse(ctx, pth, ageKeyFile); err == nil {
-				inline = append(inline, pairs...)
-			}
-		}
-
-		// Determine planned services for the app
-		plannedServices := []string{}
-		doc, cfgErr := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
-		if cfgErr != nil {
-			return apperr.Wrap("planner.Apply", apperr.External, cfgErr, "invalid compose file for application %s", appName)
-		}
-		for s := range doc.Services {
-			plannedServices = append(plannedServices, s)
-		}
-		sort.Strings(plannedServices)
-		if len(plannedServices) == 0 {
-			names, err := p.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
-			if err != nil {
-				return apperr.Wrap("planner.Apply", apperr.External, err, "invalid compose file for application %s", appName)
-			}
-			if len(names) > 0 {
-				plannedServices = append([]string(nil), names...)
-				sort.Strings(plannedServices)
-			}
-		}
-
-		// If no services determined, skip compose up entirely for this app
-		if len(plannedServices) == 0 {
-			continue
-		}
-
-		// Build map of running services
-		running := map[string]dockercli.ComposePsItem{}
-		if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
-			for _, it := range items {
-				running[it.Service] = it
-			}
-		}
-
-		// Decide if apply is needed for this app
-		applyNeeded := false
-		for _, s := range plannedServices {
-			it, ok := running[s]
-			// Service not running → need apply
-			if !ok {
-				applyNeeded = true
-				break
-			}
-			// Identifier label mismatch → need apply
-			if identifier != "" {
-				keys := []string{"io.dockform.identifier", "com.docker.compose.config-hash"}
-				labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, keys)
-				if v, ok := labels["io.dockform.identifier"]; !ok || v != identifier {
-					applyNeeded = true
-					break
-				}
-				// Hash drift → need apply (only when computable)
-				desiredHash, derr := p.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, s, identifier, inline)
-				if derr == nil && desiredHash != "" {
-					runningHash := labels["com.docker.compose.config-hash"]
-					if runningHash == "" || runningHash != desiredHash {
-						applyNeeded = true
-						break
-					}
-				}
-			} else {
-				// No identifier configured; still check hash drift if available
-				desiredHash, derr := p.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, s, "", inline)
-				if derr == nil && desiredHash != "" {
-					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"com.docker.compose.config-hash"})
-					runningHash := labels["com.docker.compose.config-hash"]
-					if runningHash == "" || runningHash != desiredHash {
-						applyNeeded = true
-						break
-					}
-				}
-			}
-		}
-
-		if !applyNeeded {
-			// Nothing to do for this app
-			continue
-		}
-
-		// Perform compose up
-		if p.prog != nil {
-			p.prog.SetAction("docker compose up for " + appName)
-		}
-		if _, err := p.docker.ComposeUp(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err != nil {
-			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s", appName)
-		}
-		if p.prog != nil {
-			p.prog.Increment()
-		}
-
-		// Best-effort: ensure identifier label is present only for missing ones
-		if identifier != "" {
-			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
-				for _, it := range items {
-					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"io.dockform.identifier"})
-					if v, ok := labels["io.dockform.identifier"]; !ok || v != identifier {
-						_ = p.docker.UpdateContainerLabels(ctx, it.Name, map[string]string{"io.dockform.identifier": identifier})
-					}
-				}
-			}
-		}
+	// Apply compose changes for applications that need updates
+	if err := p.applyApplicationChanges(ctx, cfg, identifier, restartPending); err != nil {
+		return err
 	}
 
 	// Perform any pending restarts after compose has ensured containers exist.
@@ -486,5 +292,70 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 			}
 		}
 	}
+	return nil
+}
+
+// applyApplicationChanges processes applications and performs compose up for those that need updates.
+func (p *Planner) applyApplicationChanges(ctx context.Context, cfg manifest.Config, identifier string, restartPending map[string]struct{}) error {
+	detector := NewServiceStateDetector(p.docker)
+	
+	// Process applications in sorted order for deterministic behavior
+	appNames := make([]string, 0, len(cfg.Applications))
+	for name := range cfg.Applications {
+		appNames = append(appNames, name)
+	}
+	sort.Strings(appNames)
+	
+	for _, appName := range appNames {
+		app := cfg.Applications[appName]
+		
+		// Use ServiceStateDetector to analyze service states
+		services, err := detector.DetectAllServicesState(ctx, appName, app, identifier, cfg.Sops)
+		if err != nil {
+			return apperr.Wrap("planner.Apply", apperr.External, err, "failed to detect service states for application %s", appName)
+		}
+		
+		if len(services) == 0 {
+			continue // No services to manage
+		}
+		
+		// Check if any services need updates
+		if !NeedsApply(services) {
+			continue // All services are up-to-date
+		}
+		
+		// Build inline env for compose operations
+		inline := detector.BuildInlineEnv(ctx, app, cfg.Sops)
+		
+		// Get project name
+		proj := ""
+		if app.Project != nil {
+			proj = app.Project.Name
+		}
+		
+		// Perform compose up
+		if p.prog != nil {
+			p.prog.SetAction("docker compose up for " + appName)
+		}
+		if _, err := p.docker.ComposeUp(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err != nil {
+			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s", appName)
+		}
+		if p.prog != nil {
+			p.prog.Increment()
+		}
+		
+		// Best-effort: ensure identifier label is present on containers
+		if identifier != "" {
+			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
+				for _, it := range items {
+					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"io.dockform.identifier"})
+					if v, ok := labels["io.dockform.identifier"]; !ok || v != identifier {
+						_ = p.docker.UpdateContainerLabels(ctx, it.Name, map[string]string{"io.dockform.identifier": identifier})
+					}
+				}
+			}
+		}
+	}
+	
 	return nil
 }

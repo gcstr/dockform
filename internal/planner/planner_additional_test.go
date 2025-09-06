@@ -65,9 +65,14 @@ func TestBuildPlan_ComposeConfigError(t *testing.T) {
 	_ = writeComposeErrorStub(t)
 	cfg := manifest.Config{Applications: map[string]manifest.Application{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
 	d := dockercli.New("")
-	_, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
-	if err == nil || !strings.Contains(err.Error(), "invalid compose file") {
-		t.Fatalf("expected compose invalid error, got: %v", err)
+	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("BuildPlan should not fail, got: %v", err)
+	}
+	// With the new ServiceStateDetector, compose config errors result in fallback "TBD" messages instead of hard errors
+	out := pln.String()
+	if !strings.Contains(out, "application app planned (services diff TBD)") {
+		t.Fatalf("expected TBD fallback for compose config error, got:\n%s", out)
 	}
 }
 
@@ -84,8 +89,8 @@ func TestApply_ComposeConfigError(t *testing.T) {
 	cfg := manifest.Config{Applications: map[string]manifest.Application{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
 	d := dockercli.New("")
 	err := NewWithDocker(d).Apply(context.Background(), cfg)
-	if err == nil || !strings.Contains(err.Error(), "invalid compose file") {
-		t.Fatalf("expected compose invalid error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "failed to detect service states") {
+		t.Fatalf("expected service detection error, got: %v", err)
 	}
 }
 
