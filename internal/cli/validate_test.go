@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -17,8 +18,13 @@ func TestValidate_Success_PrintsMessage(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("validate execute: %v", err)
 	}
-	if got := out.String(); got != "validation successful\n" {
-		t.Fatalf("unexpected output: %q", got)
+	got := out.String()
+	// Should include Docker info and success message
+	if !strings.Contains(got, "Docker") {
+		t.Fatalf("expected Docker info in output, got: %q", got)
+	}
+	if !strings.Contains(got, "validation successful") {
+		t.Fatalf("expected validation success message in output, got: %q", got)
 	}
 }
 

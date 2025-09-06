@@ -9,15 +9,20 @@ func newPlanCmd() *cobra.Command {
 		Use:   "plan",
 		Short: "Show the plan to reach the desired state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Use shared plan building functionality
-			result, err := buildPlanWithUI(cmd)
+			// Setup CLI context with all standard initialization
+			ctx, err := SetupCLIContext(cmd)
 			if err != nil {
 				return err
 			}
 			
-			// Display the plan
-			out := result.Plan.String()
-			result.Printer.Plain("%s", out)
+			// Build and display the plan
+			plan, err := ctx.BuildPlan()
+			if err != nil {
+				return err
+			}
+			
+			out := plan.String()
+			ctx.Printer.Plain("%s", out)
 			return nil
 		},
 	}
