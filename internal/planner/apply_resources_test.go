@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/manifest"
@@ -69,9 +70,54 @@ func TestResourceManager_EnsureVolumesExist(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Skip Docker interaction tests for now - focus on configuration validation
-			// This will be covered by integration tests
-			t.Skip("Skipping Docker interaction test - will be covered by integration tests")
+			// Create mock Docker client with existing volumes
+			mockDocker := newMockDocker()
+			mockDocker.volumes = tt.existingVolumes
+			
+			planner := &Planner{docker: mockDocker}
+			resourceManager := NewResourceManager(planner)
+
+			cfg := manifest.Config{
+				Filesets: tt.filesets,
+				Volumes:  tt.volumes,
+			}
+			labels := map[string]string{"test": "label"}
+
+			resultVolumes, err := resourceManager.EnsureVolumesExist(context.Background(), cfg, labels)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// Check that the correct volumes were created
+			for _, expectedVolume := range tt.expectedCreated {
+				found := false
+				for _, createdVolume := range mockDocker.createdVolumes {
+					if createdVolume == expectedVolume {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected volume %q to be created, but it wasn't", expectedVolume)
+				}
+			}
+
+			// Check that the returned volume map has the correct count
+			if len(resultVolumes) != tt.expectedVolumeCount {
+				t.Errorf("expected %d volumes in result map, got %d", tt.expectedVolumeCount, len(resultVolumes))
+			}
+
+			// Check that all expected volumes are in the result map
+			for _, expected := range tt.expectedCreated {
+				if _, exists := resultVolumes[expected]; !exists {
+					t.Errorf("expected volume %q to be in result map", expected)
+				}
+			}
+			for _, existing := range tt.existingVolumes {
+				if _, exists := resultVolumes[existing]; !exists {
+					t.Errorf("expected existing volume %q to be in result map", existing)
+				}
+			}
 		})
 	}
 }
@@ -118,9 +164,34 @@ func TestResourceManager_EnsureNetworksExist(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Skip Docker interaction tests for now - focus on configuration validation
-			// This will be covered by integration tests
-			t.Skip("Skipping Docker interaction test - will be covered by integration tests")
+			// Create mock Docker client with existing networks
+			mockDocker := newMockDocker()
+			mockDocker.networks = tt.existingNetworks
+			
+			planner := &Planner{docker: mockDocker}
+			resourceManager := NewResourceManager(planner)
+
+			cfg := manifest.Config{Networks: tt.networks}
+			labels := map[string]string{"test": "label"}
+
+			err := resourceManager.EnsureNetworksExist(context.Background(), cfg, labels)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// Check that the correct networks were created
+			for _, expectedNetwork := range tt.expectedCreated {
+				found := false
+				for _, createdNetwork := range mockDocker.createdNetworks {
+					if createdNetwork == expectedNetwork {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected network %q to be created, but it wasn't", expectedNetwork)
+				}
+			}
 		})
 	}
 }

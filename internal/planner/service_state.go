@@ -37,11 +37,11 @@ type ServiceInfo struct {
 
 // ServiceStateDetector handles detection of service state changes.
 type ServiceStateDetector struct {
-	docker *dockercli.Client
+	docker DockerClient
 }
 
 // NewServiceStateDetector creates a new service state detector.
-func NewServiceStateDetector(docker *dockercli.Client) *ServiceStateDetector {
+func NewServiceStateDetector(docker DockerClient) *ServiceStateDetector {
 	return &ServiceStateDetector{docker: docker}
 }
 

@@ -1,7 +1,10 @@
 package planner
 
 import (
+	"context"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/dockercli"
 )
 
 func TestRestartManager_New(t *testing.T) {
@@ -83,5 +86,76 @@ func TestRestartManager_ServicesParsing(t *testing.T) {
 	}
 }
 
-// Additional complex testing will be handled by integration tests
-// These basic tests validate the essential configuration parsing logic
+func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
+	tests := []struct {
+		name                string
+		pendingServices     map[string]struct{}
+		availableContainers []dockercli.PsBrief
+		expectedRestarts    []string
+	}{
+		{
+			name:            "no pending services",
+			pendingServices: map[string]struct{}{},
+			expectedRestarts: []string{},
+		},
+		{
+			name: "restart available service",
+			pendingServices: map[string]struct{}{"web": {}},
+			availableContainers: []dockercli.PsBrief{
+				{Service: "web", Name: "myapp_web_1"},
+			},
+			expectedRestarts: []string{"myapp_web_1"},
+		},
+		{
+			name: "skip missing service",
+			pendingServices: map[string]struct{}{"missing": {}},
+			availableContainers: []dockercli.PsBrief{
+				{Service: "web", Name: "myapp_web_1"},
+			},
+			expectedRestarts: []string{},
+		},
+		{
+			name: "mixed available and missing services",
+			pendingServices: map[string]struct{}{"web": {}, "missing": {}, "db": {}},
+			availableContainers: []dockercli.PsBrief{
+				{Service: "web", Name: "myapp_web_1"},
+				{Service: "db", Name: "myapp_db_1"},
+			},
+			expectedRestarts: []string{"myapp_web_1", "myapp_db_1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock Docker client with available containers
+			mockDocker := newMockDocker()
+			mockDocker.containers = tt.availableContainers
+			
+			planner := &Planner{docker: mockDocker}
+			restartManager := NewRestartManager(planner)
+
+			err := restartManager.RestartPendingServices(context.Background(), tt.pendingServices)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// Check that the correct containers were restarted
+			if len(mockDocker.restartedContainers) != len(tt.expectedRestarts) {
+				t.Errorf("expected %d containers to be restarted, got %d", len(tt.expectedRestarts), len(mockDocker.restartedContainers))
+			}
+
+			for _, expectedContainer := range tt.expectedRestarts {
+				found := false
+				for _, restartedContainer := range mockDocker.restartedContainers {
+					if restartedContainer == expectedContainer {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected container %q to be restarted", expectedContainer)
+				}
+			}
+		})
+	}
+}

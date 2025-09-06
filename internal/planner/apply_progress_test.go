@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/manifest"
@@ -55,5 +56,126 @@ func TestProgressEstimator_EstimateProgress_BasicLogic(t *testing.T) {
 	}
 }
 
-// Additional progress estimation tests will be handled by integration tests
-// These basic tests validate the essential configuration parsing logic
+func TestProgressEstimator_CountVolumesToCreate(t *testing.T) {
+	tests := []struct {
+		name             string
+		filesets         map[string]manifest.FilesetSpec
+		volumes          map[string]manifest.TopLevelResourceSpec
+		existingVolumes  []string
+		expectedCount    int
+	}{
+		{
+			name:            "no volumes needed",
+			filesets:        map[string]manifest.FilesetSpec{},
+			volumes:         map[string]manifest.TopLevelResourceSpec{},
+			existingVolumes: []string{},
+			expectedCount:   0,
+		},
+		{
+			name: "fileset volume needs creation",
+			filesets: map[string]manifest.FilesetSpec{
+				"data": {TargetVolume: "app-data"},
+			},
+			volumes:         map[string]manifest.TopLevelResourceSpec{},
+			existingVolumes: []string{},
+			expectedCount:   1,
+		},
+		{
+			name:     "explicit volume needs creation",
+			filesets: map[string]manifest.FilesetSpec{},
+			volumes: map[string]manifest.TopLevelResourceSpec{
+				"db-data": {},
+			},
+			existingVolumes: []string{},
+			expectedCount:   1,
+		},
+		{
+			name: "volume already exists",
+			filesets: map[string]manifest.FilesetSpec{
+				"data": {TargetVolume: "app-data"},
+			},
+			volumes:         map[string]manifest.TopLevelResourceSpec{},
+			existingVolumes: []string{"app-data"},
+			expectedCount:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock Docker client with existing volumes
+			mockDocker := newMockDocker()
+			mockDocker.volumes = tt.existingVolumes
+			
+			planner := &Planner{docker: mockDocker}
+			estimator := NewProgressEstimator(planner)
+
+			cfg := manifest.Config{
+				Filesets: tt.filesets,
+				Volumes:  tt.volumes,
+			}
+
+			count, err := estimator.countVolumesToCreate(context.Background(), cfg)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if count != tt.expectedCount {
+				t.Errorf("expected %d volumes to create, got %d", tt.expectedCount, count)
+			}
+		})
+	}
+}
+
+func TestProgressEstimator_CountNetworksToCreate(t *testing.T) {
+	tests := []struct {
+		name             string
+		networks         map[string]manifest.TopLevelResourceSpec
+		existingNetworks []string
+		expectedCount    int
+	}{
+		{
+			name:             "no networks needed",
+			networks:         map[string]manifest.TopLevelResourceSpec{},
+			existingNetworks: []string{},
+			expectedCount:    0,
+		},
+		{
+			name: "network needs creation",
+			networks: map[string]manifest.TopLevelResourceSpec{
+				"app-network": {},
+			},
+			existingNetworks: []string{},
+			expectedCount:    1,
+		},
+		{
+			name: "network already exists",
+			networks: map[string]manifest.TopLevelResourceSpec{
+				"app-network": {},
+			},
+			existingNetworks: []string{"app-network"},
+			expectedCount:    0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock Docker client with existing networks
+			mockDocker := newMockDocker()
+			mockDocker.networks = tt.existingNetworks
+			
+			planner := &Planner{docker: mockDocker}
+			estimator := NewProgressEstimator(planner)
+
+			cfg := manifest.Config{Networks: tt.networks}
+
+			count, err := estimator.countNetworksToCreate(context.Background(), cfg)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if count != tt.expectedCount {
+				t.Errorf("expected %d networks to create, got %d", tt.expectedCount, count)
+			}
+		})
+	}
+}

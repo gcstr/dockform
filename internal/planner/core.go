@@ -1,20 +1,19 @@
 package planner
 
 import (
-	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/ui"
 )
 
 // Planner creates a plan comparing desired and current docker state.
 type Planner struct {
-	docker *dockercli.Client
+	docker DockerClient
 	pr     ui.Printer
 	prog   *ui.Progress
 }
 
 func New() *Planner { return &Planner{} }
 
-func NewWithDocker(client *dockercli.Client) *Planner { return &Planner{docker: client} }
+func NewWithDocker(client DockerClient) *Planner { return &Planner{docker: client} }
 
 // WithPrinter sets the output printer for user-facing messages during apply/prune.
 func (p *Planner) WithPrinter(pr ui.Printer) *Planner {
