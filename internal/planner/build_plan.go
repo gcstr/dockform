@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/filesets"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/ui"
@@ -79,7 +80,11 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 	}
 
 	// Applications: compose planned vs running diff
-	lines = append(lines, p.buildApplicationPlan(ctx, cfg)...)
+	appLines, err := p.buildApplicationPlan(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	lines = append(lines, appLines...)
 
 	// Track desired services for container removal planning
 	if p.docker != nil {
@@ -139,9 +144,9 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 }
 
 // buildApplicationPlan analyzes applications and returns diff lines for services.
-func (p *Planner) buildApplicationPlan(ctx context.Context, cfg manifest.Config) []ui.DiffLine {
+func (p *Planner) buildApplicationPlan(ctx context.Context, cfg manifest.Config) ([]ui.DiffLine, error) {
 	if len(cfg.Applications) == 0 {
-		return []ui.DiffLine{ui.Line(ui.Noop, "no applications defined")}
+		return []ui.DiffLine{ui.Line(ui.Noop, "no applications defined")}, nil
 	}
 
 	if p.docker == nil {
@@ -150,7 +155,7 @@ func (p *Planner) buildApplicationPlan(ctx context.Context, cfg manifest.Config)
 		for appName := range cfg.Applications {
 			lines = append(lines, ui.Line(ui.Noop, "application %s planned (services diff TBD)", appName))
 		}
-		return lines
+		return lines, nil
 	}
 
 	detector := NewServiceStateDetector(p.docker)
@@ -167,7 +172,11 @@ func (p *Planner) buildApplicationPlan(ctx context.Context, cfg manifest.Config)
 		app := cfg.Applications[appName]
 		services, err := detector.DetectAllServicesState(ctx, appName, app, cfg.Docker.Identifier, cfg.Sops)
 		if err != nil {
-			// If we can't detect services, show fallback
+			// If docker/compose returned an external error (e.g., invalid compose), fail the plan
+			if apperr.IsKind(err, apperr.External) {
+				return nil, apperr.New("planner.BuildPlan", apperr.External, "invalid compose file for application %s", appName)
+			}
+			// Otherwise, show fallback
 			lines = append(lines, ui.Line(ui.Noop, "application %s planned (services diff TBD)", appName))
 			continue
 		}
@@ -197,7 +206,7 @@ func (p *Planner) buildApplicationPlan(ctx context.Context, cfg manifest.Config)
 		}
 	}
 
-	return lines
+	return lines, nil
 }
 
 // collectDesiredServices returns a map of all service names that should be running.
