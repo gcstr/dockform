@@ -4,7 +4,6 @@ import (
 	"context"
 	"sort"
 
-	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/filesets"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/ui"
@@ -172,11 +171,7 @@ func (p *Planner) buildApplicationPlan(ctx context.Context, cfg manifest.Config)
 		app := cfg.Applications[appName]
 		services, err := detector.DetectAllServicesState(ctx, appName, app, cfg.Docker.Identifier, cfg.Sops)
 		if err != nil {
-			// If docker/compose returned an external error (e.g., invalid compose), fail the plan
-			if apperr.IsKind(err, apperr.External) {
-				return nil, apperr.New("planner.BuildPlan", apperr.External, "invalid compose file for application %s", appName)
-			}
-			// Otherwise, show fallback
+			// Fallback to "TBD" for any errors during planning
 			lines = append(lines, ui.Line(ui.Noop, "application %s planned (services diff TBD)", appName))
 			continue
 		}

@@ -94,6 +94,11 @@ func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) err
 				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "application %s compose file %s", appName, f)
 			}
 		}
+		
+		// Validate compose file syntax by attempting to parse it with Docker
+		if _, err := d.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, []string{}, []string{}); err != nil {
+			return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file for application %s", appName)
+		}
 		// Env files (already rebased to app root semantics in config normalization)
 		for _, e := range app.EnvFile {
 			p := e

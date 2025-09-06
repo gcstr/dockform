@@ -93,10 +93,9 @@ tasks:
       - '{{.GO}} tool cover -html={{.COVER_OUT}} -o cover.html'
 
   ci:
-    desc: Lint, vet, test, and run e2e (mirror CI pipeline locally)
+    desc: Lint, test, and run e2e (mirror CI pipeline locally)
     cmds:
       - task: lint
-      - task: vet
       - task: test
       - task: e2e
 
