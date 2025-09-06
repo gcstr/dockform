@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/filesets"
 )
 
@@ -100,7 +101,7 @@ func TestFilesetSyncAndIndex(t *testing.T) {
 	// Ensure included files are present in the target volume
 	for _, f := range localIdx.Files {
 		p := f.Path
-		chk := runDocker(t, "run", "--rm", "-v", volumeName+":/data", "alpine", "sh", "-c", "test -f '"+filepath.Join("/data", p)+"' && echo OK || echo MISSING")
+		chk := runDocker(t, "run", "--rm", "-v", volumeName+":/data", dockercli.HelperImage, "sh", "-c", "test -f '"+filepath.Join("/data", p)+"' && echo OK || echo MISSING")
 		if !strings.Contains(chk, "OK") {
 			t.Fatalf("expected file present in volume: %s\n%s", p, chk)
 		}
@@ -110,11 +111,11 @@ func TestFilesetSyncAndIndex(t *testing.T) {
 	// - directory ignore/
 	// - any *.tmp
 	// Try to stat excluded file inside the container; expect missing
-	out := runDocker(t, "run", "--rm", "-v", volumeName+":/data", "alpine", "sh", "-c", "test ! -e /data/ignore/secret.txt && echo OK || echo FOUND")
+	out := runDocker(t, "run", "--rm", "-v", volumeName+":/data", dockercli.HelperImage, "sh", "-c", "test ! -e /data/ignore/secret.txt && echo OK || echo FOUND")
 	if !strings.Contains(out, "OK") {
 		t.Fatalf("excluded file present in volume: %s", out)
 	}
-	out2 := runDocker(t, "run", "--rm", "-v", volumeName+":/data", "alpine", "sh", "-c", "! ls -1 /data | grep -q '\\.tmp$' && echo OK || echo FOUND")
+	out2 := runDocker(t, "run", "--rm", "-v", volumeName+":/data", dockercli.HelperImage, "sh", "-c", "! ls -1 /data | grep -q '\\.tmp$' && echo OK || echo FOUND")
 	if !strings.Contains(out2, "OK") {
 		t.Fatalf("tmp files present in volume: %s", out2)
 	}
@@ -122,7 +123,7 @@ func TestFilesetSyncAndIndex(t *testing.T) {
 
 func readFromVolume(t *testing.T, volumeName, targetPath, relFile string) string {
 	t.Helper()
-	cmd := []string{"run", "--rm", "-v", volumeName + ":" + targetPath, "alpine", "sh", "-c", "cat '" + filepath.Join(targetPath, relFile) + "'"}
+	cmd := []string{"run", "--rm", "-v", volumeName + ":" + targetPath, dockercli.HelperImage, "sh", "-c", "cat '" + filepath.Join(targetPath, relFile) + "'"}
 	return runDocker(t, cmd...)
 }
 

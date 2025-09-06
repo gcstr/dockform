@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/filesets"
 )
 
@@ -55,7 +56,7 @@ func TestScenarioFilesets_InitialSync_Index(t *testing.T) {
 
 	// Assert files were copied and index is present
 	volName := "df_e2e_" + runID + "_fsvol"
-	chk := runDocker(t, "run", "--rm", "-v", volName+":/data", "alpine", "sh", "-c", "test -f /data/file1.txt && echo OK || echo MISSING")
+	chk := runDocker(t, "run", "--rm", "-v", volName+":/data", dockercli.HelperImage, "sh", "-c", "test -f /data/file1.txt && echo OK || echo MISSING")
 	if !strings.Contains(chk, "OK") {
 		t.Fatalf("expected asset present in volume: %s", chk)
 	}
@@ -217,15 +218,15 @@ func TestScenarioFilesets_Excludes_Behavior(t *testing.T) {
 
 	// Assert excluded paths are not present in volume
 	volName := "df_e2e_" + runID + "_fsvol2"
-	out1 := runDocker(t, "run", "--rm", "-v", volName+":/assets", "alpine", "sh", "-c", "test ! -e /assets/tmp/foo.txt && echo OK || echo FOUND")
+	out1 := runDocker(t, "run", "--rm", "-v", volName+":/assets", dockercli.HelperImage, "sh", "-c", "test ! -e /assets/tmp/foo.txt && echo OK || echo FOUND")
 	if !strings.Contains(out1, "OK") {
 		t.Fatalf("excluded tmp/foo.txt present: %s", out1)
 	}
-	out2 := runDocker(t, "run", "--rm", "-v", volName+":/assets", "alpine", "sh", "-c", "test ! -e /assets/secrets/x.txt && echo OK || echo FOUND")
+	out2 := runDocker(t, "run", "--rm", "-v", volName+":/assets", dockercli.HelperImage, "sh", "-c", "test ! -e /assets/secrets/x.txt && echo OK || echo FOUND")
 	if !strings.Contains(out2, "OK") {
 		t.Fatalf("excluded secrets/x.txt present: %s", out2)
 	}
-	out3 := runDocker(t, "run", "--rm", "-v", volName+":/assets", "alpine", "sh", "-c", "test ! -e /assets/a.bak && echo OK || echo FOUND")
+	out3 := runDocker(t, "run", "--rm", "-v", volName+":/assets", dockercli.HelperImage, "sh", "-c", "test ! -e /assets/a.bak && echo OK || echo FOUND")
 	if !strings.Contains(out3, "OK") {
 		t.Fatalf("excluded a.bak present: %s", out3)
 	}

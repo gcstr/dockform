@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gcstr/dockform/internal/dockercli"
 )
 
 var (
@@ -244,7 +246,7 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 		"--label", "com.docker.compose.project="+identifier+"-temp-proj",
 		"--label", "com.docker.compose.service="+identifier+"-temp-svc",
 		"--name", identifier+"-temp",
-		"alpine:3", "sleep", "60",
+		dockercli.HelperImage, "sleep", "60",
 	).Run()
 
 	// Sanity: ensure they exist

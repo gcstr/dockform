@@ -156,7 +156,7 @@ func TestSyncDirToVolume_ValidatesAndStreamsTar(t *testing.T) {
 	}
 	// Validate key bits of args
 	joined := strings.Join(stub.lastArgs, " ")
-	if !strings.Contains(joined, "run --rm -i") || !strings.Contains(joined, "-v vol:/.dst") || !strings.Contains(joined, "alpine sh -c") {
+	if !strings.Contains(joined, "run --rm -i") || !strings.Contains(joined, "-v vol:/.dst") || !strings.Contains(joined, "alpine:3.22 sh -c") {
 		t.Fatalf("unexpected docker run args: %s", joined)
 	}
 }

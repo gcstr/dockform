@@ -12,6 +12,9 @@ import (
 	"github.com/gcstr/dockform/internal/util"
 )
 
+// HelperImage is the Docker image used for file operations on volumes
+const HelperImage = "alpine:3.22"
+
 // Client provides higher-level helpers around docker CLI.
 type Client struct {
 	exec        Exec
@@ -149,7 +152,7 @@ func (c *Client) SyncDirToVolume(ctx context.Context, volumeName, targetPath, lo
 	cmd := []string{
 		"run", "--rm", "-i",
 		"-v", fmt.Sprintf("%s:%s", volumeName, dst),
-		"alpine", "sh", "-c",
+		HelperImage, "sh", "-c",
 		"mkdir -p '" + dst + "' && rm -rf '" + dst + "'/* '" + dst + "'/.[!.]* '" + dst + "'/..?* 2>/dev/null || true; tar -xpf - -C '" + dst + "'",
 	}
 	pr, pw := io.Pipe()
@@ -171,7 +174,7 @@ func (c *Client) ReadFileFromVolume(ctx context.Context, volumeName, targetPath,
 	cmd := []string{
 		"run", "--rm",
 		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
-		"alpine", "sh", "-c",
+		HelperImage, "sh", "-c",
 		"cat '" + full + "' 2>/dev/null || true",
 	}
 	out, err := c.exec.Run(ctx, cmd...)
@@ -191,7 +194,7 @@ func (c *Client) WriteFileToVolume(ctx context.Context, volumeName, targetPath, 
 	cmd := []string{
 		"run", "--rm", "-i",
 		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
-		"alpine", "sh", "-c",
+		HelperImage, "sh", "-c",
 		"mkdir -p '" + dir + "' && cat > '" + full + "'",
 	}
 	_, err := c.exec.RunWithStdin(ctx, strings.NewReader(content), cmd...)
@@ -207,7 +210,7 @@ func (c *Client) ExtractTarToVolume(ctx context.Context, volumeName, targetPath 
 	cmd := []string{
 		"run", "--rm", "-i",
 		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
-		"alpine", "sh", "-c",
+		HelperImage, "sh", "-c",
 		"mkdir -p '" + targetPath + "' && tar -xpf - -C '" + targetPath + "'",
 	}
 	_, err := c.exec.RunWithStdin(ctx, r, cmd...)
@@ -235,7 +238,7 @@ func (c *Client) RemovePathsFromVolume(ctx context.Context, volumeName, targetPa
 	cmd := []string{
 		"run", "--rm", "-i",
 		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
-		"alpine", "sh", "-eu", "-c",
+		HelperImage, "sh", "-eu", "-c",
 		"xargs -0 rm -rf -- 2>/dev/null || true",
 	}
 	_, err := c.exec.RunWithStdin(ctx, strings.NewReader(printfArgs.String()), cmd...)
