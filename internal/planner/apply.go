@@ -1,16 +1,11 @@
 package planner
 
 import (
-	"bytes"
 	"context"
 	"sort"
-	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
-	"github.com/gcstr/dockform/internal/filesets"
 	"github.com/gcstr/dockform/internal/manifest"
-	"github.com/gcstr/dockform/internal/ui"
-	"github.com/gcstr/dockform/internal/util"
 )
 
 // Apply creates missing top-level resources with labels and performs compose up, labeling containers with identifier.
@@ -18,280 +13,48 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	if p.docker == nil {
 		return apperr.New("planner.Apply", apperr.Precondition, "docker client not configured")
 	}
+
 	identifier := cfg.Docker.Identifier
 	labels := map[string]string{}
 	if identifier != "" {
 		labels["io.dockform.identifier"] = identifier
 	}
 
-	// Queue services that should be restarted due to fileset updates.
-	restartPending := map[string]struct{}{}
-
-	// Initialize progress: estimate total work items conservatively and refine later.
-	if p.prog != nil {
-		total := 0
-		// Volumes to create (derived from filesets)
-		existingVolumesForCount := map[string]struct{}{}
-		if vols, err := p.docker.ListVolumes(ctx); err == nil {
-			for _, v := range vols {
-				existingVolumesForCount[v] = struct{}{}
-			}
-		}
-		desiredVolumesForCount := map[string]struct{}{}
-		for _, fileset := range cfg.Filesets {
-			desiredVolumesForCount[fileset.TargetVolume] = struct{}{}
-		}
-		// Add explicit volumes from manifest
-		for name := range cfg.Volumes {
-			desiredVolumesForCount[name] = struct{}{}
-		}
-		for name := range desiredVolumesForCount {
-			if _, ok := existingVolumesForCount[name]; !ok {
-				total++
-			}
-		}
-		// Filesets: only count ones that actually need updates (check now)
-		for _, fileset := range cfg.Filesets {
-			if fileset.SourceAbs != "" {
-				// Quick check if fileset needs updates by comparing tree hashes
-				local, err := filesets.BuildLocalIndex(fileset.SourceAbs, fileset.TargetPath, fileset.Exclude)
-				if err == nil {
-				// Avoid implicit volume creation by only reading remote index when volume exists with proper labels
-				raw := ""
-				if _, volumeExists := existingVolumesForCount[fileset.TargetVolume]; volumeExists {
-					raw, _ = p.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
-				}
-					remote, _ := filesets.ParseIndexJSON(raw)
-					// Only count if tree hashes differ (fileset needs updates)
-					if local.TreeHash != remote.TreeHash {
-						total++
-					}
-				}
-			}
-		}
-		// Networks to create
-		existingNetworksForCount := map[string]struct{}{}
-		if nets, err := p.docker.ListNetworks(ctx); err == nil {
-			for _, n := range nets {
-				existingNetworksForCount[n] = struct{}{}
-			}
-		}
-		for name := range cfg.Networks {
-			if _, ok := existingNetworksForCount[name]; !ok {
-				total++
-			}
-		}
-		// Applications requiring compose up (use simplified detector for counting)
-		detector := NewServiceStateDetector(p.docker)
-		for appName, app := range cfg.Applications {
-			services, err := detector.DetectAllServicesState(ctx, appName, app, identifier, cfg.Sops)
-			if err == nil && NeedsApply(services) {
-				total++
-			}
-		}
-		// Restarts planned: count unique restart services that exist
-		if len(cfg.Filesets) > 0 {
-			set := map[string]struct{}{}
-			for _, fs := range cfg.Filesets {
-				for _, svc := range fs.RestartServices {
-					if strings.TrimSpace(svc) != "" {
-						set[svc] = struct{}{}
-					}
-				}
-			}
-			if len(set) > 0 {
-				if items, err := p.docker.ListComposeContainersAll(ctx); err == nil {
-					for svc := range set {
-						for _, it := range items {
-							if it.Service == svc {
-								total++
-								break
-							}
-						}
-					}
-				}
-			}
-		}
-		if total > 0 {
-			p.prog.Start(total)
-		}
+	// Initialize progress tracking
+	progressEstimator := NewProgressEstimator(p)
+	if err := progressEstimator.EstimateAndStartProgress(ctx, cfg, identifier); err != nil {
+		return err
 	}
 
-	// Ensure volumes exist (derived from filesets)
-	existingVolumes := map[string]struct{}{}
-	if vols, err := p.docker.ListVolumes(ctx); err == nil {
-		for _, v := range vols {
-			existingVolumes[v] = struct{}{}
-		}
-	} else {
-		return apperr.Wrap("planner.Apply", apperr.External, err, "list volumes")
-	}
-	desiredVolumes := map[string]struct{}{}
-	for _, fileset := range cfg.Filesets {
-		desiredVolumes[fileset.TargetVolume] = struct{}{}
-	}
-	// Add explicit volumes from manifest
-	for name := range cfg.Volumes {
-		desiredVolumes[name] = struct{}{}
-	}
-	for name := range desiredVolumes {
-		if _, ok := existingVolumes[name]; !ok {
-			if p.prog != nil {
-				p.prog.SetAction("creating volume " + name)
-			}
-			if err := p.docker.CreateVolume(ctx, name, labels); err != nil {
-				return apperr.Wrap("planner.Apply", apperr.External, err, "create volume %s", name)
-			}
-			if p.prog != nil {
-				p.prog.Increment()
-			}
-		}
+	// Create missing volumes and networks
+	resourceManager := NewResourceManager(p)
+	existingVolumes, err := resourceManager.EnsureVolumesExist(ctx, cfg, labels)
+	if err != nil {
+		return err
 	}
 
-	// Sync filesets into volumes selectively using index
-	if len(cfg.Filesets) > 0 {
-		filesetNames := make([]string, 0, len(cfg.Filesets))
-		for n := range cfg.Filesets {
-			filesetNames = append(filesetNames, n)
-		}
-		sort.Strings(filesetNames)
-		for _, n := range filesetNames {
-			a := cfg.Filesets[n]
-			if a.SourceAbs == "" {
-				return apperr.New("planner.Apply", apperr.InvalidInput, "fileset %s: resolved source path is empty", n)
-			}
-			// Local and remote indexes
-			local, err := filesets.BuildLocalIndex(a.SourceAbs, a.TargetPath, a.Exclude)
-			if err != nil {
-				return apperr.Wrap("planner.Apply", apperr.Internal, err, "index local filesets for %s", n)
-			}
-			// Only read from volume if it exists with proper labels to avoid implicit creation
-			raw := ""
-			if _, volumeExists := existingVolumes[a.TargetVolume]; volumeExists {
-				raw, _ = p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
-			}
-			remote, _ := filesets.ParseIndexJSON(raw)
-			diff := filesets.DiffIndexes(local, remote)
-			// If completely equal, skip
-			if local.TreeHash == remote.TreeHash {
-				continue
-			}
-			// Build tar for create+update
-			paths := make([]string, 0, len(diff.ToCreate)+len(diff.ToUpdate))
-			for _, f := range diff.ToCreate {
-				paths = append(paths, f.Path)
-			}
-			for _, f := range diff.ToUpdate {
-				paths = append(paths, f.Path)
-			}
-			// Deterministic order for tar emission
-			sort.Strings(paths)
-			if len(paths) > 0 {
-				if p.prog != nil {
-					p.prog.SetAction("syncing fileset " + n)
-				}
-				var buf bytes.Buffer
-				if err := util.TarFilesToWriter(a.SourceAbs, paths, &buf); err != nil {
-					return apperr.Wrap("planner.Apply", apperr.Internal, err, "build tar for fileset %s", n)
-				}
-				if err := p.docker.ExtractTarToVolume(ctx, a.TargetVolume, a.TargetPath, &buf); err != nil {
-					return apperr.Wrap("planner.Apply", apperr.External, err, "extract tar for fileset %s", n)
-				}
-			}
-			// Deletions
-			if len(diff.ToDelete) > 0 {
-				if p.prog != nil {
-					p.prog.SetAction("deleting files from fileset " + n)
-				}
-				if err := p.docker.RemovePathsFromVolume(ctx, a.TargetVolume, a.TargetPath, diff.ToDelete); err != nil {
-					return apperr.Wrap("planner.Apply", apperr.External, err, "delete files for fileset %s", n)
-				}
-			}
-			// Write index last (not part of tree)
-			if p.prog != nil {
-				p.prog.SetAction("writing index for fileset " + n)
-			}
-			jsonStr, err := local.ToJSON()
-			if err != nil {
-				return apperr.Wrap("planner.Apply", apperr.Internal, err, "encode index for %s", n)
-			}
-			if err := p.docker.WriteFileToVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName, jsonStr); err != nil {
-				return apperr.Wrap("planner.Apply", apperr.External, err, "write index for fileset %s", n)
-			}
-			if p.prog != nil {
-				p.prog.Increment()
-			}
-
-			// Queue restart for configured services. We'll restart after compose up.
-			if len(a.RestartServices) > 0 {
-				for _, svc := range a.RestartServices {
-					if svc == "" {
-						continue
-					}
-					restartPending[svc] = struct{}{}
-				}
-			}
-		}
+	if err := resourceManager.EnsureNetworksExist(ctx, cfg, labels); err != nil {
+		return err
 	}
 
-	// Ensure networks exist
-	existingNetworks := map[string]struct{}{}
-	if nets, err := p.docker.ListNetworks(ctx); err == nil {
-		for _, n := range nets {
-			existingNetworks[n] = struct{}{}
-		}
-	} else {
-		return apperr.Wrap("planner.Apply", apperr.External, err, "list networks")
-	}
-	for name := range cfg.Networks {
-		if _, ok := existingNetworks[name]; !ok {
-			if p.prog != nil {
-				p.prog.SetAction("creating network " + name)
-			}
-			if err := p.docker.CreateNetwork(ctx, name, labels); err != nil {
-				return apperr.Wrap("planner.Apply", apperr.External, err, "create network %s", name)
-			}
-			if p.prog != nil {
-				p.prog.Increment()
-			}
-		}
+	// Synchronize filesets
+	filesetManager := NewFilesetManager(p)
+	restartPending, err := filesetManager.SyncFilesets(ctx, cfg, existingVolumes)
+	if err != nil {
+		return err
 	}
 
-	// Apply compose changes for applications that need updates
+	// Apply application changes
 	if err := p.applyApplicationChanges(ctx, cfg, identifier, restartPending); err != nil {
 		return err
 	}
 
-	// Perform any pending restarts after compose has ensured containers exist.
-	if len(restartPending) > 0 {
-		items, _ := p.docker.ListComposeContainersAll(ctx)
-		// choose printer (Noop if none provided)
-		pr := p.pr
-		if pr == nil {
-			pr = ui.NoopPrinter{}
-		}
-		for svc := range restartPending {
-			found := false
-			for _, it := range items {
-				if it.Service == svc {
-					found = true
-					pr.Info("restarting service %s...", svc)
-					if p.prog != nil {
-						p.prog.SetAction("restarting service " + svc)
-					}
-					if err := p.docker.RestartContainer(ctx, it.Name); err != nil {
-						return apperr.Wrap("planner.Apply", apperr.External, err, "restart service %s", svc)
-					}
-					if p.prog != nil {
-						p.prog.Increment()
-					}
-				}
-			}
-			if !found {
-				pr.Warn("%s not found.", svc)
-			}
-		}
+	// Restart services that need it
+	restartManager := NewRestartManager(p)
+	if err := restartManager.RestartPendingServices(ctx, restartPending); err != nil {
+		return err
 	}
+
 	return nil
 }
 
