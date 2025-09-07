@@ -104,4 +104,19 @@ tasks:
     cmds:
       - rm -f '{{.BIN}}' '{{.COVER_OUT}}' cover.html
 
+  release:check:
+    desc: Validate GoReleaser configuration
+    cmds:
+      - '{{.GO}} run github.com/goreleaser/goreleaser/v2@latest check'
+
+  release:snapshot:
+    desc: Build release artifacts locally without publishing
+    cmds:
+      - '{{.GO}} run github.com/goreleaser/goreleaser/v2@latest release --clean --skip=publish --snapshot'
+
+  release:publish:
+    desc: Create a GitHub Release for the current tag using GoReleaser (manually publish on GitHub)
+    cmds:
+      - '{{.GO}} run github.com/goreleaser/goreleaser/v2@latest release --clean'
+
 

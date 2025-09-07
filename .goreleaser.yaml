@@ -1,0 +1,88 @@
+# GoReleaser config: https://goreleaser.com
+version: 2
+
+project_name: dockform
+
+dist: dist
+
+before:
+  hooks:
+    # Ensure modules are tidy before release
+    - go mod tidy
+
+builds:
+  - id: dockform
+    main: ./cmd/dockform
+    binary: dockform
+    env:
+      - CGO_ENABLED=0
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/gcstr/dockform/internal/cli.version={{ .Version }}
+      - -X github.com/gcstr/dockform/internal/cli.commit={{ .ShortCommit }}
+      - -X github.com/gcstr/dockform/internal/cli.date={{ .CommitDate }}
+      - -X github.com/gcstr/dockform/internal/cli.builtBy=goreleaser
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: archive
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: '{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - README.md
+      - LICENSE* # optional; will be ignored if not present
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: 'SNAPSHOT-{{ .ShortCommit }}'
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - '^docs?:'
+      - '^test:|tests?:'
+      - '^chore:'
+      - '^ci:'
+
+# Using 'brews' (Formulas) instead of 'homebrew_casks' because dockform is a CLI tool,
+# not a GUI application. The deprecation warning can be safely ignored.
+brews:
+  - name: dockform
+    repository:
+      owner: gcstr
+      name: homebrew-dockform
+      branch: main
+    url_template: "https://github.com/gcstr/dockform/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    homepage: "https://github.com/gcstr/dockform"
+    description: "Manage Docker Compose projects declaratively"
+    license: "MIT"
+    # TODO: Set to 'auto' once homebrew-dockform repo is public
+    skip_upload: true
+    install: |
+      bin.install "dockform"
+    test: |
+      system "#{bin}/dockform --version"
+
+release:
+  draft: false
+  prerelease: auto
+

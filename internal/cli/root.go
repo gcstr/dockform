@@ -14,6 +14,13 @@ import (
 // verbose controls extra error detail printing.
 var verbose bool
 
+// build-time variables injected via -ldflags; defaults are used for dev builds.
+var (
+	version = "0.1.0-dev"
+	commit  = ""
+	date    = ""
+	builtBy = ""
+)
 // Execute runs the root command and handles error formatting and exit codes.
 func Execute() int {
 	cmd := newRootCmd()
@@ -54,13 +61,31 @@ func newRootCmd() *cobra.Command {
 
 	cmd.SetHelpTemplate(cmd.HelpTemplate() + "\n\nProject home: https://github.com/gcstr/dockform\n")
 
-	cmd.SetVersionTemplate(fmt.Sprintf("%s\n", Version()))
-	cmd.Version = Version()
+	cmd.SetVersionTemplate(fmt.Sprintf("%s\n", VersionDetailed()))
+	cmd.Version = VersionDetailed()
 
 	return cmd
 }
 
-func Version() string { return "0.1.0-dev" }
+func Version() string { 
+	return version
+}
+
+// VersionDetailed returns version info with build metadata if available.
+func VersionDetailed() string {
+	v := version
+	if commit != "" {
+		v += " (" + commit
+		if date != "" {
+			v += ", " + date
+		}
+		if builtBy != "" {
+			v += ", " + builtBy
+		}
+		v += ")"
+	}
+	return v
+}
 
 // TestPrintUserFriendly exposes printUserFriendly for testing
 func TestPrintUserFriendly(err error) {
