@@ -116,8 +116,8 @@ Commands:
 - `dockform validate [flags]`
   - Validates configuration and environment (e.g., Docker context).
 
-- `dockform secret ...`
-  - Secret management helpers (see `dockform secret --help`).
+- `dockform secrets ...`
+  - Secret management helpers (see `dockform secrets --help`).
 
 - `dockform manifest ...`
   - Manifest helpers (see `dockform manifest --help`).

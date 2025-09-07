@@ -15,7 +15,7 @@ import (
 
 func newSecretCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "secret",
+		Use:   "secrets",
 		Short: "Manage SOPS secrets",
 		RunE:  func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}

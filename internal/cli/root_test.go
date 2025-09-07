@@ -33,7 +33,7 @@ func TestRoot_HasSubcommandsAndConfigFlag(t *testing.T) {
 		if c.Name() == "validate" {
 			foundValidate = true
 		}
-		if c.Name() == "secret" {
+		if c.Name() == "secrets" {
 			foundSecret = true
 		}
 		if c.Name() == "manifest" {
@@ -41,7 +41,7 @@ func TestRoot_HasSubcommandsAndConfigFlag(t *testing.T) {
 		}
 	}
 	if !foundPlan || !foundApply || !foundValidate || !foundSecret || !foundManifest {
-		t.Fatalf("expected plan, apply, validate, secret, manifest subcommands; got plan=%v apply=%v validate=%v secret=%v manifest=%v", foundPlan, foundApply, foundValidate, foundSecret, foundManifest)
+		t.Fatalf("expected plan, apply, validate, secrets, manifest subcommands; got plan=%v apply=%v validate=%v secrets=%v manifest=%v", foundPlan, foundApply, foundValidate, foundSecret, foundManifest)
 	}
 }
 

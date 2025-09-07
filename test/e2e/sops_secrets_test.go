@@ -59,7 +59,7 @@ func TestSopsSecretsEndToEnd(t *testing.T) {
 	env := append(os.Environ(), "DOCKFORM_RUN_ID="+runID)
 
 	// Create an encrypted secret via CLI
-	out := runCmd(t, tempDir, env, bin, "secret", "create", filepath.Join("secrets", "app.env"))
+	out := runCmd(t, tempDir, env, bin, "secrets", "create", filepath.Join("secrets", "app.env"))
 	if !strings.Contains(out, "secret created:") {
 		t.Fatalf("unexpected secret create output:\n%s", out)
 	}
