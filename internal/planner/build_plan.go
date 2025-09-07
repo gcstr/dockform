@@ -116,6 +116,15 @@ func (p *Planner) buildApplicationPlan(ctx context.Context, cfg manifest.Config)
 		return lines, nil
 	}
 
+	// Choose parallel or sequential processing based on configuration
+	if p.parallel {
+		return p.buildApplicationPlanParallel(ctx, cfg)
+	}
+	return p.buildApplicationPlanSequential(ctx, cfg)
+}
+
+// buildApplicationPlanSequential processes applications one by one (original implementation)
+func (p *Planner) buildApplicationPlanSequential(ctx context.Context, cfg manifest.Config) ([]ui.DiffLine, error) {
 	detector := NewServiceStateDetector(p.docker)
 	var lines []ui.DiffLine
 
@@ -161,6 +170,87 @@ func (p *Planner) buildApplicationPlan(ctx context.Context, cfg manifest.Config)
 	}
 
 	return lines, nil
+}
+
+// buildApplicationPlanParallel processes applications concurrently for faster planning
+func (p *Planner) buildApplicationPlanParallel(ctx context.Context, cfg manifest.Config) ([]ui.DiffLine, error) {
+	detector := NewServiceStateDetector(p.docker).WithParallel(true)
+	
+	// Sort app names for deterministic processing
+	appNames := make([]string, 0, len(cfg.Applications))
+	for name := range cfg.Applications {
+		appNames = append(appNames, name)
+	}
+	sort.Strings(appNames)
+	
+	type appResult struct {
+		appName string
+		lines   []ui.DiffLine
+		order   int
+	}
+	
+	resultsChan := make(chan appResult, len(appNames))
+	var wg sync.WaitGroup
+	
+	// Process each application concurrently
+	for i, appName := range appNames {
+		wg.Add(1)
+		go func(appName string, order int) {
+			defer wg.Done()
+			
+			app := cfg.Applications[appName]
+			services, err := detector.DetectAllServicesState(ctx, appName, app, cfg.Docker.Identifier, cfg.Sops)
+			
+			var lines []ui.DiffLine
+			if err != nil {
+				// Fallback to "TBD" for any errors during planning
+				lines = append(lines, ui.Line(ui.Noop, "application %s planned (services diff TBD)", appName))
+			} else if len(services) == 0 {
+				lines = append(lines, ui.Line(ui.Noop, "application %s planned (services diff TBD)", appName))
+			} else {
+				// Convert service states to UI lines
+				for _, service := range services {
+					switch service.State {
+					case ServiceMissing:
+						lines = append(lines, ui.Line(ui.Add, "service %s/%s will be started", service.AppName, service.Name))
+					case ServiceIdentifierMismatch:
+						lines = append(lines, ui.Line(ui.Change, "service %s/%s will be reconciled (identifier mismatch)", service.AppName, service.Name))
+					case ServiceDrifted:
+						lines = append(lines, ui.Line(ui.Change, "service %s/%s config drift (hash)", service.AppName, service.Name))
+					case ServiceRunning:
+						if service.DesiredHash != "" {
+							lines = append(lines, ui.Line(ui.Noop, "service %s/%s up-to-date", service.AppName, service.Name))
+						} else {
+							// Fallback when hash is unavailable
+							lines = append(lines, ui.Line(ui.Noop, "service %s/%s running", service.AppName, service.Name))
+						}
+					}
+				}
+			}
+			
+			resultsChan <- appResult{appName: appName, lines: lines, order: order}
+		}(appName, i)
+	}
+	
+	// Wait for all applications to complete
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+	
+	// Collect results in original order to maintain deterministic output
+	results := make([]appResult, len(appNames))
+	for result := range resultsChan {
+		results[result.order] = result
+	}
+	
+	// Combine lines in deterministic order
+	var allLines []ui.DiffLine
+	for _, result := range results {
+		allLines = append(allLines, result.lines...)
+	}
+	
+	return allLines, nil
 }
 
 // collectDesiredServices returns a map of all service names that should be running.

@@ -15,6 +15,12 @@ func newPlanCmd() *cobra.Command {
 				return err
 			}
 			
+			// Configure parallel processing if requested
+			parallel, _ := cmd.Flags().GetBool("parallel")
+			if parallel {
+				ctx.Planner = ctx.Planner.WithParallel(true)
+			}
+			
 			// Build and display the plan
 			plan, err := ctx.BuildPlan()
 			if err != nil {
@@ -26,5 +32,9 @@ func newPlanCmd() *cobra.Command {
 			return nil
 		},
 	}
+	
+	// Add parallel flag
+	cmd.Flags().Bool("parallel", false, "Enable parallel processing for faster planning (uses more CPU and Docker daemon resources)")
+	
 	return cmd
 }

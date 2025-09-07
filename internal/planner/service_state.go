@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"sort"
+	"sync"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/dockercli"
@@ -37,12 +38,19 @@ type ServiceInfo struct {
 
 // ServiceStateDetector handles detection of service state changes.
 type ServiceStateDetector struct {
-	docker DockerClient
+	docker   DockerClient
+	parallel bool
 }
 
 // NewServiceStateDetector creates a new service state detector.
 func NewServiceStateDetector(docker DockerClient) *ServiceStateDetector {
 	return &ServiceStateDetector{docker: docker}
+}
+
+// WithParallel enables or disables parallel processing for service state detection.
+func (d *ServiceStateDetector) WithParallel(enabled bool) *ServiceStateDetector {
+	d.parallel = enabled
+	return d
 }
 
 // GetPlannedServices returns the list of services defined in the application's compose files.
@@ -214,17 +222,72 @@ func (d *ServiceStateDetector) DetectAllServicesState(ctx context.Context, appNa
 		return nil, apperr.Wrap("servicestate.DetectAllServicesState", apperr.External, err, "failed to get running services for application %s", appName)
 	}
 	
+	// Choose parallel or sequential processing based on configuration
+	if d.parallel {
+		return d.detectAllServicesStateParallel(ctx, appName, app, identifier, inline, running, plannedServices)
+	}
+	return d.detectAllServicesStateSequential(ctx, appName, app, identifier, inline, running, plannedServices)
+}
+
+// detectAllServicesStateSequential processes services one by one (original implementation)
+func (d *ServiceStateDetector) detectAllServicesStateSequential(ctx context.Context, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem, plannedServices []string) ([]ServiceInfo, error) {
 	// Analyze each planned service
 	var results []ServiceInfo
 	for _, serviceName := range plannedServices {
 		info, err := d.DetectServiceState(ctx, serviceName, appName, app, identifier, inline, running)
 		if err != nil {
-			return nil, apperr.Wrap("servicestate.DetectAllServicesState", apperr.External, err, "failed to detect state for service %s/%s", appName, serviceName)
+			return nil, apperr.Wrap("servicestate.DetectAllServicesStateSequential", apperr.External, err, "failed to detect state for service %s/%s", appName, serviceName)
 		}
 		results = append(results, info)
 	}
 	
 	return results, nil
+}
+
+// detectAllServicesStateParallel processes services concurrently for faster detection
+func (d *ServiceStateDetector) detectAllServicesStateParallel(ctx context.Context, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem, plannedServices []string) ([]ServiceInfo, error) {
+	type serviceResult struct {
+		info  ServiceInfo
+		err   error
+		order int
+	}
+	
+	resultsChan := make(chan serviceResult, len(plannedServices))
+	var wg sync.WaitGroup
+	
+	// Process each service concurrently
+	for i, serviceName := range plannedServices {
+		wg.Add(1)
+		go func(serviceName string, order int) {
+			defer wg.Done()
+			
+			info, err := d.DetectServiceState(ctx, serviceName, appName, app, identifier, inline, running)
+			resultsChan <- serviceResult{info: info, err: err, order: order}
+		}(serviceName, i)
+	}
+	
+	// Wait for all services to complete
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+	
+	// Collect results in original order to maintain deterministic output
+	results := make([]serviceResult, len(plannedServices))
+	for result := range resultsChan {
+		results[result.order] = result
+	}
+	
+	// Check for errors and build final results
+	var finalResults []ServiceInfo
+	for i, result := range results {
+		if result.err != nil {
+			return nil, apperr.Wrap("servicestate.DetectAllServicesStateParallel", apperr.External, result.err, "failed to detect state for service %s/%s", appName, plannedServices[i])
+		}
+		finalResults = append(finalResults, result.info)
+	}
+	
+	return finalResults, nil
 }
 
 // NeedsApply determines if any services in the list require application/reconciliation.

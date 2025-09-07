@@ -6,9 +6,10 @@ import (
 
 // Planner creates a plan comparing desired and current docker state.
 type Planner struct {
-	docker DockerClient
-	pr     ui.Printer
-	prog   *ui.Progress
+	docker   DockerClient
+	pr       ui.Printer
+	prog     *ui.Progress
+	parallel bool
 }
 
 func New() *Planner { return &Planner{} }
@@ -24,5 +25,11 @@ func (p *Planner) WithPrinter(pr ui.Printer) *Planner {
 // WithProgress sets a progress bar to report stepwise progress during apply.
 func (p *Planner) WithProgress(pb *ui.Progress) *Planner {
 	p.prog = pb
+	return p
+}
+
+// WithParallel enables or disables parallel processing for plan building.
+func (p *Planner) WithParallel(enabled bool) *Planner {
+	p.parallel = enabled
 	return p
 }
