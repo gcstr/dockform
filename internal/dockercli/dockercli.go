@@ -89,6 +89,54 @@ func (c *Client) InspectContainerLabels(ctx context.Context, containerName strin
 	return filtered, nil
 }
 
+// InspectMultipleContainerLabels returns selected labels from multiple containers in a single call
+func (c *Client) InspectMultipleContainerLabels(ctx context.Context, containerNames []string, keys []string) (map[string]map[string]string, error) {
+	if len(containerNames) == 0 {
+		return nil, nil
+	}
+	
+	// Build the inspect command for multiple containers
+	args := append([]string{"inspect", "-f", "{{.Name}}\t{{json .Config.Labels}}"}, containerNames...)
+	out, err := c.exec.Run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	
+	result := make(map[string]map[string]string)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		
+		containerName := strings.TrimPrefix(parts[0], "/") // Remove leading slash
+		var labels map[string]string
+		if err := json.Unmarshal([]byte(parts[1]), &labels); err != nil {
+			continue // Skip containers with parse errors
+		}
+		
+		// Filter to requested keys if specified
+		if len(keys) > 0 {
+			filtered := make(map[string]string)
+			for _, k := range keys {
+				if v, ok := labels[k]; ok {
+					filtered[k] = v
+				}
+			}
+			labels = filtered
+		}
+		
+		result[containerName] = labels
+	}
+	
+	return result, nil
+}
+
 // UpdateContainerLabels adds or updates labels for a running container.
 func (c *Client) UpdateContainerLabels(ctx context.Context, containerName string, labels map[string]string) error {
 	if len(labels) == 0 {

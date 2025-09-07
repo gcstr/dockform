@@ -208,3 +208,30 @@ func (m *mockDockerClient) ComposePs(ctx context.Context, root string, files []s
 func (m *mockDockerClient) ComposeUp(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string) (string, error) {
 	return "compose up output", nil
 }
+
+// Batch container operations
+func (m *mockDockerClient) InspectContainerLabelsBatch(ctx context.Context, containers []string, labelKeys []string) (map[string]map[string]string, error) {
+	result := make(map[string]map[string]string)
+	for _, container := range containers {
+		if containerLabels, exists := m.containerLabels[container]; exists {
+			containerResult := make(map[string]string)
+			for _, key := range labelKeys {
+				if value, hasKey := containerLabels[key]; hasKey {
+					containerResult[key] = value
+				}
+			}
+			result[container] = containerResult
+		}
+	}
+	return result, nil
+}
+
+// Directory sync operations
+func (m *mockDockerClient) SyncDirToVolume(ctx context.Context, volumeName, targetPath, localDir string) error {
+	return nil
+}
+
+// Daemon check
+func (m *mockDockerClient) CheckDaemon(ctx context.Context) error {
+	return nil
+}

@@ -3,6 +3,7 @@ package planner
 import (
 	"context"
 	"sort"
+	"sync"
 
 	"github.com/gcstr/dockform/internal/filesets"
 	"github.com/gcstr/dockform/internal/manifest"
@@ -17,18 +18,7 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 	// Accumulate existing sets when docker client is available
 	var existingVolumes, existingNetworks map[string]struct{}
 	if p.docker != nil {
-		existingVolumes = map[string]struct{}{}
-		if vols, err := p.docker.ListVolumes(ctx); err == nil {
-			for _, v := range vols {
-				existingVolumes[v] = struct{}{}
-			}
-		}
-		existingNetworks = map[string]struct{}{}
-		if nets, err := p.docker.ListNetworks(ctx); err == nil {
-			for _, n := range nets {
-				existingNetworks[n] = struct{}{}
-			}
-		}
+		existingVolumes, existingNetworks = p.getExistingResourcesConcurrently(ctx)
 	}
 
 	// Deterministic ordering for stable output - combine volumes from filesets and explicit volumes
@@ -101,39 +91,8 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 
 	// Filesets: show per-file changes using remote index when available
 	if p.docker != nil && len(cfg.Filesets) > 0 {
-		filesetNames := sortedKeys(cfg.Filesets)
-		for _, name := range filesetNames {
-			a := cfg.Filesets[name]
-			// Build local index
-			local, err := filesets.BuildLocalIndex(a.SourceAbs, a.TargetPath, a.Exclude)
-			if err != nil {
-				lines = append(lines, ui.Line(ui.Change, "fileset %s: unable to index local files: %v", name, err))
-				continue
-			}
-			// Read remote index only if the target volume exists with proper labels. Avoid docker run -v implicit creation during plan.
-			raw := ""
-			if _, volumeExists := existingVolumes[a.TargetVolume]; volumeExists {
-				raw, _ = p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
-			}
-			remote, _ := filesets.ParseIndexJSON(raw)
-			diff := filesets.DiffIndexes(local, remote)
-			if local.TreeHash == remote.TreeHash {
-				lines = append(lines, ui.Line(ui.Noop, "fileset %s: no file changes", name))
-				continue
-			}
-			for _, f := range diff.ToCreate {
-				lines = append(lines, ui.Line(ui.Add, "fileset %s: create %s", name, f.Path))
-			}
-			for _, f := range diff.ToUpdate {
-				lines = append(lines, ui.Line(ui.Change, "fileset %s: update %s", name, f.Path))
-			}
-			for _, pth := range diff.ToDelete {
-				lines = append(lines, ui.Line(ui.Remove, "fileset %s: delete %s", name, pth))
-			}
-			if len(diff.ToCreate) == 0 && len(diff.ToUpdate) == 0 && len(diff.ToDelete) == 0 {
-				lines = append(lines, ui.Line(ui.Change, "fileset %s: changes detected (details unavailable)", name))
-			}
-		}
+		filesetLines := p.buildFilesetPlanConcurrently(ctx, cfg.Filesets, existingVolumes)
+		lines = append(lines, filesetLines...)
 	}
 
 	if len(lines) == 0 {
@@ -226,4 +185,124 @@ func (p *Planner) collectDesiredServices(ctx context.Context, cfg manifest.Confi
 	}
 
 	return desiredServices
+}
+
+// getExistingResourcesConcurrently fetches volumes and networks in parallel
+func (p *Planner) getExistingResourcesConcurrently(ctx context.Context) (volumes, networks map[string]struct{}) {
+	volumes = map[string]struct{}{}
+	networks = map[string]struct{}{}
+	
+	var wg sync.WaitGroup
+	var volumesMu, networksMu sync.Mutex
+	
+	// Fetch volumes concurrently
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if vols, err := p.docker.ListVolumes(ctx); err == nil {
+			volumesMu.Lock()
+			for _, v := range vols {
+				volumes[v] = struct{}{}
+			}
+			volumesMu.Unlock()
+		}
+	}()
+	
+	// Fetch networks concurrently
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if nets, err := p.docker.ListNetworks(ctx); err == nil {
+			networksMu.Lock()
+			for _, n := range nets {
+				networks[n] = struct{}{}
+			}
+			networksMu.Unlock()
+		}
+	}()
+	
+	wg.Wait()
+	return volumes, networks
+}
+
+// buildFilesetPlanConcurrently processes fileset diffs in parallel
+func (p *Planner) buildFilesetPlanConcurrently(ctx context.Context, filesetSpecs map[string]manifest.FilesetSpec, existingVolumes map[string]struct{}) []ui.DiffLine {
+	filesetNames := sortedKeys(filesetSpecs)
+	if len(filesetNames) == 0 {
+		return nil
+	}
+	
+	type filesetResult struct {
+		name  string
+		lines []ui.DiffLine
+		order int
+	}
+	
+	resultsChan := make(chan filesetResult, len(filesetNames))
+	var wg sync.WaitGroup
+	
+	// Process each fileset concurrently
+	for i, name := range filesetNames {
+		wg.Add(1)
+		go func(name string, order int) {
+			defer wg.Done()
+			a := filesetSpecs[name]
+			var lines []ui.DiffLine
+			
+			// Build local index
+			local, err := filesets.BuildLocalIndex(a.SourceAbs, a.TargetPath, a.Exclude)
+			if err != nil {
+				lines = append(lines, ui.Line(ui.Change, "fileset %s: unable to index local files: %v", name, err))
+				resultsChan <- filesetResult{name: name, lines: lines, order: order}
+				return
+			}
+			
+			// Read remote index only if the target volume exists
+			raw := ""
+			if _, volumeExists := existingVolumes[a.TargetVolume]; volumeExists {
+				raw, _ = p.docker.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
+			}
+			remote, _ := filesets.ParseIndexJSON(raw)
+			diff := filesets.DiffIndexes(local, remote)
+			
+			if local.TreeHash == remote.TreeHash {
+				lines = append(lines, ui.Line(ui.Noop, "fileset %s: no file changes", name))
+			} else {
+				for _, f := range diff.ToCreate {
+					lines = append(lines, ui.Line(ui.Add, "fileset %s: create %s", name, f.Path))
+				}
+				for _, f := range diff.ToUpdate {
+					lines = append(lines, ui.Line(ui.Change, "fileset %s: update %s", name, f.Path))
+				}
+				for _, pth := range diff.ToDelete {
+					lines = append(lines, ui.Line(ui.Remove, "fileset %s: delete %s", name, pth))
+				}
+				if len(diff.ToCreate) == 0 && len(diff.ToUpdate) == 0 && len(diff.ToDelete) == 0 {
+					lines = append(lines, ui.Line(ui.Change, "fileset %s: changes detected (details unavailable)", name))
+				}
+			}
+			
+			resultsChan <- filesetResult{name: name, lines: lines, order: order}
+		}(name, i)
+	}
+	
+	// Wait for all filesets to complete
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+	
+	// Collect results in order
+	results := make([]filesetResult, len(filesetNames))
+	for result := range resultsChan {
+		results[result.order] = result
+	}
+	
+	// Combine lines in deterministic order
+	var allLines []ui.DiffLine
+	for _, result := range results {
+		allLines = append(allLines, result.lines...)
+	}
+	
+	return allLines
 }
