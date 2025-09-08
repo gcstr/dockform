@@ -1,6 +1,7 @@
 package manifest
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -223,4 +224,137 @@ func TestFilesets_ValidationAndNormalization(t *testing.T) {
 	} else if !apperr.IsKind(err, apperr.InvalidInput) {
 		t.Fatalf("expected InvalidInput, got %v", err)
 	}
+}
+
+func TestFindDefaultComposeFile(t *testing.T) {
+	// Test finding docker-compose.yaml when both exist (prefer .yaml)
+	t.Run("prefer_yaml_when_both_exist", func(t *testing.T) {
+		dir := t.TempDir()
+		yamlFile := filepath.Join(dir, "docker-compose.yaml")
+		ymlFile := filepath.Join(dir, "docker-compose.yml")
+
+		// Create both files
+		if err := os.WriteFile(yamlFile, []byte("version: '3'\nservices: {}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(ymlFile, []byte("version: '3'\nservices: {}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		result := findDefaultComposeFile(dir)
+		if result != yamlFile {
+			t.Fatalf("expected %s, got %s", yamlFile, result)
+		}
+	})
+
+	// Test finding docker-compose.yml when only yml exists
+	t.Run("find_yml_when_only_yml_exists", func(t *testing.T) {
+		dir := t.TempDir()
+		ymlFile := filepath.Join(dir, "docker-compose.yml")
+
+		if err := os.WriteFile(ymlFile, []byte("version: '3'\nservices: {}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		result := findDefaultComposeFile(dir)
+		if result != ymlFile {
+			t.Fatalf("expected %s, got %s", ymlFile, result)
+		}
+	})
+
+	// Test finding docker-compose.yaml when only yaml exists
+	t.Run("find_yaml_when_only_yaml_exists", func(t *testing.T) {
+		dir := t.TempDir()
+		yamlFile := filepath.Join(dir, "docker-compose.yaml")
+
+		if err := os.WriteFile(yamlFile, []byte("version: '3'\nservices: {}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		result := findDefaultComposeFile(dir)
+		if result != yamlFile {
+			t.Fatalf("expected %s, got %s", yamlFile, result)
+		}
+	})
+
+	// Test default when neither exists
+	t.Run("default_yml_when_neither_exists", func(t *testing.T) {
+		dir := t.TempDir()
+		expected := filepath.Join(dir, "docker-compose.yml")
+
+		result := findDefaultComposeFile(dir)
+		if result != expected {
+			t.Fatalf("expected %s, got %s", expected, result)
+		}
+	})
+}
+
+func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
+	// Test that normalization picks up docker-compose.yaml when available
+	t.Run("picks_up_yaml_extension", func(t *testing.T) {
+		base := t.TempDir()
+		appDir := filepath.Join(base, "app")
+		if err := os.MkdirAll(appDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		yamlFile := filepath.Join(appDir, "docker-compose.yaml")
+		if err := os.WriteFile(yamlFile, []byte("version: '3'\nservices: {}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg := Config{
+			Docker: DockerConfig{Identifier: "id"},
+			Applications: map[string]Application{
+				"web": {Root: "app"}, // No Files specified, should auto-detect
+			},
+		}
+
+		if err := cfg.normalizeAndValidate(base); err != nil {
+			t.Fatalf("normalizeAndValidate: %v", err)
+		}
+
+		app := cfg.Applications["web"]
+		if len(app.Files) != 1 {
+			t.Fatalf("expected 1 file, got %d", len(app.Files))
+		}
+
+		if app.Files[0] != yamlFile {
+			t.Fatalf("expected %s, got %s", yamlFile, app.Files[0])
+		}
+	})
+
+	// Test that normalization picks up docker-compose.yml when yaml doesn't exist
+	t.Run("picks_up_yml_extension", func(t *testing.T) {
+		base := t.TempDir()
+		appDir := filepath.Join(base, "app")
+		if err := os.MkdirAll(appDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		ymlFile := filepath.Join(appDir, "docker-compose.yml")
+		if err := os.WriteFile(ymlFile, []byte("version: '3'\nservices: {}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg := Config{
+			Docker: DockerConfig{Identifier: "id"},
+			Applications: map[string]Application{
+				"web": {Root: "app"}, // No Files specified, should auto-detect
+			},
+		}
+
+		if err := cfg.normalizeAndValidate(base); err != nil {
+			t.Fatalf("normalizeAndValidate: %v", err)
+		}
+
+		app := cfg.Applications["web"]
+		if len(app.Files) != 1 {
+			t.Fatalf("expected 1 file, got %d", len(app.Files))
+		}
+
+		if app.Files[0] != ymlFile {
+			t.Fatalf("expected %s, got %s", ymlFile, app.Files[0])
+		}
+	})
 }

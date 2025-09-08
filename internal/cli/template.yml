@@ -39,7 +39,7 @@ applications:
   web:
     # Directory containing docker-compose files (required)
     root: ./web
-    # Docker Compose files (defaults to docker-compose.yml)
+    # Docker Compose files (defaults to docker-compose.yaml or docker-compose.yml)
     files:
       - docker-compose.yml
       - docker-compose.override.yml

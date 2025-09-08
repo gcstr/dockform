@@ -1,11 +1,26 @@
 package manifest
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
 )
+
+// findDefaultComposeFile looks for docker-compose files with .yaml or .yml extensions
+// in the given directory, preferring .yaml over .yml if both exist.
+func findDefaultComposeFile(dir string) string {
+	candidates := []string{"docker-compose.yaml", "docker-compose.yml"}
+	for _, candidate := range candidates {
+		fullPath := filepath.Join(dir, candidate)
+		if _, err := os.Stat(fullPath); err == nil {
+			return fullPath
+		}
+	}
+	// If neither exists, default to .yml for consistency with existing behavior
+	return filepath.Join(dir, "docker-compose.yml")
+}
 
 func (c *Config) normalizeAndValidate(baseDir string) error {
 	// Defaults
@@ -144,9 +159,10 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		}
 
 		if len(app.Files) == 0 {
+			defaultComposeFile := findDefaultComposeFile(resolvedRoot)
 			c.Applications[appName] = Application{
 				Root:        resolvedRoot,
-				Files:       []string{filepath.Join(resolvedRoot, "docker-compose.yml")},
+				Files:       []string{defaultComposeFile},
 				Profiles:    app.Profiles,
 				EnvFile:     mergedEnv,
 				Environment: app.Environment,
