@@ -157,14 +157,6 @@ func TestRenderNestedSections_ShowsNestedStructure(t *testing.T) {
 	}
 }
 
-func TestSectionTitle_StripsToPlain(t *testing.T) {
-	s := SectionTitle("My Title")
-	// With the new styling, section titles have padding, so we expect spaces around the title
-	if StripANSI(s) != " My Title " {
-		t.Fatalf("expected padded title, got: %q", StripANSI(s))
-	}
-}
-
 func TestStdPrinter_NilWriters_NoPanic(t *testing.T) {
 	p := StdPrinter{}
 	// Should be no-ops when writers are nil

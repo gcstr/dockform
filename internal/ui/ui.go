@@ -25,9 +25,8 @@ var (
 
 	styleSectionTitle = lipgloss.NewStyle().
 				Bold(true).
-				Background(lipgloss.AdaptiveColor{Light: "#3478F6", Dark: "#4A9EFF"}).
-				Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"}).
-				Padding(0, 1)
+				Foreground(lipgloss.AdaptiveColor{Light: "#3478F6", Dark: "#4A9EFF"}).
+				Padding(0, 0)
 
 	styleNestedSectionTitle = lipgloss.NewStyle().Bold(true)
 )
