@@ -275,3 +275,10 @@ func (NoopPrinter) Error(string, ...any) {}
 func SectionTitle(title string) string {
 	return styleSectionTitle.Render(title)
 }
+
+// FormatPlanSummary renders a plan summary with bold "Plan:" prefix.
+func FormatPlanSummary(createCount, changeCount, destroyCount int) string {
+	boldPlan := lipgloss.NewStyle().Bold(true).Render("Plan:")
+	summaryText := fmt.Sprintf(" %d to create, %d to change, and %d to destroy", createCount, changeCount, destroyCount)
+	return boldPlan + summaryText
+}

@@ -50,7 +50,32 @@ func (pln *Plan) String() string {
 		sections = append(sections, ui.NestedSection{Title: "Other", Items: other})
 	}
 
-	return ui.RenderNestedSections(sections)
+	// Calculate summary counts
+	var createCount, changeCount, destroyCount int
+	for _, line := range pln.Lines {
+		switch line.Type {
+		case ui.Add:
+			createCount++
+		case ui.Change:
+			changeCount++
+		case ui.Remove:
+			destroyCount++
+		}
+	}
+
+	// Render sections and add summary line
+	result := ui.RenderNestedSections(sections)
+
+	// Add summary line with single line spacing if there's content
+	if len(pln.Lines) > 0 {
+		if result != "" {
+			result += "\n"
+		}
+		summary := ui.FormatPlanSummary(createCount, changeCount, destroyCount)
+		result += summary
+	}
+
+	return result
 }
 
 // buildFilesetSection groups fileset lines by fileset name and creates nested structure.
