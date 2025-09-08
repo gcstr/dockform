@@ -169,10 +169,10 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 	}
 	out := pln.String()
 	// Check volume/network adds and removals (new icon-based UI)
-	mustContain(t, out, "↑ volume v1 will be created")
-	mustContain(t, out, "× volume vOld will be removed")
-	mustContain(t, out, "↑ network n1 will be created")
-	mustContain(t, out, "× network nOld will be removed")
+	mustContain(t, out, "↑ v1 will be created")
+	mustContain(t, out, "× vOld will be removed")
+	mustContain(t, out, "↑ n1 will be created")
+	mustContain(t, out, "× nOld will be removed")
 	// Service to be started (now in nested format)
 	mustContain(t, out, "↑ nginx will be started")
 	// Container removal from ListComposeContainersAll
@@ -216,15 +216,15 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 	out := pln.String()
 	// Check that all volumes are properly handled:
 	// 1. Explicit volumes should be created
-	mustContain(t, out, "↑ volume explicit-vol will be created")
-	mustContain(t, out, "↑ volume shared-data will be created")
+	mustContain(t, out, "↑ explicit-vol will be created")
+	mustContain(t, out, "↑ shared-data will be created")
 	// 2. Volumes from filesets should also be created
-	mustContain(t, out, "↑ volume fileset-vol will be created")
+	mustContain(t, out, "↑ fileset-vol will be created")
 	// 3. Old volume should be removed
-	mustContain(t, out, "× volume vOld will be removed")
+	mustContain(t, out, "× vOld will be removed")
 	// Networks should work as before
-	mustContain(t, out, "↑ network n1 will be created")
-	mustContain(t, out, "× network nOld will be removed")
+	mustContain(t, out, "↑ n1 will be created")
+	mustContain(t, out, "× nOld will be removed")
 	// Service should work as before (now in nested format)
 	mustContain(t, out, "↑ nginx will be started")
 }

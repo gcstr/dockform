@@ -117,7 +117,7 @@ func RenderNestedSections(sections []NestedSection) string {
 			result.WriteString("  ")
 			result.WriteString(getIconForChangeType(item.Type))
 			result.WriteString(" ")
-			result.WriteString(item.Message)
+			result.WriteString(StripRedundantPrefixes(item.Message, section.Title))
 			result.WriteString("\n")
 		}
 
@@ -139,7 +139,7 @@ func RenderNestedSections(sections []NestedSection) string {
 				result.WriteString("    ")
 				result.WriteString(getIconForChangeType(item.Type))
 				result.WriteString(" ")
-				result.WriteString(item.Message)
+				result.WriteString(StripRedundantPrefixes(item.Message, section.Title))
 				result.WriteString("\n")
 			}
 		}
@@ -280,4 +280,20 @@ func FormatPlanSummary(createCount, changeCount, destroyCount int) string {
 	boldPlan := lipgloss.NewStyle().Bold(true).Render("Plan:")
 	summaryText := fmt.Sprintf(" %d to create, %d to change, and %d to destroy", createCount, changeCount, destroyCount)
 	return boldPlan + summaryText
+}
+
+// StripRedundantPrefixes removes redundant "volume " and "network " prefixes from messages
+// when they appear under their respective sections.
+func StripRedundantPrefixes(message, sectionType string) string {
+	switch sectionType {
+	case "Volumes":
+		if strings.HasPrefix(message, "volume ") {
+			return message[7:] // Remove "volume " prefix
+		}
+	case "Networks":
+		if strings.HasPrefix(message, "network ") {
+			return message[8:] // Remove "network " prefix
+		}
+	}
+	return message
 }

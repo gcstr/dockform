@@ -175,32 +175,32 @@ func (p *Planner) buildApplicationPlanSequential(ctx context.Context, cfg manife
 // buildApplicationPlanParallel processes applications concurrently for faster planning
 func (p *Planner) buildApplicationPlanParallel(ctx context.Context, cfg manifest.Config) ([]ui.DiffLine, error) {
 	detector := NewServiceStateDetector(p.docker).WithParallel(true)
-	
+
 	// Sort app names for deterministic processing
 	appNames := make([]string, 0, len(cfg.Applications))
 	for name := range cfg.Applications {
 		appNames = append(appNames, name)
 	}
 	sort.Strings(appNames)
-	
+
 	type appResult struct {
 		appName string
 		lines   []ui.DiffLine
 		order   int
 	}
-	
+
 	resultsChan := make(chan appResult, len(appNames))
 	var wg sync.WaitGroup
-	
+
 	// Process each application concurrently
 	for i, appName := range appNames {
 		wg.Add(1)
 		go func(appName string, order int) {
 			defer wg.Done()
-			
+
 			app := cfg.Applications[appName]
 			services, err := detector.DetectAllServicesState(ctx, appName, app, cfg.Docker.Identifier, cfg.Sops)
-			
+
 			var lines []ui.DiffLine
 			if err != nil {
 				// Fallback to "TBD" for any errors during planning
@@ -227,29 +227,29 @@ func (p *Planner) buildApplicationPlanParallel(ctx context.Context, cfg manifest
 					}
 				}
 			}
-			
+
 			resultsChan <- appResult{appName: appName, lines: lines, order: order}
 		}(appName, i)
 	}
-	
+
 	// Wait for all applications to complete
 	go func() {
 		wg.Wait()
 		close(resultsChan)
 	}()
-	
+
 	// Collect results in original order to maintain deterministic output
 	results := make([]appResult, len(appNames))
 	for result := range resultsChan {
 		results[result.order] = result
 	}
-	
+
 	// Combine lines in deterministic order
 	var allLines []ui.DiffLine
 	for _, result := range results {
 		allLines = append(allLines, result.lines...)
 	}
-	
+
 	return allLines, nil
 }
 
@@ -281,10 +281,10 @@ func (p *Planner) collectDesiredServices(ctx context.Context, cfg manifest.Confi
 func (p *Planner) getExistingResourcesConcurrently(ctx context.Context) (volumes, networks map[string]struct{}) {
 	volumes = map[string]struct{}{}
 	networks = map[string]struct{}{}
-	
+
 	var wg sync.WaitGroup
 	var volumesMu, networksMu sync.Mutex
-	
+
 	// Fetch volumes concurrently
 	wg.Add(1)
 	go func() {
@@ -297,7 +297,7 @@ func (p *Planner) getExistingResourcesConcurrently(ctx context.Context) (volumes
 			volumesMu.Unlock()
 		}
 	}()
-	
+
 	// Fetch networks concurrently
 	wg.Add(1)
 	go func() {
@@ -310,7 +310,7 @@ func (p *Planner) getExistingResourcesConcurrently(ctx context.Context) (volumes
 			networksMu.Unlock()
 		}
 	}()
-	
+
 	wg.Wait()
 	return volumes, networks
 }
@@ -321,16 +321,16 @@ func (p *Planner) buildFilesetPlanConcurrently(ctx context.Context, filesetSpecs
 	if len(filesetNames) == 0 {
 		return nil
 	}
-	
+
 	type filesetResult struct {
 		name  string
 		lines []ui.DiffLine
 		order int
 	}
-	
+
 	resultsChan := make(chan filesetResult, len(filesetNames))
 	var wg sync.WaitGroup
-	
+
 	// Process each fileset concurrently
 	for i, name := range filesetNames {
 		wg.Add(1)
@@ -338,7 +338,7 @@ func (p *Planner) buildFilesetPlanConcurrently(ctx context.Context, filesetSpecs
 			defer wg.Done()
 			a := filesetSpecs[name]
 			var lines []ui.DiffLine
-			
+
 			// Build local index
 			local, err := filesets.BuildLocalIndex(a.SourceAbs, a.TargetPath, a.Exclude)
 			if err != nil {
@@ -346,7 +346,7 @@ func (p *Planner) buildFilesetPlanConcurrently(ctx context.Context, filesetSpecs
 				resultsChan <- filesetResult{name: name, lines: lines, order: order}
 				return
 			}
-			
+
 			// Read remote index only if the target volume exists
 			raw := ""
 			if _, volumeExists := existingVolumes[a.TargetVolume]; volumeExists {
@@ -354,7 +354,7 @@ func (p *Planner) buildFilesetPlanConcurrently(ctx context.Context, filesetSpecs
 			}
 			remote, _ := filesets.ParseIndexJSON(raw)
 			diff := filesets.DiffIndexes(local, remote)
-			
+
 			if local.TreeHash == remote.TreeHash {
 				lines = append(lines, ui.Line(ui.Noop, "fileset %s: no file changes", name))
 			} else {
@@ -371,28 +371,28 @@ func (p *Planner) buildFilesetPlanConcurrently(ctx context.Context, filesetSpecs
 					lines = append(lines, ui.Line(ui.Change, "fileset %s: changes detected (details unavailable)", name))
 				}
 			}
-			
+
 			resultsChan <- filesetResult{name: name, lines: lines, order: order}
 		}(name, i)
 	}
-	
+
 	// Wait for all filesets to complete
 	go func() {
 		wg.Wait()
 		close(resultsChan)
 	}()
-	
+
 	// Collect results in order
 	results := make([]filesetResult, len(filesetNames))
 	for result := range resultsChan {
 		results[result.order] = result
 	}
-	
+
 	// Combine lines in deterministic order
 	var allLines []ui.DiffLine
 	for _, result := range results {
 		allLines = append(allLines, result.lines...)
 	}
-	
+
 	return allLines
 }

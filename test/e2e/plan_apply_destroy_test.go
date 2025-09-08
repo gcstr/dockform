@@ -64,7 +64,7 @@ func TestSimplePlanApplyLifecycle(t *testing.T) {
 	// Normalize whitespace to avoid style-related spacing differences
 	plain := strings.Join(strings.Fields(out), " ")
 	// Volume creation is not asserted here because volumes are only derived from filesets
-	if !strings.Contains(plain, "network df_e2e_"+runID+"_net will be created") {
+	if !strings.Contains(plain, "df_e2e_"+runID+"_net will be created") {
 		t.Fatalf("plan missing add network:\n%s", out)
 	}
 	// Service detection may vary per compose; require at least one application/service hint
@@ -224,10 +224,10 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 		t.Fatalf("plan after apply failed: %d\nSTDOUT:\n%s\nSTDERR:\n%s", code2, out2, err2)
 	}
 	// UI may render without explicit [noop] prefix; assert on core phrases instead
-	if !strings.Contains(out2, "volume demo-volume-1 exists") {
+	if !strings.Contains(out2, "demo-volume-1 exists") {
 		t.Fatalf("expected volume exists, got:\n%s", out2)
 	}
-	if !strings.Contains(out2, "network demo-network exists") {
+	if !strings.Contains(out2, "demo-network exists") {
 		t.Fatalf("expected network exists, got:\n%s", out2)
 	}
 	if !strings.Contains(out2, "nginx up-to-date") && !strings.Contains(out2, "nginx running") {
