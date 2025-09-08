@@ -67,8 +67,11 @@ func RenderSectionedList(sections []Section) string {
 		// Render items with two-space indentation and icons
 		for _, item := range section.Items {
 			result.WriteString("  ")
-			result.WriteString(getIconForChangeType(item.Type))
-			result.WriteString(" ")
+			// Info type items don't have icons, others do
+			if item.Type != Info {
+				result.WriteString(getIconForChangeType(item.Type))
+				result.WriteString(" ")
+			}
 			result.WriteString(item.Message)
 			result.WriteString("\n")
 		}
