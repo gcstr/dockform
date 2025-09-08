@@ -3,22 +3,21 @@ package ui
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"io"
 	"os"
 
 	"github.com/charmbracelet/lipgloss"
-	lglist "github.com/charmbracelet/lipgloss/list"
 	"github.com/mattn/go-isatty"
 )
 
 var (
-	styleBase   = lipgloss.NewStyle().Margin(0, 1, 0, 1)
 	styleInfo   = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // blue
-	styleNoop   = styleBase.Foreground(lipgloss.Color("12"))           // blue
-	styleAdd    = styleBase.Foreground(lipgloss.Color("10"))           // green
-	styleRemove = styleBase.Foreground(lipgloss.Color("9"))            // red
-	styleChange = styleBase.Foreground(lipgloss.Color("11"))           // yellow
+	styleNoop   = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // blue
+	styleAdd    = lipgloss.NewStyle().Foreground(lipgloss.Color("10")) // green
+	styleRemove = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // red
+	styleChange = lipgloss.NewStyle().Foreground(lipgloss.Color("11")) // yellow
 
 	styleInfoPrefix  = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true) // blue
 	styleWarnPrefix  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // yellow
@@ -33,68 +32,111 @@ type Section struct {
 	Items []DiffLine
 }
 
-// ListStyles centralizes lipgloss list styles for consistent UX.
-var ListStyles = struct {
-	OuterEnumStyle lipgloss.Style
-	OuterItemStyle lipgloss.Style
-	InnerEnumStyle lipgloss.Style
-	InnerItemStyle lipgloss.Style
-}{
-	OuterEnumStyle: lipgloss.NewStyle(),
-	OuterItemStyle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69")).MarginTop(1),
-	InnerEnumStyle: lipgloss.NewStyle(), //.MarginRight(1).MarginLeft(1), // margin only; color per-item
-	InnerItemStyle: lipgloss.NewStyle(),
+// NestedSection represents a section that can contain nested subsections.
+type NestedSection struct {
+	Title    string
+	Items    []DiffLine
+	Sections []NestedSection
 }
 
-// RenderSectionedList renders sections as a nested lipgloss list with configured styles.
+// RenderSectionedList renders sections with simple headers and two-space indented items.
 func RenderSectionedList(sections []Section) string {
-	// Build alternating args: Title, innerList, Title, innerList, ...
-	args := make([]any, 0, len(sections)*2)
-	for _, s := range sections {
-		if len(s.Items) == 0 {
+	var result strings.Builder
+
+	for _, section := range sections {
+		if len(section.Items) == 0 {
 			continue
 		}
-		vals := make([]any, len(s.Items))
-		for i, it := range s.Items {
-			vals[i] = it.String()
+
+		// Section header with bold styling
+		result.WriteString(styleSectionTitle.Render(section.Title))
+		result.WriteString("\n")
+
+		// Render items with two-space indentation and icons
+		for _, item := range section.Items {
+			result.WriteString("  ")
+			result.WriteString(getIconForChangeType(item.Type))
+			result.WriteString(" ")
+			result.WriteString(item.Message)
+			result.WriteString("\n")
 		}
-		// Per-item colored enumerator based on s.Items index
-		itemsRef := s.Items
-		enum := func(_ lglist.Items, i int) string {
-			if i < 0 || i >= len(itemsRef) {
-				return ""
-			}
-			switch itemsRef[i].Type {
-			case Info:
-				return styleInfo.Render("")
-			case Noop:
-				return styleNoop.Render("●")
-			case Add:
-				return styleAdd.Render("↑")
-			case Remove:
-				return styleRemove.Render("×")
-			case Change:
-				return styleChange.Render("→")
-			default:
-				return ""
-			}
-		}
-		inner := lglist.New(vals...).
-			Enumerator(enum).
-			EnumeratorStyle(ListStyles.InnerEnumStyle).
-			ItemStyle(ListStyles.InnerItemStyle)
-		args = append(args, s.Title, inner)
+
+		// Add spacing between sections
+		result.WriteString("\n")
 	}
-	if len(args) == 0 {
+
+	return result.String()
+}
+
+// RenderNestedSections renders sections that can contain nested subsections.
+func RenderNestedSections(sections []NestedSection) string {
+	var result strings.Builder
+
+	for _, section := range sections {
+		hasContent := len(section.Items) > 0 || len(section.Sections) > 0
+		if !hasContent {
+			continue
+		}
+
+		// Section header with bold styling
+		result.WriteString(styleSectionTitle.Render(section.Title))
+		result.WriteString("\n")
+
+		// Render direct items with two-space indentation and icons
+		for _, item := range section.Items {
+			result.WriteString("  ")
+			result.WriteString(getIconForChangeType(item.Type))
+			result.WriteString(" ")
+			result.WriteString(item.Message)
+			result.WriteString("\n")
+		}
+
+		// Render nested sections with additional indentation
+		for _, nestedSection := range section.Sections {
+			if len(nestedSection.Items) == 0 {
+				continue
+			}
+
+			// Nested section header (if it has a title)
+			if nestedSection.Title != "" {
+				result.WriteString("  ")
+				result.WriteString(styleSectionTitle.Render(nestedSection.Title))
+				result.WriteString("\n")
+			}
+
+			// Render nested items with four-space indentation
+			for _, item := range nestedSection.Items {
+				result.WriteString("    ")
+				result.WriteString(getIconForChangeType(item.Type))
+				result.WriteString(" ")
+				result.WriteString(item.Message)
+				result.WriteString("\n")
+			}
+		}
+
+		// Add spacing between sections
+		result.WriteString("\n")
+	}
+
+	return result.String()
+}
+
+// getIconForChangeType returns the appropriate icon for each change type.
+func getIconForChangeType(changeType ChangeType) string {
+	switch changeType {
+	case Info:
+		return styleInfo.Render("")
+	case Noop:
+		return styleNoop.Render("●")
+	case Add:
+		return styleAdd.Render("↑")
+	case Remove:
+		return styleRemove.Render("×")
+	case Change:
+		return styleChange.Render("→")
+	default:
 		return ""
 	}
-	// Empty enumerator for section headers
-	emptyEnum := func(_ lglist.Items, _ int) string { return "" }
-	outer := lglist.New(args...).
-		Enumerator(emptyEnum).
-		EnumeratorStyle(ListStyles.OuterEnumStyle).
-		ItemStyle(ListStyles.OuterItemStyle)
-	return outer.String() + "\n"
 }
 
 // --- existing change-line utilities below ---

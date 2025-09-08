@@ -17,8 +17,9 @@ func (pln *Plan) String() string {
 	vols := []ui.DiffLine{}
 	nets := []ui.DiffLine{}
 	apps := []ui.DiffLine{}
-	files := []ui.DiffLine{}
+	filesetLines := []ui.DiffLine{}
 	other := []ui.DiffLine{}
+
 	for _, l := range pln.Lines {
 		m := l.Message
 		switch {
@@ -27,23 +28,77 @@ func (pln *Plan) String() string {
 		case strings.HasPrefix(m, "network "):
 			nets = append(nets, l)
 		case strings.HasPrefix(m, "fileset "):
-			files = append(files, l)
+			filesetLines = append(filesetLines, l)
 		case strings.HasPrefix(m, "service ") || strings.HasPrefix(m, "application ") || strings.HasPrefix(m, "container "):
 			apps = append(apps, l)
 		default:
 			other = append(other, l)
 		}
 	}
-	sections := []ui.Section{
+
+	// Build sections with nested filesets
+	sections := []ui.NestedSection{
 		{Title: "Volumes", Items: vols},
 		{Title: "Networks", Items: nets},
 		{Title: "Applications", Items: apps},
-		{Title: "Filesets", Items: files},
+		buildFilesetSection(filesetLines),
 	}
+
 	if len(other) > 0 {
-		sections = append(sections, ui.Section{Title: "Other", Items: other})
+		sections = append(sections, ui.NestedSection{Title: "Other", Items: other})
 	}
-	return ui.RenderSectionedList(sections)
+
+	return ui.RenderNestedSections(sections)
+}
+
+// buildFilesetSection groups fileset lines by fileset name and creates nested structure.
+func buildFilesetSection(filesetLines []ui.DiffLine) ui.NestedSection {
+	if len(filesetLines) == 0 {
+		return ui.NestedSection{Title: "Filesets"}
+	}
+
+	// Group fileset lines by fileset name
+	filesetGroups := make(map[string][]ui.DiffLine)
+
+	for _, line := range filesetLines {
+		// Extract fileset name from message like "fileset myfiles: create file.txt"
+		msg := line.Message
+		if strings.HasPrefix(msg, "fileset ") {
+			parts := strings.SplitN(msg[8:], ": ", 2) // Remove "fileset " prefix
+			if len(parts) == 2 {
+				filesetName := parts[0]
+				action := parts[1]
+
+				// Create a new line with just the action (without fileset name)
+				actionLine := ui.DiffLine{
+					Type:    line.Type,
+					Message: action,
+				}
+
+				filesetGroups[filesetName] = append(filesetGroups[filesetName], actionLine)
+			}
+		}
+	}
+
+	// Convert to sorted nested sections
+	var nestedSections []ui.NestedSection
+	filesetNames := make([]string, 0, len(filesetGroups))
+	for name := range filesetGroups {
+		filesetNames = append(filesetNames, name)
+	}
+	sort.Strings(filesetNames)
+
+	for _, name := range filesetNames {
+		nestedSections = append(nestedSections, ui.NestedSection{
+			Title: name,
+			Items: filesetGroups[name],
+		})
+	}
+
+	return ui.NestedSection{
+		Title:    "Filesets",
+		Sections: nestedSections,
+	}
 }
 
 // sortedKeys returns sorted keys of a map[string]T

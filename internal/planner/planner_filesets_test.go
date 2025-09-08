@@ -98,9 +98,11 @@ func TestBuildPlan_Filesets_DiffChanges(t *testing.T) {
 	}
 	out := pln.String()
 	// Expect create for both local files and delete for c.txt
-	mustContain(t, out, "fileset web: create a.txt")
-	mustContain(t, out, "fileset web: create b.txt")
-	mustContain(t, out, "fileset web: delete c.txt")
+	mustContain(t, out, "create a.txt")
+	mustContain(t, out, "create b.txt")
+	mustContain(t, out, "delete c.txt")
+	// Should also contain the fileset name as a nested section
+	mustContain(t, out, "web")
 	_ = local // silence unused in case of future ref
 }
 
@@ -135,9 +137,11 @@ func TestBuildPlan_Filesets_NoChanges(t *testing.T) {
 		t.Fatalf("build plan: %v", err)
 	}
 	out := pln.String()
-	if !strings.Contains(out, "fileset site: no file changes") {
+	if !strings.Contains(out, "no file changes") {
 		t.Fatalf("expected no file changes line; got:\n%s", out)
 	}
+	// Should also contain the fileset name as a nested section
+	mustContain(t, out, "site")
 }
 
 func TestApply_Filesets_SyncAndRestart(t *testing.T) {

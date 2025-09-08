@@ -27,13 +27,13 @@ func newFilesetPlanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			
+
 			// Build the plan
 			plan, err := ctx.BuildPlan()
 			if err != nil {
 				return err
 			}
-			
+
 			// Filter plan output to only fileset lines
 			out := plan.String()
 			filtered := filterFilesetLines(out)
@@ -54,13 +54,13 @@ func newFilesetApplyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			
+
 			// Build the plan and show filtered output
 			plan, err := ctx.BuildPlan()
 			if err != nil {
 				return err
 			}
-			
+
 			// Print only fileset lines of the plan
 			out := plan.String()
 			ctx.Printer.Plain("%s", filterFilesetLines(out))
@@ -70,7 +70,7 @@ func newFilesetApplyCmd() *cobra.Command {
 			cfgApps := ctx.Config.Applications
 			ctx.Config.Applications = map[string]manifest.Application{}
 			defer func() { ctx.Config.Applications = cfgApps }()
-			
+
 			if err := ctx.ApplyPlan(); err != nil {
 				return err
 			}
@@ -83,14 +83,39 @@ func newFilesetApplyCmd() *cobra.Command {
 func filterFilesetLines(s string) string {
 	lines := strings.Split(strings.TrimRight(s, "\r\n"), "\n")
 	out := make([]string, 0, len(lines))
+	inFilesetSection := false
+	foundFilesetContent := false
+
 	for _, l := range lines {
-		// keep lines starting with fileset plan messages
-		if strings.Contains(l, "fileset ") {
+		trimmed := strings.TrimSpace(l)
+
+		// Check if we're entering the Filesets section
+		if trimmed == "Filesets" {
+			inFilesetSection = true
 			out = append(out, l)
+			continue
+		}
+
+		// Check if we're entering a new section (starts with capital letter and no indentation)
+		if len(l) > 0 && l[0] != ' ' && l[0] != '\t' && trimmed != "" && trimmed != "Filesets" {
+			inFilesetSection = false
+			continue
+		}
+
+		// If we're in the filesets section, include the line
+		if inFilesetSection && trimmed != "" {
+			out = append(out, l)
+			// Check if this line has an actual fileset action (contains icons)
+			if strings.Contains(l, "↑") || strings.Contains(l, "×") || strings.Contains(l, "→") || strings.Contains(l, "●") {
+				foundFilesetContent = true
+			}
 		}
 	}
-	if len(out) == 0 {
+
+	// If we only have the header or no real fileset content, return no-op message
+	if len(out) <= 1 || !foundFilesetContent {
 		return "[no-op] no filesets defined or no fileset changes"
 	}
+
 	return strings.Join(out, "\n")
 }

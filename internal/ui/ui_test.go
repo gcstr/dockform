@@ -58,17 +58,25 @@ func TestRenderSectionedList_ShowsItemsWithIcons(t *testing.T) {
 		},
 	}
 	got := StripANSI(RenderSectionedList(sections))
-	// Ensure messages are present
-	for _, s := range []string{"noop item", "add item", "remove item", "change item"} {
-		if !strings.Contains(got, s) {
-			t.Fatalf("expected sectioned list to contain %q, got: %q", s, got)
+
+	// Check that the output has the expected structure
+	expected := []string{
+		"Applications",  // Section header
+		"  ● noop item", // Two-space indented items with icons
+		"  ↑ add item",
+		"  × remove item",
+		"  → change item",
+	}
+
+	for _, exp := range expected {
+		if !strings.Contains(got, exp) {
+			t.Fatalf("expected sectioned list to contain %q, got: %q", exp, got)
 		}
 	}
-	// Ensure icon glyphs are present
-	for _, icon := range []string{"●", "↑", "×", "→"} {
-		if !strings.Contains(got, icon) {
-			t.Fatalf("expected sectioned list to contain icon %q, got: %q", icon, got)
-		}
+
+	// Should not contain "Empty" section since it has no items
+	if strings.Contains(got, "Empty") {
+		t.Fatalf("expected empty sections to be skipped, got: %q", got)
 	}
 }
 
@@ -98,6 +106,54 @@ func TestRenderSectionedList_EmptyReturnsEmpty(t *testing.T) {
 	got := RenderSectionedList([]Section{{Title: "A", Items: nil}, {Title: "B", Items: []DiffLine{}}})
 	if got != "" {
 		t.Fatalf("expected empty string for empty sections, got: %q", got)
+	}
+}
+
+func TestRenderNestedSections_ShowsNestedStructure(t *testing.T) {
+	sections := []NestedSection{
+		{
+			Title: "Filesets",
+			Sections: []NestedSection{
+				{
+					Title: "website",
+					Items: []DiffLine{
+						Line(Add, "create config.yaml"),
+						Line(Change, "update index.html"),
+					},
+				},
+				{
+					Title: "assets",
+					Items: []DiffLine{
+						Line(Remove, "delete old.css"),
+					},
+				},
+			},
+		},
+		{
+			Title: "Applications",
+			Items: []DiffLine{
+				Line(Noop, "app1 running"),
+			},
+		},
+	}
+	got := StripANSI(RenderNestedSections(sections))
+
+	// Check nested structure with proper indentation
+	expected := []string{
+		"Filesets",                 // Main section header
+		"  website",                // Nested section header (2 spaces)
+		"    ↑ create config.yaml", // Nested items (4 spaces)
+		"    → update index.html",
+		"  assets",             // Another nested section
+		"    × delete old.css", // Its items
+		"Applications",         // Regular section
+		"  ● app1 running",     // Regular items (2 spaces)
+	}
+
+	for _, exp := range expected {
+		if !strings.Contains(got, exp) {
+			t.Fatalf("expected nested sections to contain %q, got: %q", exp, got)
+		}
 	}
 }
 

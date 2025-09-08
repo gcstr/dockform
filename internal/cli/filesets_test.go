@@ -44,7 +44,8 @@ func TestFilesetApply_PrintsOnlyFilesetLines_AndRunsApply(t *testing.T) {
 	}
 	got := out.String()
 	// Expect either specific fileset lines or the no-op message if stub implies no remote index
-	if !strings.Contains(got, "fileset site:") && !strings.Contains(got, "[no-op] no filesets defined or no fileset changes") {
+	// With the new nested format, we should see "site" (the fileset name) and actions like "create"
+	if !strings.Contains(got, "site") && !strings.Contains(got, "[no-op] no filesets defined or no fileset changes") {
 		t.Fatalf("expected fileset-only output or noop; got: %s", got)
 	}
 }

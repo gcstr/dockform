@@ -232,7 +232,7 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	if !strings.Contains(out2, "service website/nginx up-to-date") && !strings.Contains(out2, "service website/nginx running") {
 		t.Fatalf("expected service website/nginx up-to-date or running, got:\n%s", out2)
 	}
-	if !strings.Contains(out2, "fileset files: no file changes") {
+	if !strings.Contains(out2, "no file changes") {
 		t.Fatalf("expected fileset no changes, got:\n%s", out2)
 	}
 

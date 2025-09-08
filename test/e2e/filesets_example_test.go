@@ -150,11 +150,9 @@ func TestScenarioFilesets_ChangeDetection_And_Restart(t *testing.T) {
 		t.Fatalf("filesets apply failed: %d\nSTDOUT:\n%s\nSTDERR:\n%s", code2, out, errOut)
 	}
 	// Expect output to include update for the modified path (filtered to filesets only)
-	if !strings.Contains(out, "fileset files: update img/df.svg") {
-		// Fallback: just check for 'update df.svg'
-		if !strings.Contains(out, "update df.svg") {
-			t.Fatalf("expected fileset update in output, got:\n%s", out)
-		}
+	// With the new nested format, it should show as "update img/df.svg" under the files section
+	if !strings.Contains(out, "update img/df.svg") {
+		t.Fatalf("expected fileset update in output, got:\n%s", out)
 	}
 
 	// Container should be restarted due to restart_services: [nginx]
