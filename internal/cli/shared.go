@@ -7,14 +7,13 @@ import (
 	"github.com/gcstr/dockform/internal/ui"
 )
 
-
 // displayDockerInfo shows the Docker context and identifier information
 func displayDockerInfo(pr ui.Printer, cfg *manifest.Config) {
 	ctxName := strings.TrimSpace(cfg.Docker.Context)
 	if ctxName == "" {
 		ctxName = "default"
 	}
-	
+
 	sections := []ui.Section{
 		{
 			Title: "Docker",
@@ -24,5 +23,5 @@ func displayDockerInfo(pr ui.Printer, cfg *manifest.Config) {
 			},
 		},
 	}
-	pr.Plain("%s", strings.TrimRight(ui.RenderSectionedList(sections), "\n"))
+	pr.Plain("\n%s", strings.TrimRight(ui.RenderSectionedList(sections), "\n"))
 }

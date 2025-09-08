@@ -23,7 +23,13 @@ var (
 	styleWarnPrefix  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // yellow
 	styleErrorPrefix = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)  // red
 
-	styleSectionTitle = lipgloss.NewStyle().Bold(true)
+	styleSectionTitle = lipgloss.NewStyle().
+				Bold(true).
+				Background(lipgloss.AdaptiveColor{Light: "#3478F6", Dark: "#4A9EFF"}).
+				Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"}).
+				Padding(0, 1)
+
+	styleNestedSectionTitle = lipgloss.NewStyle().Bold(true)
 )
 
 // Section represents a header and its list of items for rendering.
@@ -42,11 +48,18 @@ type NestedSection struct {
 // RenderSectionedList renders sections with simple headers and two-space indented items.
 func RenderSectionedList(sections []Section) string {
 	var result strings.Builder
+	firstSection := true
 
 	for _, section := range sections {
 		if len(section.Items) == 0 {
 			continue
 		}
+
+		// Add blank line before section (except for the first one)
+		if !firstSection {
+			result.WriteString("\n")
+		}
+		firstSection = false
 
 		// Section header with bold styling
 		result.WriteString(styleSectionTitle.Render(section.Title))
@@ -60,9 +73,6 @@ func RenderSectionedList(sections []Section) string {
 			result.WriteString(item.Message)
 			result.WriteString("\n")
 		}
-
-		// Add spacing between sections
-		result.WriteString("\n")
 	}
 
 	return result.String()
@@ -71,14 +81,35 @@ func RenderSectionedList(sections []Section) string {
 // RenderNestedSections renders sections that can contain nested subsections.
 func RenderNestedSections(sections []NestedSection) string {
 	var result strings.Builder
+	hasAnyContent := false
 
+	// Check if we have any content to render
+	for _, section := range sections {
+		if len(section.Items) > 0 || len(section.Sections) > 0 {
+			hasAnyContent = true
+			break
+		}
+	}
+
+	// If we have content, start with a blank line for proper spacing from previous output
+	if hasAnyContent {
+		result.WriteString("\n")
+	}
+
+	firstSection := true
 	for _, section := range sections {
 		hasContent := len(section.Items) > 0 || len(section.Sections) > 0
 		if !hasContent {
 			continue
 		}
 
-		// Section header with bold styling
+		// Add blank line before section (except for the first one)
+		if !firstSection {
+			result.WriteString("\n")
+		}
+		firstSection = false
+
+		// Section header with blue background styling
 		result.WriteString(styleSectionTitle.Render(section.Title))
 		result.WriteString("\n")
 
@@ -97,10 +128,10 @@ func RenderNestedSections(sections []NestedSection) string {
 				continue
 			}
 
-			// Nested section header (if it has a title)
+			// Nested section header (if it has a title) - use plain bold style, not blue background
 			if nestedSection.Title != "" {
 				result.WriteString("  ")
-				result.WriteString(styleSectionTitle.Render(nestedSection.Title))
+				result.WriteString(styleNestedSectionTitle.Render(nestedSection.Title))
 				result.WriteString("\n")
 			}
 
@@ -113,9 +144,6 @@ func RenderNestedSections(sections []NestedSection) string {
 				result.WriteString("\n")
 			}
 		}
-
-		// Add spacing between sections
-		result.WriteString("\n")
 	}
 
 	return result.String()
