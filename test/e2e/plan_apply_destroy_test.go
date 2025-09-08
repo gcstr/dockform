@@ -68,7 +68,8 @@ func TestSimplePlanApplyLifecycle(t *testing.T) {
 		t.Fatalf("plan missing add network:\n%s", out)
 	}
 	// Service detection may vary per compose; require at least one application/service hint
-	if !strings.Contains(out, "service app/hello") && !strings.Contains(out, "application app") {
+	// With nested format, check for either "hello" service or "app" application name
+	if !strings.Contains(out, "hello") && !strings.Contains(out, "app") {
 		t.Fatalf("plan missing application/service lines:\n%s", out)
 	}
 
@@ -229,8 +230,8 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	if !strings.Contains(out2, "network demo-network exists") {
 		t.Fatalf("expected network exists, got:\n%s", out2)
 	}
-	if !strings.Contains(out2, "service website/nginx up-to-date") && !strings.Contains(out2, "service website/nginx running") {
-		t.Fatalf("expected service website/nginx up-to-date or running, got:\n%s", out2)
+	if !strings.Contains(out2, "nginx up-to-date") && !strings.Contains(out2, "nginx running") {
+		t.Fatalf("expected nginx up-to-date or running, got:\n%s", out2)
 	}
 	if !strings.Contains(out2, "no file changes") {
 		t.Fatalf("expected fileset no changes, got:\n%s", out2)

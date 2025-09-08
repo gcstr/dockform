@@ -29,18 +29,20 @@ func (pln *Plan) String() string {
 			nets = append(nets, l)
 		case strings.HasPrefix(m, "fileset "):
 			filesetLines = append(filesetLines, l)
-		case strings.HasPrefix(m, "service ") || strings.HasPrefix(m, "application ") || strings.HasPrefix(m, "container "):
+		case strings.HasPrefix(m, "service ") || strings.HasPrefix(m, "application "):
 			apps = append(apps, l)
+		case strings.HasPrefix(m, "container "):
+			other = append(other, l)
 		default:
 			other = append(other, l)
 		}
 	}
 
-	// Build sections with nested filesets
+	// Build sections with nested applications and filesets
 	sections := []ui.NestedSection{
 		{Title: "Volumes", Items: vols},
 		{Title: "Networks", Items: nets},
-		{Title: "Applications", Items: apps},
+		buildApplicationSection(apps),
 		buildFilesetSection(filesetLines),
 	}
 
@@ -97,6 +99,83 @@ func buildFilesetSection(filesetLines []ui.DiffLine) ui.NestedSection {
 
 	return ui.NestedSection{
 		Title:    "Filesets",
+		Sections: nestedSections,
+	}
+}
+
+// buildApplicationSection groups application lines by application name and creates nested structure.
+func buildApplicationSection(applicationLines []ui.DiffLine) ui.NestedSection {
+	if len(applicationLines) == 0 {
+		return ui.NestedSection{Title: "Applications"}
+	}
+
+	// Group application lines by application name
+	appGroups := make(map[string][]ui.DiffLine)
+
+	for _, line := range applicationLines {
+		// Extract application name from messages like:
+		// "service linkwarden/linkwarden will be started"
+		// "application myapp planned (services diff TBD)"
+		msg := line.Message
+
+		if strings.HasPrefix(msg, "service ") {
+			// Parse "service appName/serviceName action" format
+			parts := strings.SplitN(msg[8:], "/", 2) // Remove "service " prefix
+			if len(parts) == 2 {
+				appName := parts[0]
+				// Extract service name and action from "serviceName action"
+				serviceAndAction := parts[1]
+				spaceIndex := strings.Index(serviceAndAction, " ")
+				if spaceIndex > 0 {
+					serviceName := serviceAndAction[:spaceIndex]
+					action := serviceAndAction[spaceIndex+1:]
+
+					// Create a new line with just the service and action
+					actionLine := ui.DiffLine{
+						Type:    line.Type,
+						Message: serviceName + " " + action,
+					}
+
+					appGroups[appName] = append(appGroups[appName], actionLine)
+				}
+			}
+		} else if strings.HasPrefix(msg, "application ") {
+			// Parse "application appName planned (services diff TBD)" format
+			parts := strings.SplitN(msg[12:], " ", 2) // Remove "application " prefix
+			if len(parts) >= 1 {
+				appName := parts[0]
+				action := "planned (services diff TBD)"
+				if len(parts) > 1 {
+					action = parts[1]
+				}
+
+				actionLine := ui.DiffLine{
+					Type:    line.Type,
+					Message: action,
+				}
+
+				appGroups[appName] = append(appGroups[appName], actionLine)
+			}
+		}
+	}
+
+	// Convert to sorted nested sections
+	var nestedSections []ui.NestedSection
+	appNames := make([]string, 0, len(appGroups))
+	for name := range appGroups {
+		appNames = append(appNames, name)
+	}
+	sort.Strings(appNames)
+
+	for _, name := range appNames {
+		nestedSections = append(nestedSections, ui.NestedSection{
+			Title: name,
+			Items: appGroups[name],
+		})
+	}
+
+	return ui.NestedSection{
+		Title:    "Applications",
 		Sections: nestedSections,
 	}
 }

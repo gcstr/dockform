@@ -117,7 +117,7 @@ func TestPlanner_BuildPlan_AddRemoveStart(t *testing.T) {
 	contains(t, out, "× volume vOld will be removed")
 	contains(t, out, "↑ network n1 will be created")
 	contains(t, out, "× network nOld will be removed")
-	contains(t, out, "↑ service app/nginx will be started")
+	contains(t, out, "↑ nginx will be started")
 	contains(t, out, "× container other_name will be removed")
 }
 
@@ -133,7 +133,7 @@ func TestPlanner_BuildPlan_IdentifierMismatch(t *testing.T) {
 	}
 	out := pln.String()
 	// Accept either reconciled (preferred) or started (if ps parsing not engaged in this environment)
-	if !strings.Contains(out, "will be reconciled (identifier mismatch)") && !strings.Contains(out, "service app/nginx will be started") {
+	if !strings.Contains(out, "will be reconciled (identifier mismatch)") && !strings.Contains(out, "nginx will be started") {
 		t.Fatalf("expected reconcile or start line; got:\n%s", out)
 	}
 }
@@ -150,7 +150,7 @@ func TestPlanner_BuildPlan_ConfigDriftAndMatch(t *testing.T) {
 		t.Fatalf("build plan: %v", err)
 	}
 	out := pln.String()
-	if !strings.Contains(out, "config drift (hash)") && !strings.Contains(out, "service app/nginx will be started") {
+	if !strings.Contains(out, "config drift (hash)") && !strings.Contains(out, "nginx will be started") {
 		t.Fatalf("expected drift or start line; got:\n%s", out)
 	}
 
@@ -163,7 +163,7 @@ func TestPlanner_BuildPlan_ConfigDriftAndMatch(t *testing.T) {
 		t.Fatalf("build plan: %v", err)
 	}
 	out2 := pln2.String()
-	if !strings.Contains(out2, "up-to-date") && !strings.Contains(out2, "service app/nginx will be started") {
+	if !strings.Contains(out2, "up-to-date") && !strings.Contains(out2, "nginx will be started") {
 		t.Fatalf("expected up-to-date or start line; got:\n%s", out2)
 	}
 }

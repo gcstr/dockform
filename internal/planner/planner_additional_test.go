@@ -56,7 +56,7 @@ func TestBuildPlan_NoDocker_AppsPlannedTBD(t *testing.T) {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	out := pln.String()
-	if !strings.Contains(out, "application app planned (services diff TBD)") {
+	if !strings.Contains(out, "planned (services diff TBD)") {
 		t.Fatalf("expected planned TBD line; got:\n%s", out)
 	}
 }
@@ -71,7 +71,7 @@ func TestBuildPlan_ComposeConfigError(t *testing.T) {
 	}
 	// With the new ServiceStateDetector, compose config errors result in fallback "TBD" messages instead of hard errors
 	out := pln.String()
-	if !strings.Contains(out, "application app planned (services diff TBD)") {
+	if !strings.Contains(out, "planned (services diff TBD)") {
 		t.Fatalf("expected TBD fallback for compose config error, got:\n%s", out)
 	}
 }

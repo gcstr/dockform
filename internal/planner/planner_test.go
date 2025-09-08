@@ -173,8 +173,8 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 	mustContain(t, out, "× volume vOld will be removed")
 	mustContain(t, out, "↑ network n1 will be created")
 	mustContain(t, out, "× network nOld will be removed")
-	// Service to be started
-	mustContain(t, out, "↑ service app/nginx will be started")
+	// Service to be started (now in nested format)
+	mustContain(t, out, "↑ nginx will be started")
 	// Container removal from ListComposeContainersAll
 	mustContain(t, out, "× container other_name will be removed")
 }
@@ -193,7 +193,7 @@ func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
 		t.Fatalf("build plan: %v", err)
 	}
 	out := pln.String()
-	mustContain(t, out, "→ service app/nginx will be reconciled (identifier mismatch)")
+	mustContain(t, out, "→ nginx will be reconciled (identifier mismatch)")
 }
 
 func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
@@ -204,7 +204,7 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
 		// Mix of explicit volumes and volumes from filesets
-		Volumes: map[string]manifest.TopLevelResourceSpec{"explicit-vol": {}, "shared-data": {}},
+		Volumes:  map[string]manifest.TopLevelResourceSpec{"explicit-vol": {}, "shared-data": {}},
 		Filesets: map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "fileset-vol", TargetPath: "/app"}},
 		Networks: map[string]manifest.TopLevelResourceSpec{"n1": {}},
 	}
@@ -225,8 +225,8 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 	// Networks should work as before
 	mustContain(t, out, "↑ network n1 will be created")
 	mustContain(t, out, "× network nOld will be removed")
-	// Service should work as before
-	mustContain(t, out, "↑ service app/nginx will be started")
+	// Service should work as before (now in nested format)
+	mustContain(t, out, "↑ nginx will be started")
 }
 
 func TestApply_PropagatesVolumeListError(t *testing.T) {
