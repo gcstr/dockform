@@ -118,7 +118,10 @@ func TestPlanner_BuildPlan_AddRemoveStart(t *testing.T) {
 	contains(t, out, "↑ n1 will be created")
 	contains(t, out, "× nOld will be deleted")
 	contains(t, out, "↑ nginx will be created")
-	contains(t, out, "× other_name will be deleted")
+	// Removed containers section; expect service deletion under Applications
+	if !strings.Contains(out, "× other will be deleted") {
+		t.Fatalf("expected service deletion for unmanaged container; got:\n%s", out)
+	}
 }
 
 func TestPlanner_BuildPlan_IdentifierMismatch(t *testing.T) {

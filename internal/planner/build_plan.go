@@ -85,15 +85,25 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		return nil, err
 	}
 
-	// Track desired services for container removal planning
+	// Track services that should be removed (group under Applications by project)
 	if p.docker != nil {
 		desiredServices := p.collectDesiredServices(ctx, cfg)
 		if len(desiredServices) > 0 {
 			if all, err := p.docker.ListComposeContainersAll(ctx); err == nil {
+				toDelete := map[string]map[string]struct{}{}
 				for _, it := range all {
 					if _, want := desiredServices[it.Service]; !want {
-						resourcePlan.Containers = append(resourcePlan.Containers,
-							NewResource(ResourceContainer, it.Name, ActionDelete, ""))
+						if toDelete[it.Project] == nil {
+							toDelete[it.Project] = map[string]struct{}{}
+						}
+						toDelete[it.Project][it.Service] = struct{}{}
+					}
+				}
+				// Add deletions under Applications section
+				for appName, services := range toDelete {
+					for svc := range services {
+						resourcePlan.Applications[appName] = append(resourcePlan.Applications[appName],
+							NewResource(ResourceService, svc, ActionDelete, ""))
 					}
 				}
 			}

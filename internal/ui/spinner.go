@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -35,6 +36,13 @@ func NewSpinner(out io.Writer, label string) *Spinner {
 	enabled := false
 	if f, ok := out.(*os.File); ok && isatty.IsTerminal(f.Fd()) {
 		enabled = true
+	}
+	// Allow disabling the spinner via environment variable.
+	// If DOCKFORM_SPINNER_HIDDEN is truthy (e.g., "1", "true"), the spinner is disabled.
+	if v := os.Getenv("DOCKFORM_SPINNER_HIDDEN"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil && b {
+			enabled = false
+		}
 	}
 	return &Spinner{
 		out:     out,
@@ -115,3 +123,4 @@ func (s *Spinner) Stop() {
 		s.spacerAdded = false
 	}
 }
+

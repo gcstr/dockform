@@ -175,8 +175,8 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 	mustContain(t, out, "× nOld will be deleted")
 	// Service to be created (now in nested format)
 	mustContain(t, out, "↑ nginx will be created")
-	// Container removal from ListComposeContainersAll
-	mustContain(t, out, "× other_name will be deleted")
+	// Unmanaged running service should appear under Applications for deletion
+	mustContain(t, out, "× other will be deleted")
 }
 
 func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
