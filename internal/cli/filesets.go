@@ -106,7 +106,7 @@ func filterFilesetLines(s string) string {
 		if inFilesetSection && trimmed != "" {
 			out = append(out, l)
 			// Check if this line has an actual fileset action (contains icons)
-			if strings.Contains(l, "↑") || strings.Contains(l, "×") || strings.Contains(l, "→") || strings.Contains(l, "●") {
+			if strings.Contains(l, "↑") || strings.Contains(l, "×") || strings.Contains(l, "→") || strings.Contains(l, "✓") {
 				foundFilesetContent = true
 			}
 		}

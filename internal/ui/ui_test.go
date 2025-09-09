@@ -62,7 +62,7 @@ func TestRenderSectionedList_ShowsItemsWithIcons(t *testing.T) {
 	// Check that the output has the expected structure
 	expected := []string{
 		"Applications",  // Section header
-		"  ● noop item", // Two-space indented items with icons
+		"  ✓ noop item", // Two-space indented items with icons
 		"  ↑ add item",
 		"  × remove item",
 		"  → change item",
@@ -147,7 +147,7 @@ func TestRenderNestedSections_ShowsNestedStructure(t *testing.T) {
 		"  assets",             // Another nested section
 		"    × delete old.css", // Its items
 		"Applications",         // Regular section
-		"  ● app1 running",     // Regular items (2 spaces)
+		"  ✓ app1 running",     // Regular items (2 spaces)
 	}
 
 	for _, exp := range expected {

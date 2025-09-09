@@ -157,7 +157,7 @@ func getIconForChangeType(changeType ChangeType) string {
 	case Info:
 		return styleInfo.Render("")
 	case Noop:
-		return styleNoop.Render("●")
+		return styleNoop.Render("✓")
 	case Add:
 		return styleAdd.Render("↑")
 	case Remove:
@@ -281,7 +281,7 @@ func SectionTitle(title string) string {
 // FormatPlanSummary renders a plan summary with bold "Plan:" prefix.
 func FormatPlanSummary(createCount, changeCount, destroyCount int) string {
 	boldPlan := lipgloss.NewStyle().Bold(true).Render("Plan:")
-	summaryText := fmt.Sprintf(" %d to create, %d to change, and %d to destroy", createCount, changeCount, destroyCount)
+	summaryText := fmt.Sprintf(" %d to create, %d to change, and %d to destroy\n", createCount, changeCount, destroyCount)
 	return boldPlan + summaryText
 }
 
