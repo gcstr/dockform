@@ -170,13 +170,13 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 	out := pln.String()
 	// Check volume/network adds and removals (new icon-based UI)
 	mustContain(t, out, "↑ v1 will be created")
-	mustContain(t, out, "× vOld will be removed")
+	mustContain(t, out, "× vOld will be deleted")
 	mustContain(t, out, "↑ n1 will be created")
-	mustContain(t, out, "× nOld will be removed")
-	// Service to be started (now in nested format)
-	mustContain(t, out, "↑ nginx will be started")
+	mustContain(t, out, "× nOld will be deleted")
+	// Service to be created (now in nested format)
+	mustContain(t, out, "↑ nginx will be created")
 	// Container removal from ListComposeContainersAll
-	mustContain(t, out, "× container other_name will be removed")
+	mustContain(t, out, "× other_name will be deleted")
 }
 
 func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
@@ -221,12 +221,12 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 	// 2. Volumes from filesets should also be created
 	mustContain(t, out, "↑ fileset-vol will be created")
 	// 3. Old volume should be removed
-	mustContain(t, out, "× vOld will be removed")
+	mustContain(t, out, "× vOld will be deleted")
 	// Networks should work as before
 	mustContain(t, out, "↑ n1 will be created")
-	mustContain(t, out, "× nOld will be removed")
+	mustContain(t, out, "× nOld will be deleted")
 	// Service should work as before (now in nested format)
-	mustContain(t, out, "↑ nginx will be started")
+	mustContain(t, out, "↑ nginx will be created")
 }
 
 func TestApply_PropagatesVolumeListError(t *testing.T) {

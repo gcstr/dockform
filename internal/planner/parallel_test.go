@@ -2,12 +2,11 @@ package planner
 
 import (
 	"context"
-	"strings"
+	"fmt"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
-	"github.com/gcstr/dockform/internal/ui"
 )
 
 // TestParallelVsSequentialSameResults verifies that parallel processing produces the same results as sequential
@@ -86,24 +85,24 @@ func TestParallelVsSequentialSameResults(t *testing.T) {
 	
 	// Compare the results - for this test we'll compare the structure rather than exact output
 	// since removal ordering can be non-deterministic in parallel processing
-	sequentialLines := sequentialPlan.Lines
-	parallelLines := parallelPlan.Lines
+	sequentialResources := sequentialPlan.Resources.AllResources()
+	parallelResources := parallelPlan.Resources.AllResources()
 	
-	if len(sequentialLines) != len(parallelLines) {
-		t.Errorf("Different number of plan lines: sequential=%d, parallel=%d", 
-			len(sequentialLines), len(parallelLines))
+	if len(sequentialResources) != len(parallelResources) {
+		t.Errorf("Different number of plan resources: sequential=%d, parallel=%d", 
+			len(sequentialResources), len(parallelResources))
 		return
 	}
 	
 	// Count different types of operations to ensure they match
-	sequentialCounts := countLineTypes(sequentialLines)
-	parallelCounts := countLineTypes(parallelLines)
+	sequentialCounts := countResourceActions(sequentialResources)
+	parallelCounts := countResourceActions(parallelResources)
 	
-	for lineType, seqCount := range sequentialCounts {
-		parCount, exists := parallelCounts[lineType]
+	for action, seqCount := range sequentialCounts {
+		parCount, exists := parallelCounts[action]
 		if !exists || seqCount != parCount {
 			t.Errorf("Mismatch in %s operations: sequential=%d, parallel=%d", 
-				lineType, seqCount, parCount)
+				action, seqCount, parCount)
 		}
 	}
 }
@@ -226,55 +225,12 @@ func TestServiceStateDetectorConfiguration(t *testing.T) {
 	}
 }
 
-// countLineTypes counts different types of UI operations for comparison
-func countLineTypes(lines []ui.DiffLine) map[string]int {
+// countResourceActions counts different types of resource actions for comparison
+func countResourceActions(resources []Resource) map[string]int {
 	counts := make(map[string]int)
-	for _, line := range lines {
-		// Create a key based on operation type and general content
-		text := line.Message
-		var key string
-		switch line.Type {
-		case ui.Add:
-			if strings.Contains(text, "volume") {
-				key = "add_volume"
-			} else if strings.Contains(text, "network") {
-				key = "add_network"
-			} else if strings.Contains(text, "service") {
-				key = "add_service"
-			} else {
-				key = "add_other"
-			}
-		case ui.Remove:
-			if strings.Contains(text, "volume") {
-				key = "remove_volume"
-			} else if strings.Contains(text, "network") {
-				key = "remove_network"
-			} else if strings.Contains(text, "service") {
-				key = "remove_service"
-			} else {
-				key = "remove_other"
-			}
-		case ui.Change:
-			if strings.Contains(text, "fileset") {
-				key = "change_fileset"
-			} else if strings.Contains(text, "service") {
-				key = "change_service"
-			} else {
-				key = "change_other"
-			}
-		case ui.Noop:
-			if strings.Contains(text, "application") {
-				key = "noop_application"
-			} else if strings.Contains(text, "fileset") {
-				key = "noop_fileset"
-			} else if strings.Contains(text, "service") {
-				key = "noop_service"
-			} else {
-				key = "noop_other"
-			}
-		default:
-			key = "unknown"
-		}
+	for _, comp := range resources {
+		// Create a key based on resource type and action
+		key := fmt.Sprintf("%s_%s", comp.Type, comp.Action)
 		counts[key]++
 	}
 	return counts

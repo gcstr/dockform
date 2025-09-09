@@ -114,11 +114,11 @@ func TestPlanner_BuildPlan_AddRemoveStart(t *testing.T) {
 	}
 	out := pln.String()
 	contains(t, out, "↑ v1 will be created")
-	contains(t, out, "× vOld will be removed")
+	contains(t, out, "× vOld will be deleted")
 	contains(t, out, "↑ n1 will be created")
-	contains(t, out, "× nOld will be removed")
-	contains(t, out, "↑ nginx will be started")
-	contains(t, out, "× container other_name will be removed")
+	contains(t, out, "× nOld will be deleted")
+	contains(t, out, "↑ nginx will be created")
+	contains(t, out, "× other_name will be deleted")
 }
 
 func TestPlanner_BuildPlan_IdentifierMismatch(t *testing.T) {
@@ -132,9 +132,9 @@ func TestPlanner_BuildPlan_IdentifierMismatch(t *testing.T) {
 		t.Fatalf("build plan: %v", err)
 	}
 	out := pln.String()
-	// Accept either reconciled (preferred) or started (if ps parsing not engaged in this environment)
-	if !strings.Contains(out, "will be reconciled (identifier mismatch)") && !strings.Contains(out, "nginx will be started") {
-		t.Fatalf("expected reconcile or start line; got:\n%s", out)
+	// With new system, identifier mismatch results in reconcile action
+	if !strings.Contains(out, "→ nginx will be reconciled (identifier mismatch)") && !strings.Contains(out, "↑ nginx will be created") {
+		t.Fatalf("expected reconcile or create line; got:\n%s", out)
 	}
 }
 
@@ -150,8 +150,8 @@ func TestPlanner_BuildPlan_ConfigDriftAndMatch(t *testing.T) {
 		t.Fatalf("build plan: %v", err)
 	}
 	out := pln.String()
-	if !strings.Contains(out, "config drift (hash)") && !strings.Contains(out, "nginx will be started") {
-		t.Fatalf("expected drift or start line; got:\n%s", out)
+	if !strings.Contains(out, "→ nginx will be updated (config drift)") && !strings.Contains(out, "↑ nginx will be created") {
+		t.Fatalf("expected update or create line; got:\n%s", out)
 	}
 
 	// Match case
@@ -163,8 +163,8 @@ func TestPlanner_BuildPlan_ConfigDriftAndMatch(t *testing.T) {
 		t.Fatalf("build plan: %v", err)
 	}
 	out2 := pln2.String()
-	if !strings.Contains(out2, "up-to-date") && !strings.Contains(out2, "nginx will be started") {
-		t.Fatalf("expected up-to-date or start line; got:\n%s", out2)
+	if !strings.Contains(out2, "up-to-date") && !strings.Contains(out2, "↑ nginx will be created") {
+		t.Fatalf("expected up-to-date or create line; got:\n%s", out2)
 	}
 }
 

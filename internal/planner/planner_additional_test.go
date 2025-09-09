@@ -166,13 +166,26 @@ func TestPrune_Precondition_NoDocker(t *testing.T) {
 }
 
 func TestPlanString_Grouping(t *testing.T) {
-	pl := &Plan{Lines: []ui.DiffLine{
-		ui.Line(ui.Add, "volume v1 will be created"),
-		ui.Line(ui.Add, "network n1 will be created"),
-		ui.Line(ui.Add, "service app/s1 will be started"),
-		ui.Line(ui.Add, "fileset fs: create a"),
-		ui.Line(ui.Noop, "nothing to do"),
-	}}
+	pl := &Plan{
+		Resources: &ResourcePlan{
+			Volumes: []Resource{
+				NewResource(ResourceVolume, "v1", ActionCreate, ""),
+			},
+			Networks: []Resource{
+				NewResource(ResourceNetwork, "n1", ActionCreate, ""),
+			},
+			Applications: map[string][]Resource{
+				"app": {
+					NewResource(ResourceService, "s1", ActionCreate, ""),
+				},
+			},
+			Filesets: map[string][]Resource{
+				"fs": {
+					NewResource(ResourceFile, "a", ActionCreate, ""),
+				},
+			},
+		},
+	}
 	out := ui.StripANSI(pl.String())
 	if !strings.Contains(out, "Volumes") || !strings.Contains(out, "Networks") || !strings.Contains(out, "Applications") || !strings.Contains(out, "Filesets") {
 		t.Fatalf("expected grouped section titles; got:\n%s", out)

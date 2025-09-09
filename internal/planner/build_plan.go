@@ -2,18 +2,23 @@ package planner
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 
 	"github.com/gcstr/dockform/internal/filesets"
 	"github.com/gcstr/dockform/internal/manifest"
-	"github.com/gcstr/dockform/internal/ui"
 )
 
-// BuildPlan currently produces a minimal plan for top-level volumes and networks.
-// Future: inspect docker for current state and diff services/apps.
+// BuildPlan produces a structured plan with resources organized by type.
 func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, error) {
-	var lines []ui.DiffLine
+	resourcePlan := &ResourcePlan{
+		Volumes:      []Resource{},
+		Networks:     []Resource{},
+		Applications: make(map[string][]Resource),
+		Filesets:     make(map[string][]Resource),
+		Containers:   []Resource{},
+	}
 
 	// Accumulate existing sets when docker client is available
 	var existingVolumes, existingNetworks map[string]struct{}
@@ -21,15 +26,15 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		existingVolumes, existingNetworks = p.getExistingResourcesConcurrently(ctx)
 	}
 
-	// Deterministic ordering for stable output - combine volumes from filesets and explicit volumes
+	// Plan volumes - combine volumes from filesets and explicit volumes
 	desiredVolumes := map[string]struct{}{}
 	for _, fileset := range cfg.Filesets {
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
 	}
-	// Add explicit volumes from manifest
 	for name := range cfg.Volumes {
 		desiredVolumes[name] = struct{}{}
 	}
+	
 	volNames := sortedKeys(desiredVolumes)
 	for _, name := range volNames {
 		exists := false
@@ -37,18 +42,22 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 			_, exists = existingVolumes[name]
 		}
 		if exists {
-			lines = append(lines, ui.Line(ui.Noop, "volume %s exists", name))
+			resourcePlan.Volumes = append(resourcePlan.Volumes, 
+				NewResource(ResourceVolume, name, ActionNoop, "exists"))
 		} else {
-			lines = append(lines, ui.Line(ui.Add, "volume %s will be created", name))
+			resourcePlan.Volumes = append(resourcePlan.Volumes, 
+				NewResource(ResourceVolume, name, ActionCreate, ""))
 		}
 	}
-	// Plan removals for labeled volumes no longer needed by any fileset
+	// Plan removals for labeled volumes no longer needed
 	for name := range existingVolumes {
 		if _, want := desiredVolumes[name]; !want {
-			lines = append(lines, ui.Line(ui.Remove, "volume %s will be removed", name))
+			resourcePlan.Volumes = append(resourcePlan.Volumes, 
+				NewResource(ResourceVolume, name, ActionDelete, ""))
 		}
 	}
 
+	// Plan networks
 	netNames := sortedKeys(cfg.Networks)
 	for _, name := range netNames {
 		exists := false
@@ -56,24 +65,25 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 			_, exists = existingNetworks[name]
 		}
 		if exists {
-			lines = append(lines, ui.Line(ui.Noop, "network %s exists", name))
+			resourcePlan.Networks = append(resourcePlan.Networks, 
+				NewResource(ResourceNetwork, name, ActionNoop, "exists"))
 		} else {
-			lines = append(lines, ui.Line(ui.Add, "network %s will be created", name))
+			resourcePlan.Networks = append(resourcePlan.Networks, 
+				NewResource(ResourceNetwork, name, ActionCreate, ""))
 		}
 	}
 	// Plan removals for labeled networks no longer in config
 	for name := range existingNetworks {
 		if _, want := cfg.Networks[name]; !want {
-			lines = append(lines, ui.Line(ui.Remove, "network %s will be removed", name))
+			resourcePlan.Networks = append(resourcePlan.Networks, 
+				NewResource(ResourceNetwork, name, ActionDelete, ""))
 		}
 	}
 
 	// Applications: compose planned vs running diff
-	appLines, err := p.buildApplicationPlan(ctx, cfg)
-	if err != nil {
+	if err := p.buildApplicationResources(ctx, cfg, resourcePlan); err != nil {
 		return nil, err
 	}
-	lines = append(lines, appLines...)
 
 	// Track desired services for container removal planning
 	if p.docker != nil {
@@ -82,7 +92,8 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 			if all, err := p.docker.ListComposeContainersAll(ctx); err == nil {
 				for _, it := range all {
 					if _, want := desiredServices[it.Service]; !want {
-						lines = append(lines, ui.Line(ui.Remove, "container %s will be removed", it.Name))
+						resourcePlan.Containers = append(resourcePlan.Containers,
+							NewResource(ResourceContainer, it.Name, ActionDelete, ""))
 					}
 				}
 			}
@@ -91,42 +102,50 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 
 	// Filesets: show per-file changes using remote index when available
 	if p.docker != nil && len(cfg.Filesets) > 0 {
-		filesetLines := p.buildFilesetPlanConcurrently(ctx, cfg.Filesets, existingVolumes)
-		lines = append(lines, filesetLines...)
+		p.buildFilesetResources(ctx, cfg.Filesets, existingVolumes, resourcePlan)
 	}
 
-	if len(lines) == 0 {
-		lines = append(lines, ui.Line(ui.Noop, "nothing to do"))
+	// Check if we have any resources
+	hasResources := len(resourcePlan.Volumes) > 0 || len(resourcePlan.Networks) > 0 ||
+		len(resourcePlan.Applications) > 0 || len(resourcePlan.Filesets) > 0 || 
+		len(resourcePlan.Containers) > 0
+	
+	if !hasResources {
+		// Add a special "nothing to do" resource
+		resourcePlan.Volumes = append(resourcePlan.Volumes, 
+			NewResource(ResourceVolume, "nothing to do", ActionNoop, "nothing to do"))
 	}
-	return &Plan{Lines: lines}, nil
+
+	return &Plan{Resources: resourcePlan}, nil
 }
 
-// buildApplicationPlan analyzes applications and returns diff lines for services.
-func (p *Planner) buildApplicationPlan(ctx context.Context, cfg manifest.Config) ([]ui.DiffLine, error) {
+// buildApplicationResources analyzes applications and adds service resources to the plan.
+func (p *Planner) buildApplicationResources(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
 	if len(cfg.Applications) == 0 {
-		return []ui.DiffLine{ui.Line(ui.Noop, "no applications defined")}, nil
+		// No applications to process
+		return nil
 	}
 
 	if p.docker == nil {
 		// Without Docker client, we can only show planned applications
-		var lines []ui.DiffLine
 		for appName := range cfg.Applications {
-			lines = append(lines, ui.Line(ui.Noop, "application %s planned (services diff TBD)", appName))
+			plan.Applications[appName] = []Resource{
+				NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"),
+			}
 		}
-		return lines, nil
+		return nil
 	}
 
 	// Choose parallel or sequential processing based on configuration
 	if p.parallel {
-		return p.buildApplicationPlanParallel(ctx, cfg)
+		return p.buildApplicationResourcesParallel(ctx, cfg, plan)
 	}
-	return p.buildApplicationPlanSequential(ctx, cfg)
+	return p.buildApplicationResourcesSequential(ctx, cfg, plan)
 }
 
-// buildApplicationPlanSequential processes applications one by one (original implementation)
-func (p *Planner) buildApplicationPlanSequential(ctx context.Context, cfg manifest.Config) ([]ui.DiffLine, error) {
+// buildApplicationResourcesSequential processes applications one by one
+func (p *Planner) buildApplicationResourcesSequential(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
 	detector := NewServiceStateDetector(p.docker)
-	var lines []ui.DiffLine
 
 	// Process applications in sorted order for deterministic output
 	appNames := make([]string, 0, len(cfg.Applications))
@@ -140,40 +159,51 @@ func (p *Planner) buildApplicationPlanSequential(ctx context.Context, cfg manife
 		services, err := detector.DetectAllServicesState(ctx, appName, app, cfg.Docker.Identifier, cfg.Sops)
 		if err != nil {
 			// Fallback to "TBD" for any errors during planning
-			lines = append(lines, ui.Line(ui.Noop, "application %s planned (services diff TBD)", appName))
+			plan.Applications[appName] = []Resource{
+				NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"),
+			}
 			continue
 		}
 
 		if len(services) == 0 {
-			lines = append(lines, ui.Line(ui.Noop, "application %s planned (services diff TBD)", appName))
+			plan.Applications[appName] = []Resource{
+				NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"),
+			}
 			continue
 		}
 
-		// Convert service states to UI lines
+		// Convert service states to resources
+		var appResources []Resource
 		for _, service := range services {
 			switch service.State {
 			case ServiceMissing:
-				lines = append(lines, ui.Line(ui.Add, "service %s/%s will be started", service.AppName, service.Name))
+				appResources = append(appResources,
+					NewResource(ResourceService, service.Name, ActionCreate, ""))
 			case ServiceIdentifierMismatch:
-				lines = append(lines, ui.Line(ui.Change, "service %s/%s will be reconciled (identifier mismatch)", service.AppName, service.Name))
+				appResources = append(appResources, 
+					NewResource(ResourceService, service.Name, ActionReconcile, "identifier mismatch"))
 			case ServiceDrifted:
-				lines = append(lines, ui.Line(ui.Change, "service %s/%s config drift (hash)", service.AppName, service.Name))
+				appResources = append(appResources, 
+					NewResource(ResourceService, service.Name, ActionUpdate, "config drift"))
 			case ServiceRunning:
 				if service.DesiredHash != "" {
-					lines = append(lines, ui.Line(ui.Noop, "service %s/%s up-to-date", service.AppName, service.Name))
+					appResources = append(appResources, 
+						NewResource(ResourceService, service.Name, ActionNoop, "up-to-date"))
 				} else {
 					// Fallback when hash is unavailable
-					lines = append(lines, ui.Line(ui.Noop, "service %s/%s running", service.AppName, service.Name))
+					appResources = append(appResources, 
+						NewResource(ResourceService, service.Name, ActionNoop, "running"))
 				}
 			}
 		}
+		plan.Applications[appName] = appResources
 	}
 
-	return lines, nil
+	return nil
 }
 
-// buildApplicationPlanParallel processes applications concurrently for faster planning
-func (p *Planner) buildApplicationPlanParallel(ctx context.Context, cfg manifest.Config) ([]ui.DiffLine, error) {
+// buildApplicationResourcesParallel processes applications concurrently for faster planning
+func (p *Planner) buildApplicationResourcesParallel(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
 	detector := NewServiceStateDetector(p.docker).WithParallel(true)
 
 	// Sort app names for deterministic processing
@@ -184,52 +214,58 @@ func (p *Planner) buildApplicationPlanParallel(ctx context.Context, cfg manifest
 	sort.Strings(appNames)
 
 	type appResult struct {
-		appName string
-		lines   []ui.DiffLine
-		order   int
+		appName   string
+		resources []Resource
 	}
 
 	resultsChan := make(chan appResult, len(appNames))
 	var wg sync.WaitGroup
 
 	// Process each application concurrently
-	for i, appName := range appNames {
+	for _, appName := range appNames {
 		wg.Add(1)
-		go func(appName string, order int) {
+		go func(appName string) {
 			defer wg.Done()
 
 			app := cfg.Applications[appName]
 			services, err := detector.DetectAllServicesState(ctx, appName, app, cfg.Docker.Identifier, cfg.Sops)
 
-			var lines []ui.DiffLine
+			var resources []Resource
 			if err != nil {
 				// Fallback to "TBD" for any errors during planning
-				lines = append(lines, ui.Line(ui.Noop, "application %s planned (services diff TBD)", appName))
+				resources = append(resources,
+					NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"))
 			} else if len(services) == 0 {
-				lines = append(lines, ui.Line(ui.Noop, "application %s planned (services diff TBD)", appName))
+				resources = append(resources,
+					NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"))
 			} else {
-				// Convert service states to UI lines
+				// Convert service states to resources
 				for _, service := range services {
 					switch service.State {
 					case ServiceMissing:
-						lines = append(lines, ui.Line(ui.Add, "service %s/%s will be started", service.AppName, service.Name))
+						resources = append(resources,
+							NewResource(ResourceService, service.Name, ActionCreate, ""))
 					case ServiceIdentifierMismatch:
-						lines = append(lines, ui.Line(ui.Change, "service %s/%s will be reconciled (identifier mismatch)", service.AppName, service.Name))
+						resources = append(resources, 
+							NewResource(ResourceService, service.Name, ActionReconcile, "identifier mismatch"))
 					case ServiceDrifted:
-						lines = append(lines, ui.Line(ui.Change, "service %s/%s config drift (hash)", service.AppName, service.Name))
+						resources = append(resources, 
+							NewResource(ResourceService, service.Name, ActionUpdate, "config drift"))
 					case ServiceRunning:
 						if service.DesiredHash != "" {
-							lines = append(lines, ui.Line(ui.Noop, "service %s/%s up-to-date", service.AppName, service.Name))
+							resources = append(resources, 
+								NewResource(ResourceService, service.Name, ActionNoop, "up-to-date"))
 						} else {
 							// Fallback when hash is unavailable
-							lines = append(lines, ui.Line(ui.Noop, "service %s/%s running", service.AppName, service.Name))
+							resources = append(resources, 
+								NewResource(ResourceService, service.Name, ActionNoop, "running"))
 						}
 					}
 				}
 			}
 
-			resultsChan <- appResult{appName: appName, lines: lines, order: order}
-		}(appName, i)
+			resultsChan <- appResult{appName: appName, resources: resources}
+		}(appName)
 	}
 
 	// Wait for all applications to complete
@@ -238,19 +274,12 @@ func (p *Planner) buildApplicationPlanParallel(ctx context.Context, cfg manifest
 		close(resultsChan)
 	}()
 
-	// Collect results in original order to maintain deterministic output
-	results := make([]appResult, len(appNames))
+	// Collect results and add to plan
 	for result := range resultsChan {
-		results[result.order] = result
+		plan.Applications[result.appName] = result.resources
 	}
 
-	// Combine lines in deterministic order
-	var allLines []ui.DiffLine
-	for _, result := range results {
-		allLines = append(allLines, result.lines...)
-	}
-
-	return allLines, nil
+	return nil
 }
 
 // collectDesiredServices returns a map of all service names that should be running.
@@ -315,35 +344,36 @@ func (p *Planner) getExistingResourcesConcurrently(ctx context.Context) (volumes
 	return volumes, networks
 }
 
-// buildFilesetPlanConcurrently processes fileset diffs in parallel
-func (p *Planner) buildFilesetPlanConcurrently(ctx context.Context, filesetSpecs map[string]manifest.FilesetSpec, existingVolumes map[string]struct{}) []ui.DiffLine {
+// buildFilesetResources processes fileset diffs in parallel and adds them to the plan
+func (p *Planner) buildFilesetResources(ctx context.Context, filesetSpecs map[string]manifest.FilesetSpec, existingVolumes map[string]struct{}, plan *ResourcePlan) {
 	filesetNames := sortedKeys(filesetSpecs)
 	if len(filesetNames) == 0 {
-		return nil
+		return
 	}
 
 	type filesetResult struct {
-		name  string
-		lines []ui.DiffLine
-		order int
+		name       string
+		resources []Resource
 	}
 
 	resultsChan := make(chan filesetResult, len(filesetNames))
 	var wg sync.WaitGroup
 
 	// Process each fileset concurrently
-	for i, name := range filesetNames {
+	for _, name := range filesetNames {
 		wg.Add(1)
-		go func(name string, order int) {
+		go func(name string) {
 			defer wg.Done()
 			a := filesetSpecs[name]
-			var lines []ui.DiffLine
+			var resources []Resource
 
 			// Build local index
 			local, err := filesets.BuildLocalIndex(a.SourceAbs, a.TargetPath, a.Exclude)
 			if err != nil {
-				lines = append(lines, ui.Line(ui.Change, "fileset %s: unable to index local files: %v", name, err))
-				resultsChan <- filesetResult{name: name, lines: lines, order: order}
+				resources = append(resources, 
+					NewResource(ResourceFile, "", ActionUpdate, 
+						fmt.Sprintf("unable to index local files: %v", err)))
+				resultsChan <- filesetResult{name: name, resources: resources}
 				return
 			}
 
@@ -356,24 +386,29 @@ func (p *Planner) buildFilesetPlanConcurrently(ctx context.Context, filesetSpecs
 			diff := filesets.DiffIndexes(local, remote)
 
 			if local.TreeHash == remote.TreeHash {
-				lines = append(lines, ui.Line(ui.Noop, "fileset %s: no file changes", name))
+				resources = append(resources, 
+					NewResource(ResourceFile, "", ActionNoop, "no file changes"))
 			} else {
 				for _, f := range diff.ToCreate {
-					lines = append(lines, ui.Line(ui.Add, "fileset %s: create %s", name, f.Path))
+					resources = append(resources, 
+						NewResource(ResourceFile, f.Path, ActionCreate, ""))
 				}
 				for _, f := range diff.ToUpdate {
-					lines = append(lines, ui.Line(ui.Change, "fileset %s: update %s", name, f.Path))
+					resources = append(resources, 
+						NewResource(ResourceFile, f.Path, ActionUpdate, ""))
 				}
 				for _, pth := range diff.ToDelete {
-					lines = append(lines, ui.Line(ui.Remove, "fileset %s: delete %s", name, pth))
+					resources = append(resources, 
+						NewResource(ResourceFile, pth, ActionDelete, ""))
 				}
 				if len(diff.ToCreate) == 0 && len(diff.ToUpdate) == 0 && len(diff.ToDelete) == 0 {
-					lines = append(lines, ui.Line(ui.Change, "fileset %s: changes detected (details unavailable)", name))
+					resources = append(resources, 
+						NewResource(ResourceFile, "", ActionUpdate, "changes detected (details unavailable)"))
 				}
 			}
 
-			resultsChan <- filesetResult{name: name, lines: lines, order: order}
-		}(name, i)
+			resultsChan <- filesetResult{name: name, resources: resources}
+		}(name)
 	}
 
 	// Wait for all filesets to complete
@@ -382,17 +417,8 @@ func (p *Planner) buildFilesetPlanConcurrently(ctx context.Context, filesetSpecs
 		close(resultsChan)
 	}()
 
-	// Collect results in order
-	results := make([]filesetResult, len(filesetNames))
+	// Collect results and add to plan
 	for result := range resultsChan {
-		results[result.order] = result
+		plan.Filesets[result.name] = result.resources
 	}
-
-	// Combine lines in deterministic order
-	var allLines []ui.DiffLine
-	for _, result := range results {
-		allLines = append(allLines, result.lines...)
-	}
-
-	return allLines
 }

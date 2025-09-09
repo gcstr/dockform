@@ -18,8 +18,8 @@ func TestPlan_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
 		t.Fatalf("plan execute: %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "↓ ") && !strings.Contains(got, " will be removed") {
-		t.Fatalf("expected remove lines in plan; got: %s", got)
+	if !strings.Contains(got, "× ") && !strings.Contains(got, " will be deleted") {
+		t.Fatalf("expected delete lines in plan; got: %s", got)
 	}
 }
 
@@ -59,8 +59,8 @@ case "$cmd" in
 		t.Fatalf("plan execute: %v", err)
 	}
 	got := out.String()
-	if strings.Contains(got, "↓ ") || strings.Contains(got, " will be removed") {
-		t.Fatalf("did not expect any remove lines; got: %s", got)
+	if strings.Contains(got, "× ") || strings.Contains(got, " will be deleted") {
+		t.Fatalf("did not expect any delete lines; got: %s", got)
 	}
 }
 
