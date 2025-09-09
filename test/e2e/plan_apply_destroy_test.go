@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/ui"
 )
 
 var (
@@ -207,8 +208,9 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	if pCode != 0 {
 		t.Fatalf("plan failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", pCode, pOut, pErr)
 	}
-	if !strings.Contains(pOut, "Docker") || !strings.Contains(pOut, "Context: default") || !strings.Contains(pOut, "Identifier: demo") {
-		t.Fatalf("plan output missing Docker section/context/identifier:\n%s", pOut)
+	plain := ui.StripANSI(pOut)
+	if !strings.Contains(plain, "Context: default") || !strings.Contains(plain, "Identifier: demo") {
+		t.Fatalf("plan output missing context/identifier:\n%s", pOut)
 	}
 	aOut, aErr, aCode := runCmdWithStdinDetailed(t, root, env, bin, "yes\n", "apply", "-c", exampleCfg)
 	if aCode != 0 {

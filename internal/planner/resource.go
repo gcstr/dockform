@@ -118,7 +118,8 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 	if len(rp.Volumes) > 0 {
 		var items []ui.DiffLine
 		for _, res := range rp.Volumes {
-			msg := fmt.Sprintf("%s %s", res.Name, res.FormatAction())
+			name := ui.Italic(res.Name)
+			msg := fmt.Sprintf("%s %s", name, res.FormatAction())
 			items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
 		}
 		sections = append(sections, ui.NestedSection{Title: "Volumes", Items: items})
@@ -128,7 +129,8 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 	if len(rp.Networks) > 0 {
 		var items []ui.DiffLine
 		for _, res := range rp.Networks {
-			msg := fmt.Sprintf("%s %s", res.Name, res.FormatAction())
+			name := ui.Italic(res.Name)
+			msg := fmt.Sprintf("%s %s", name, res.FormatAction())
 			items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
 		}
 		sections = append(sections, ui.NestedSection{Title: "Networks", Items: items})
@@ -151,7 +153,8 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 			
 			for _, res := range services {
 				// For services, we don't repeat the app name since it's in the section title
-				msg := fmt.Sprintf("%s %s", res.Name, res.FormatAction())
+				name := ui.Italic(res.Name)
+				msg := fmt.Sprintf("%s %s", name, res.FormatAction())
 				items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
 			}
 			
@@ -192,7 +195,8 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 					}
 				} else if res.Name != "" {
 					// File-specific action
-					msg = fmt.Sprintf("%s %s", res.Action, res.Name)
+					fname := ui.Italic(res.Name)
+					msg = fmt.Sprintf("%s %s", res.Action, fname)
 				} else {
 					// General fileset message
 					msg = res.FormatAction()
@@ -217,7 +221,8 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 	if len(rp.Containers) > 0 {
 		var items []ui.DiffLine
 		for _, res := range rp.Containers {
-			msg := fmt.Sprintf("%s %s", res.Name, res.FormatAction())
+			name := ui.Italic(res.Name)
+			msg := fmt.Sprintf("%s %s", name, res.FormatAction())
 			items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
 		}
 		sections = append(sections, ui.NestedSection{Title: "Containers", Items: items})

@@ -19,9 +19,9 @@ func TestValidate_Success_PrintsMessage(t *testing.T) {
 		t.Fatalf("validate execute: %v", err)
 	}
 	got := out.String()
-	// Should include Docker info and success message
-	if !strings.Contains(got, "Docker") {
-		t.Fatalf("expected Docker info in output, got: %q", got)
+	// Should include environment info (Context/Identifier) and success message
+	if !strings.Contains(got, "Context:") || !strings.Contains(got, "Identifier:") {
+		t.Fatalf("expected context/identifier in output, got: %q", got)
 	}
 	if !strings.Contains(got, "validation successful") {
 		t.Fatalf("expected validation success message in output, got: %q", got)

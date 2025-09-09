@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/manifest"
@@ -14,14 +15,10 @@ func displayDockerInfo(pr ui.Printer, cfg *manifest.Config) {
 		ctxName = "default"
 	}
 
-	sections := []ui.Section{
-		{
-			Title: "Docker",
-			Items: []ui.DiffLine{
-				ui.Line(ui.Info, "Context: %s", ctxName),
-				ui.Line(ui.Info, "Identifier: %s", cfg.Docker.Identifier),
-			},
-		},
+	// Render with a simple left border, no header
+	lines := []string{
+		fmt.Sprintf("│ Context: %s", ui.Italic(ctxName)),
+		fmt.Sprintf("│ Identifier: %s", ui.Italic(cfg.Docker.Identifier)),
 	}
-	pr.Plain("\n%s", strings.TrimRight(ui.RenderSectionedList(sections), "\n"))
+	pr.Plain("\n%s", strings.Join(lines, "\n"))
 }

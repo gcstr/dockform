@@ -28,8 +28,20 @@ var (
 				Foreground(lipgloss.AdaptiveColor{Light: "#3478F6", Dark: "#4A9EFF"}).
 				Padding(0, 0)
 
-	styleNestedSectionTitle = lipgloss.NewStyle().Bold(true)
+	styleUsingTitle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}).
+				Padding(0, 0)
+
+	styleNestedSectionTitle = lipgloss.NewStyle().Bold(true).Italic(true)
+
+	styleItalicName = lipgloss.NewStyle().Italic(true)
 )
+
+// Italic renders the given string in italic style (used for resource and file names).
+func Italic(s string) string {
+	return styleItalicName.Render(s)
+}
 
 // Section represents a header and its list of items for rendering.
 type Section struct {
@@ -60,8 +72,12 @@ func RenderSectionedList(sections []Section) string {
 		}
 		firstSection = false
 
-		// Section header with bold styling
-		result.WriteString(styleSectionTitle.Render(section.Title))
+		// Section header with bold styling (override for "Using")
+		titleStyle := styleSectionTitle
+		if section.Title == "Using" {
+			titleStyle = styleUsingTitle
+		}
+		result.WriteString(titleStyle.Render(section.Title))
 		result.WriteString("\n")
 
 		// Render items with two-space indentation and icons
@@ -111,8 +127,12 @@ func RenderNestedSections(sections []NestedSection) string {
 		}
 		firstSection = false
 
-		// Section header with blue background styling
-		result.WriteString(styleSectionTitle.Render(section.Title))
+		// Section header with styling (override for "Using")
+		titleStyle := styleSectionTitle
+		if section.Title == "Using" {
+			titleStyle = styleUsingTitle
+		}
+		result.WriteString(titleStyle.Render(section.Title))
 		result.WriteString("\n")
 
 		// Render direct items with two-space indentation and icons

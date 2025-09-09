@@ -21,6 +21,9 @@ type Spinner struct {
 	delay   time.Duration
 	enabled bool
 
+	// spacer ensures a blank line above the spinner while running
+	spacerAdded bool
+
 	stopCh chan struct{}
 	doneCh chan struct{}
 	mu     sync.Mutex
@@ -51,6 +54,11 @@ func (s *Spinner) Start() {
 	defer s.mu.Unlock()
 	if !s.enabled || s.stopCh == nil || s.doneCh == nil {
 		return
+	}
+	// Insert a visual spacer line before spinner so it doesn't hug previous output
+	if !s.spacerAdded {
+		_, _ = fmt.Fprint(s.out, "\n")
+		s.spacerAdded = true
 	}
 	// If already running, do nothing
 	select {
@@ -95,9 +103,15 @@ func (s *Spinner) Stop() {
 	// Signal stop
 	select {
 	case <-s.doneCh:
-		return
+		// already stopped
 	default:
 		close(s.stopCh)
 		<-s.doneCh
+	}
+	// After the spinner line is cleared by the goroutine, also remove the spacer line
+	if s.spacerAdded {
+		// Move cursor up one line and clear it
+		_, _ = fmt.Fprint(s.out, "\x1b[1A\x1b[2K")
+		s.spacerAdded = false
 	}
 }
