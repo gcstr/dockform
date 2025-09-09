@@ -3,9 +3,16 @@ name: CI
 on:
   push:
     branches: ["**"]
+    paths-ignore:
+      - 'README.md'
+      - '*.svg'
+      - '*.png'
   pull_request:
     branches: ["**"]
-
+    paths-ignore:
+      - 'README.md'
+      - '*.svg'
+      - '*.png'
 jobs:
   lint:
     runs-on: ubuntu-latest

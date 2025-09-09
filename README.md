@@ -1,144 +1,124 @@
-## Dockform
+<p align="center">
+  <br/>
+  <picture>
+    <source srcset="logo_light.svg" media="(prefers-color-scheme: light)" width="100"/>
+    <source srcset="logo_dark.svg"  media="(prefers-color-scheme: dark)" width="100"/>
+    <img src="logo_light.svg" alt="Description of what the image shows" width="100"/>
+  </picture>
+  <br/>
+  <img src="plan.png" alt="Description of what the image shows" width="600"/>
+  <br/>
+  <img src="https://github.com/gcstr/dockform/actions/workflows/ci.yml/badge.svg">
+</p>
 
-Manage Docker Compose projects declaratively: plan, apply, and prune to keep Docker in sync with a YAML-defined desired state.
+# Dockform
 
-### Features
+Dockform is a thin layer on top of docker compose for declarative configurations.  
+Manage volumes, network, secrets, and even configuration files in a fully declarative way.
 
-- Declarative config: define applications, volumes, and networks in YAML.
-- Safe apply: shows a colorized plan before making changes.
-- Idempotent operations: only changes what’s needed.
-- Automatic pruning: removes labeled orphans after apply.
-- Identifier scoping: labels every managed resource to avoid collisions.
-- Hash-based diffs: compares desired vs running compose config-hash.
+The state is defined in a single manifest file:
 
-### Install
+```yaml
+docker:
+  context: orbstack
+  identifier: staging
 
-Requires Go 1.22+
+environment:
+  inline:
+    - GLOBAL_VAR=value
+    - ENVIRONMENT=production
 
+sops:
+  age:
+    key_file: ${AGE_KEY_FILE}
+
+applications:
+  traefik:
+    root: traefik
+  linkwarden:
+    root: linkwarden
+    secrets:
+      sops:
+        - secrets.env
+  vaultwarden:
+    root: vaultwarden
+  web:
+    root: web
+
+networks:
+  traefik:
+
+volumes:
+  vw-data:
+  linkwarden_pgdata:
+  linkwarden_data:
+  linkwarden_meili_data:
+
+filesets:
+  traefik:
+    source: traefik/config
+    target_volume: traefik_config
+    target_path: /etc/traefik
+    restart_services:
+      - traefik
+    exclude:
+      - "**/.DS_Store"
+```
+
+## Docs
+
+Please visit https://dockform.io for the full documentation.
+
+## Features
+
+- Declarative configuration in a single YAML file
+- Idempotent operations
+- Transparent config files management
+- Git-friendly secrets 
+- Unobtrusive and familiar workflow
+
+## Install
+
+### From source
 ```sh
 go build ./cmd/dockform
 ```
 
-This produces a `dockform` binary in the repo root.
+This produces a `dockform` binary in the repo root. Move it to any folder in `$PATH` to use it.
+
+### Go
+
+```sh
+go install github.com/gcstr/dockform@latest
+```
+
+### Homebrew
+
+```sh
+brew tap dockform/tap
+brew install dockform
+```
+
+Also, precompiled binaries available at the [releases](https://github.com/gcstr/dockform/releases) page.
 
 ### Quick Start
 
-1) Build (see above)
-2) Preview changes with the example config:
+You can bootstrap a new Dockform project using the init command:
 
 ```sh
-./dockform plan -f ./example/config.yml
+dockform init
 ```
 
-3) Apply changes (you’ll be asked to confirm):
+This will create a new manifest file in the current folder based on the default template.  
+
+Plan
 
 ```sh
-./dockform apply -f ./example/config.yml
+dockform plan
 ```
 
-To run non-interactively (e.g., CI), bypass confirmation with:
+And finally, apply the state to your docker daemon
 
 ```sh
-./dockform apply --skip-confirmation -f ./example/config.yml
+dockform apply 
 ```
-
-### Configuration
-
-Dockform reads a YAML file describing your desired state. Minimal example:
-
-```yaml
-docker:
-  context: "default"         # docker CLI context name
-  identifier: "my-project"   # optional; used to label and scope managed resources
-
-applications:
-  website:
-    root: ./example/website
-    files:
-      - docker-compose.yaml
-    project:
-      name: website
-
-networks:
-  demo-network: {}
-
-# Volumes are automatically created/managed via filesets
-filesets:
-  assets:
-    source: ./assets
-    target_volume: website-data
-    target_path: /var/www/html
-```
-
-Remote Docker? Configure a context first:
-
-```sh
-docker context create \
-  --docker host=ssh://user@host \
-  --description="Remote daemon" \
-  my-remote-docker
-
-docker context use my-remote-docker
-```
-
-### How It Works
-
-- Identifier labeling: all managed resources get label `io.dockform/<identifier>=1`.
-- Service comparison: desired hash uses `docker compose config --hash <service>` (with a temp overlay to include the label). Running hash is read from `com.docker.compose.config-hash` on containers.
-- Actions:
-  - `[noop]` no change required
-  - `↑` create/start
-  - `→` change/update
-  - `↓` prune orphaned/labeled resources
-
-### CLI Reference
-
-Global flags:
-
-- `-c, --config`: Path to configuration file or directory (defaults to `dockform.yml` or `dockform.yaml` in current directory)
-- `-v, --verbose`: Verbose error output
-
-Commands:
-
-- `dockform plan [flags]`
-  - Parses/validates config and prints a plan of changes.
-
-- `dockform apply [flags]`
-  - Prints the plan, applies changes, then prunes labeled orphans.
-  - Prompts for confirmation; use `--skip-confirmation` to bypass.
-
-- `dockform filesets plan [flags]`
-  - Prints only fileset-related plan lines.
-
-- `dockform filesets apply [flags]`
-  - Applies only fileset diffs (no confirmation prompt).
-
-- `dockform validate [flags]`
-  - Validates configuration and environment (e.g., Docker context).
-
-- `dockform secrets ...`
-  - Secret management helpers (see `dockform secrets --help`).
-
-- `dockform manifest ...`
-  - Manifest helpers (see `dockform manifest --help`).
-
-### Non-interactive / CI
-
-Use `--skip-confirmation` with `apply` to disable the interactive prompt.
-
-```sh
-dockform apply --skip-confirmation -c ./dockform.yml
-```
-
-### Troubleshooting
-
-- Docker daemon/context errors: ensure the daemon is reachable from the selected context.
-- Exit codes:
-  - 2: invalid input
-  - 69/70: unavailable/timeout/external errors (e.g., docker failures)
-  - 1: unexpected error
-
-### Project
-
-Project home: https://github.com/gcstr/dockform
-
