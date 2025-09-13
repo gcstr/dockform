@@ -21,18 +21,17 @@ func TestResolveConfigPath_ExplicitFile_ReturnsSame(t *testing.T) {
 
 func TestResolveConfigPath_DirectorySearchOrder(t *testing.T) {
 	dir := t.TempDir()
-	// prefer dockform.yaml over dockform.yml when both exist and searched in order
-	// we create only one at a time to assert matching
-	pathYaml := filepath.Join(dir, "dockform.yaml")
-	if err := os.WriteFile(pathYaml, []byte("docker: {}\n"), 0o644); err != nil {
+	// prefer dockform.yml first
+	pathYml := filepath.Join(dir, "dockform.yml")
+	if err := os.WriteFile(pathYml, []byte("docker: {}\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	got, err := resolveConfigPath(dir)
 	if err != nil {
 		t.Fatalf("resolve dir: %v", err)
 	}
-	if got != pathYaml {
-		t.Fatalf("expected %s, got %s", pathYaml, got)
+	if got != pathYml {
+		t.Fatalf("expected %s, got %s", pathYml, got)
 	}
 }
 

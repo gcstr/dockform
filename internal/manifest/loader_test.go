@@ -10,7 +10,7 @@ import (
 
 func TestResolveConfigPath_DirectoryPreferenceOrder(t *testing.T) {
 	dir := t.TempDir()
-	// Both files exist; resolver should pick dockform.yaml first
+	// Both files exist; resolver should pick dockform.yml first
 	yamlPath := filepath.Join(dir, "dockform.yaml")
 	ymlPath := filepath.Join(dir, "dockform.yml")
 	if err := os.WriteFile(yamlPath, []byte("docker:\n  identifier: x\n"), 0o644); err != nil {
@@ -24,8 +24,8 @@ func TestResolveConfigPath_DirectoryPreferenceOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveConfigPath: %v", err)
 	}
-	if got != yamlPath {
-		t.Fatalf("expected %q, got %q", yamlPath, got)
+	if got != ymlPath {
+		t.Fatalf("expected %q, got %q", ymlPath, got)
 	}
 }
 

@@ -58,7 +58,8 @@ func LoadWithWarnings(path string) (Config, []string, error) {
 }
 
 // Load reads and validates configuration from the provided path. When path is empty,
-// it searches for dockform.yml or dockform.yaml in the current working directory.
+// it searches for manifest files in this order in the current working directory:
+// dockform.yml, dockform.yaml, Dockform.yml, Dockform.yaml
 func Load(path string) (Config, error) {
 	cfg, missing, err := LoadWithWarnings(path)
 	if err != nil {
@@ -142,7 +143,7 @@ func resolveConfigPath(path string) (string, error) {
 		// If user provided a path, allow either a directory or a file.
 		if info, err := os.Stat(path); err == nil {
 			if info.IsDir() {
-				for _, name := range []string{"dockform.yaml", "dockform.yml"} {
+				for _, name := range []string{"dockform.yml", "dockform.yaml", "Dockform.yml", "Dockform.yaml"} {
 					candidate := filepath.Join(path, name)
 					_, statErr := os.Stat(candidate)
 					if statErr == nil {
@@ -152,7 +153,7 @@ func resolveConfigPath(path string) (string, error) {
 						return "", apperr.Wrap("manifest.resolveConfigPath", apperr.Internal, statErr, "stat %s", candidate)
 					}
 				}
-				return "", apperr.New("manifest.resolveConfigPath", apperr.NotFound, "no config file found in %s (looked for dockform.yaml or dockform.yml)", path)
+				return "", apperr.New("manifest.resolveConfigPath", apperr.NotFound, "no config file found in %s (looked for dockform.yml, dockform.yaml, Dockform.yml, Dockform.yaml)", path)
 			}
 			// Path exists and is a file. Use it directly.
 			return path, nil
@@ -164,7 +165,7 @@ func resolveConfigPath(path string) (string, error) {
 	if err != nil {
 		return "", apperr.Wrap("manifest.resolveConfigPath", apperr.Internal, err, "getwd")
 	}
-	for _, name := range []string{"dockform.yaml", "dockform.yml"} {
+	for _, name := range []string{"dockform.yml", "dockform.yaml", "Dockform.yml", "Dockform.yaml"} {
 		candidate := filepath.Join(cwd, name)
 		_, statErr := os.Stat(candidate)
 		if statErr == nil {
@@ -175,5 +176,5 @@ func resolveConfigPath(path string) (string, error) {
 		}
 		return "", apperr.Wrap("manifest.resolveConfigPath", apperr.Internal, statErr, "stat %s", candidate)
 	}
-	return "", apperr.New("manifest.resolveConfigPath", apperr.NotFound, "no config file found (looked for dockform.yaml or dockform.yml)")
+	return "", apperr.New("manifest.resolveConfigPath", apperr.NotFound, "no config file found (looked for dockform.yml, dockform.yaml, Dockform.yml, Dockform.yaml)")
 }
