@@ -16,6 +16,7 @@ build/
 dist/
 out/
 coverage/
+docs/
 
 # Go vendor (if used)
 vendor/

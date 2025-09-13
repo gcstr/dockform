@@ -59,6 +59,9 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newSecretCmd())
 	cmd.AddCommand(newManifestCmd())
 
+	// Register optional developer-only commands
+	registerDocsCmd(cmd)
+
 	cmd.SetHelpTemplate(cmd.HelpTemplate() + "\n\nProject home: https://github.com/gcstr/dockform\n")
 
 	cmd.SetVersionTemplate(fmt.Sprintf("%s\n", VersionDetailed()))

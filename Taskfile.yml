@@ -120,3 +120,9 @@ tasks:
       - '{{.GO}} run github.com/goreleaser/goreleaser/v2@latest release --clean'
 
 
+  docs:cli:
+    desc: Generate CLI docs from Cobra into docs/cli
+    cmds:
+      - '{{.GO}} run -tags dev {{.MAIN}} docs --out docs/cli'
+
+
