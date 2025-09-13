@@ -21,6 +21,7 @@ var (
 	date    = ""
 	builtBy = ""
 )
+
 // Execute runs the root command and handles error formatting and exit codes.
 func Execute() int {
 	cmd := newRootCmd()
@@ -48,7 +49,7 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 
-	cmd.PersistentFlags().StringP("config", "c", "", "Path to configuration file or directory (defaults to dockform.yml or dockform.yaml in current directory)")
+	cmd.PersistentFlags().StringP("config", "c", "", "Path to configuration file or directory (defaults: dockform.yml, dockform.yaml, Dockform.yml, Dockform.yaml in current directory)")
 	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose error output")
 
 	cmd.AddCommand(newInitCmd())
@@ -70,7 +71,7 @@ func newRootCmd() *cobra.Command {
 	return cmd
 }
 
-func Version() string { 
+func Version() string {
 	return version
 }
 
@@ -97,14 +98,14 @@ func TestPrintUserFriendly(err error) {
 
 func provideExternalErrorHints(err error) {
 	msg := err.Error()
-	
+
 	if strings.Contains(msg, "invalid compose file") {
 		fmt.Fprintln(os.Stderr, "\nHint: Check your Docker Compose file syntax")
 		fmt.Fprintln(os.Stderr, "      Try: docker compose config --quiet")
 		fmt.Fprintln(os.Stderr, "      Try: docker compose -f <file> config")
 		return
 	}
-	
+
 	if strings.Contains(msg, "compose") {
 		fmt.Fprintln(os.Stderr, "\nHint: Docker Compose operation failed")
 		fmt.Fprintln(os.Stderr, "      Check your compose files and Docker daemon status")
@@ -114,9 +115,9 @@ func provideExternalErrorHints(err error) {
 
 func provideDockerTroubleshootingHints(err error) {
 	msg := err.Error()
-	
+
 	fmt.Fprintln(os.Stderr, "\nHint: Is the Docker daemon running and reachable from the selected context?")
-	
+
 	// Context-specific hints
 	if strings.Contains(msg, "context=") && !strings.Contains(msg, "context=default") {
 		fmt.Fprintln(os.Stderr, "      Try: docker context ls")
@@ -124,7 +125,7 @@ func provideDockerTroubleshootingHints(err error) {
 	} else {
 		fmt.Fprintln(os.Stderr, "      Try: docker ps")
 	}
-	
+
 	// OS-specific hints
 	if strings.Contains(msg, "unix:///var/run/docker.sock") {
 		fmt.Fprintln(os.Stderr, "      On macOS/Linux: Check if Docker Desktop is running")
