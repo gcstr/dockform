@@ -1,101 +1,47 @@
 # Dockform Configuration Template
 # This file defines the desired state for your Docker Compose infrastructure
+# https://dockform.io/docs/manifest
 
-# Docker configuration
 docker:
-  # Docker context to use (default: default)
-  context: default
-  # Unique identifier for labeling managed resources
-  identifier: my-project
+  context: ""
+  identifier: ""
 
-# Global environment variables (optional)
 environment:
-  # Environment files to load globally
-  files:
-    - global.env
-  # Inline environment variables
-  inline:
-    - GLOBAL_VAR=value
-    - ENVIRONMENT=production
+  files: []
+  inline: []
 
-# Global secrets configuration (optional)
-# Requires SOPS for encryption: https://github.com/mozilla/sops
 sops:
   age:
-    # Path to AGE key file for SOPS decryption
-    key_file: ${AGE_KEY_FILE}
-  # AGE recipients for encrypting secrets
-  recipients:
-    - age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
+    key_file: ""
+  recipients: []
 
-# Global secrets (optional)
 secrets:
-  sops:
-    - secrets.env
+  sops: []
 
-# Docker Compose applications
 applications:
-  # Application name (must match ^[a-z0-9_.-]+$)
-  web:
-    # Directory containing docker-compose files (required)
-    root: ./web
-    # Docker Compose files (defaults to docker-compose.yaml or docker-compose.yml)
-    files:
-      - docker-compose.yml
-      - docker-compose.override.yml
-    # Compose profiles to activate
-    profiles:
-      - production
-    # Environment files for this application
-    env-file:
-      - .env
-    # Application-specific environment
+  app:
+    root: ""
+    files: []
+    profiles: []
+    env-file: []
     environment:
-      files:
-        - app.env
-      inline:
-        - APP_NAME=web
-        - DEBUG=false
-    # Application-specific secrets
+      files: []
+      inline: []
     secrets:
-      sops:
-        - secrets.env
-    # Docker Compose project configuration
+      sops: []
     project:
-      name: web-project
+      name: ""
 
-  # Example second application
-  api:
-    root: ./api
-    environment:
-      inline:
-        - SERVICE_NAME=api
-        - PORT=3000
-
-# Docker networks to create
 networks:
-  # Network name  
   app-network:
-  db-network:
 
-# File synchronization from local directories to Docker volumes (optional)
-# Volumes are automatically created/managed based on filesets target_volume
+volumes:
+  app-volume:
+
 filesets:
-  # Fileset name (must match ^[a-z0-9_.-]+$)
-  static-assets:
-    # Local source directory
-    source: ./assets
-    # Target volume to sync to (will be created automatically)
-    target_volume: app-data
-    # Path within the volume
-    target_path: /var/www/html/assets
-    # Services to restart when files change
-    restart_services:
-      - nginx
-      - php-fpm
-    # Files/patterns to exclude from sync
-    exclude:
-      - "**/.DS_Store"
-      - "*.tmp"
-      - "node_modules/**"
-      - ".git/**"
+  assets:
+    source: ""
+    target_volume: ""
+    target_path: ""
+    restart_services: []
+    exclude: []
