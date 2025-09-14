@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"os"
 	"strings"
 
@@ -30,12 +31,12 @@ func LoadConfigWithWarnings(cmd *cobra.Command, pr ui.Printer) (*manifest.Config
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Display warnings for missing environment variables
 	for _, name := range missing {
 		pr.Warn("environment variable %s is not set; replacing with empty string", name)
 	}
-	
+
 	return &cfg, nil
 }
 
@@ -74,19 +75,19 @@ func ProgressOperation(pr ui.StdPrinter, message string, operation func(*ui.Prog
 // SetupCLIContext performs the standard CLI setup: load config, create Docker client, validate, and create planner.
 func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-	
+
 	// Load configuration with warnings
 	cfg, err := LoadConfigWithWarnings(cmd, pr)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Display Docker info
 	displayDockerInfo(pr, cfg)
-	
+
 	// Create Docker client
 	docker := CreateDockerClient(cfg)
-	
+
 	// Validate in spinner
 	err = SpinnerOperation(pr, "Validating...", func() error {
 		return ValidateWithDocker(context.Background(), cfg, docker)
@@ -94,10 +95,10 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Create planner
 	planner := CreatePlanner(docker, pr)
-	
+
 	return &CLIContext{
 		Config:  cfg,
 		Docker:  docker,
@@ -110,13 +111,13 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 func (ctx *CLIContext) BuildPlan() (*planner.Plan, error) {
 	var plan *planner.Plan
 	var err error
-	
+
 	stdPr := ctx.Printer.(ui.StdPrinter)
 	err = SpinnerOperation(stdPr, "Planning...", func() error {
 		plan, err = ctx.Planner.BuildPlan(context.Background(), *ctx.Config)
 		return err
 	})
-	
+
 	return plan, err
 }
 
@@ -147,11 +148,11 @@ func GetConfirmation(cmd *cobra.Command, pr ui.Printer, opts ConfirmationOptions
 	if opts.SkipConfirmation {
 		return true, nil
 	}
-	
+
 	if opts.Message == "" {
-		opts.Message = "Dockform will apply the changes listed above.\nType yes to confirm."
+		opts.Message = "│ Dockform will apply the changes listed above.\n│ Type yes to confirm.\n│"
 	}
-	
+
 	// Check TTY status
 	inTTY := false
 	outTTY := false
@@ -161,30 +162,129 @@ func GetConfirmation(cmd *cobra.Command, pr ui.Printer, opts ConfirmationOptions
 	if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
 		outTTY = true
 	}
-	
+
 	if inTTY && outTTY {
-		// Interactive terminal: use Bubble Tea prompt
-		ok, entered, err := ui.ConfirmYesTTY(cmd.InOrStdin(), cmd.OutOrStdout())
+		// Interactive terminal: use Bubble Tea prompt which renders headers and input
+		ok, _, err := ui.ConfirmYesTTY(cmd.InOrStdin(), cmd.OutOrStdout())
 		if err != nil {
 			return false, err
 		}
-		// Echo the final input line to avoid duplicating the header prompt
-		pr.Plain(" Answer: %s", entered)
-		pr.Plain("")
-		return ok, nil
-	} else {
-		// Non-interactive: fall back to plain stdin read
-		pr.Plain("%s\n\nAnswer", opts.Message)
-		reader := bufio.NewReader(cmd.InOrStdin())
-		ans, _ := reader.ReadString('\n')
-		entered := strings.TrimRight(ans, "\n")
-		confirmed := strings.TrimSpace(entered) == "yes"
-		
-		// Echo user input only when stdin isn't a TTY
-		if f, ok := cmd.InOrStdin().(*os.File); !ok || !isatty.IsTerminal(f.Fd()) {
-			pr.Plain("%s", entered)
+		if ok {
+			pr.Plain("│ %s", ui.SuccessMark())
+			pr.Plain("")
+			return true, nil
 		}
+		pr.Plain("│ %s", ui.RedText("canceled"))
 		pr.Plain("")
-		return confirmed, nil
+		return false, nil
 	}
+
+	// Non-interactive: fall back to plain stdin read with bordered lines
+	pr.Plain("%s\n│ Answer", opts.Message)
+	reader := bufio.NewReader(cmd.InOrStdin())
+	ans, _ := reader.ReadString('\n')
+	entered := strings.TrimRight(ans, "\n")
+	confirmed := strings.TrimSpace(entered) == "yes"
+
+	// Echo user input only when stdin isn't a TTY
+	if f, ok := cmd.InOrStdin().(*os.File); !ok || !isatty.IsTerminal(f.Fd()) {
+		pr.Plain("%s", entered)
+	}
+
+	if confirmed {
+		pr.Plain("│ %s", ui.SuccessMark())
+		pr.Plain("")
+		return true, nil
+	}
+
+	pr.Plain("│ %s", ui.RedText("canceled"))
+	pr.Plain("")
+	return false, nil
+}
+
+// BuildDestroyPlan creates a destruction plan for all managed resources.
+func (ctx *CLIContext) BuildDestroyPlan() (*planner.Plan, error) {
+	var plan *planner.Plan
+	var err error
+
+	stdPr := ctx.Printer.(ui.StdPrinter)
+	err = SpinnerOperation(stdPr, "Discovering resources...", func() error {
+		plan, err = ctx.Planner.BuildDestroyPlan(context.Background(), *ctx.Config)
+		return err
+	})
+
+	return plan, err
+}
+
+// ExecuteDestroy executes the destruction of all managed resources.
+func (ctx *CLIContext) ExecuteDestroy(bgCtx context.Context) error {
+	stdPr := ctx.Printer.(ui.StdPrinter)
+	return ProgressOperation(stdPr, "Destroying", func(pb *ui.Progress) error {
+		return ctx.Planner.WithProgress(pb).Destroy(bgCtx, *ctx.Config)
+	})
+}
+
+// DestroyConfirmationOptions configures the destroy confirmation prompt behavior.
+type DestroyConfirmationOptions struct {
+	SkipConfirmation bool
+	Identifier       string
+}
+
+// GetDestroyConfirmation handles user confirmation for destroy operations,
+// requiring the user to type the identifier name.
+func GetDestroyConfirmation(cmd *cobra.Command, pr ui.Printer, opts DestroyConfirmationOptions) (bool, error) {
+	if opts.SkipConfirmation {
+		return true, nil
+	}
+
+	msgSummary := fmt.Sprintf("│ This will destroy ALL managed resources with identifier '%s'.\n│ This operation is IRREVERSIBLE.", opts.Identifier)
+	msgInstr := fmt.Sprintf("│ Type the identifier name '%s' to confirm.\n│", ui.ConfirmToken(opts.Identifier))
+
+	// Check TTY status
+	inTTY := false
+	outTTY := false
+	if f, ok := cmd.InOrStdin().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+		inTTY = true
+	}
+	if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+		outTTY = true
+	}
+
+	if inTTY && outTTY {
+		// Interactive terminal: Bubble Tea prompt renders the view; we just show result line after
+		ok, _, err := ui.ConfirmIdentifierTTY(cmd.InOrStdin(), cmd.OutOrStdout(), opts.Identifier)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			pr.Plain("│ %s", ui.SuccessMark())
+			pr.Plain("")
+			return true, nil
+		}
+		pr.Plain("│ %s", ui.RedText("canceled"))
+		pr.Plain("")
+		return false, nil
+	}
+
+	// Non-interactive: show bordered lines and read from stdin
+	pr.Plain("%s\n│\n%s\n│\n│ Answer", msgSummary, msgInstr)
+	reader := bufio.NewReader(cmd.InOrStdin())
+	ans, _ := reader.ReadString('\n')
+	entered := strings.TrimSpace(ans)
+	confirmed := entered == opts.Identifier
+
+	// Echo user input only when stdin isn't a TTY
+	if f, ok := cmd.InOrStdin().(*os.File); !ok || !isatty.IsTerminal(f.Fd()) {
+		pr.Plain("%s", entered)
+	}
+
+	if confirmed {
+		pr.Plain("│ %s", ui.SuccessMark())
+		pr.Plain("")
+		return true, nil
+	}
+
+	pr.Plain("│ %s", ui.RedText("canceled"))
+	pr.Plain("")
+	return false, nil
 }

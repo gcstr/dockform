@@ -55,6 +55,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newPlanCmd())
 	cmd.AddCommand(newApplyCmd())
+	cmd.AddCommand(newDestroyCmd())
 	cmd.AddCommand(newFilesetCmd())
 	cmd.AddCommand(newValidateCmd())
 	cmd.AddCommand(newSecretCmd())

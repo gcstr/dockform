@@ -29,9 +29,9 @@ var (
 				Padding(0, 0)
 
 	styleUsingTitle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}).
-				Padding(0, 0)
+			Bold(true).
+			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}).
+			Padding(0, 0)
 
 	styleNestedSectionTitle = lipgloss.NewStyle().Bold(true).Italic(true)
 
@@ -319,4 +319,19 @@ func StripRedundantPrefixes(message, sectionType string) string {
 		}
 	}
 	return message
+}
+
+// SuccessMark returns a green check mark for confirmations.
+func SuccessMark() string {
+	return styleAdd.Render("✓")
+}
+
+// RedText renders the provided text in red.
+func RedText(s string) string {
+	return styleRemove.Render(s)
+}
+
+// ConfirmToken renders a confirmation token (like "yes" or an identifier) in green, bold, italic.
+func ConfirmToken(s string) string {
+	return styleAdd.Bold(true).Italic(true).Render(s)
 }

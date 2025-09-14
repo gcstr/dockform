@@ -122,3 +122,18 @@ And finally, apply the state to your docker daemon
 ```sh
 dockform apply 
 ```
+
+## Project Structure
+
+```
+internal/
+├── cli/          # Command interface (Cobra-based)
+├── planner/      # Core business logic (plan-apply workflow)
+├── dockercli/    # Docker operations abstraction
+├── manifest/     # Configuration parsing & validation
+├── apperr/       # Structured error handling
+├── filesets/     # File synchronization logic
+├── secrets/      # SOPS integration
+├── ui/           # User interface components
+└── util/         # Shared utilities
+```
