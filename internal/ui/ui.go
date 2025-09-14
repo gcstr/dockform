@@ -13,15 +13,37 @@ import (
 )
 
 var (
-	styleInfo   = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // blue
-	styleNoop   = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // blue
-	styleAdd    = lipgloss.NewStyle().Foreground(lipgloss.Color("10")) // green
-	styleRemove = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // red
-	styleChange = lipgloss.NewStyle().Foreground(lipgloss.Color("11")) // yellow
+	// Define consistent colors using CompleteColor for precise control across all color profiles
+	blue = lipgloss.CompleteColor{
+		TrueColor: "#3B82F6", // Blue-500
+		ANSI256:   "33",      // Bright blue in 256-color palette
+		ANSI:      "4",       // Blue in 16-color palette
+	}
+	green = lipgloss.CompleteColor{
+		TrueColor: "#22C55E", // Green-500
+		ANSI256:   "46",      // Bright green in 256-color palette
+		ANSI:      "2",       // Green in 16-color palette
+	}
+	red = lipgloss.CompleteColor{
+		TrueColor: "#EF4444", // Red-500
+		ANSI256:   "196",     // Bright red in 256-color palette
+		ANSI:      "1",       // Red in 16-color palette
+	}
+	yellow = lipgloss.CompleteColor{
+		TrueColor: "#EAB308", // Yellow-500
+		ANSI256:   "220",     // Bright yellow in 256-color palette
+		ANSI:      "3",       // Yellow in 16-color palette
+	}
 
-	styleInfoPrefix  = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true) // blue
-	styleWarnPrefix  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // yellow
-	styleErrorPrefix = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)  // red
+	styleInfo   = lipgloss.NewStyle().Foreground(blue)
+	styleNoop   = lipgloss.NewStyle().Foreground(blue)
+	styleAdd    = lipgloss.NewStyle().Foreground(green)
+	styleRemove = lipgloss.NewStyle().Foreground(red)
+	styleChange = lipgloss.NewStyle().Foreground(yellow)
+
+	styleInfoPrefix  = lipgloss.NewStyle().Foreground(blue).Bold(true)
+	styleWarnPrefix  = lipgloss.NewStyle().Foreground(yellow).Bold(true)
+	styleErrorPrefix = lipgloss.NewStyle().Foreground(red).Bold(true)
 
 	styleSectionTitle = lipgloss.NewStyle().
 				Bold(true).
