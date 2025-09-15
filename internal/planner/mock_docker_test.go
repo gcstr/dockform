@@ -3,6 +3,7 @@ package planner
 import (
 	"context"
 	"io"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/dockercli"
 )
@@ -10,24 +11,24 @@ import (
 // mockDockerClient provides a mock implementation of DockerClient for testing.
 type mockDockerClient struct {
 	// Mock data to return
-	volumes           []string
-	networks          []string
-	containers        []dockercli.PsBrief
-	composePsItems    []dockercli.ComposePsItem
-	volumeFiles       map[string]string // volumeName -> file content
-	containerLabels   map[string]map[string]string // containerName -> labels
+	volumes         []string
+	networks        []string
+	containers      []dockercli.PsBrief
+	composePsItems  []dockercli.ComposePsItem
+	volumeFiles     map[string]string            // volumeName -> file content
+	containerLabels map[string]map[string]string // containerName -> labels
 
 	// Track operations performed
-	createdVolumes       []string
-	createdNetworks      []string
-	restartedContainers  []string
-	removedContainers    []string
-	removedVolumes       []string
-	removedNetworks      []string
-	writtenFiles         map[string]string // fileName -> content
-	extractedTars        []string // volume names that had tars extracted
-	removedPaths         map[string][]string // volumeName -> removed paths
-	
+	createdVolumes      []string
+	createdNetworks     []string
+	restartedContainers []string
+	removedContainers   []string
+	removedVolumes      []string
+	removedNetworks     []string
+	writtenFiles        map[string]string   // fileName -> content
+	extractedTars       []string            // volume names that had tars extracted
+	removedPaths        map[string][]string // volumeName -> removed paths
+
 	// Control behavior
 	listVolumesError   error
 	listNetworksError  error
@@ -39,21 +40,21 @@ type mockDockerClient struct {
 // newMockDocker creates a new mock Docker client with sensible defaults.
 func newMockDocker() *mockDockerClient {
 	return &mockDockerClient{
-		volumes:           []string{},
-		networks:          []string{},
-		containers:        []dockercli.PsBrief{},
-		composePsItems:    []dockercli.ComposePsItem{},
-		volumeFiles:       map[string]string{},
-		containerLabels:   map[string]map[string]string{},
-		createdVolumes:    []string{},
-		createdNetworks:   []string{},
+		volumes:             []string{},
+		networks:            []string{},
+		containers:          []dockercli.PsBrief{},
+		composePsItems:      []dockercli.ComposePsItem{},
+		volumeFiles:         map[string]string{},
+		containerLabels:     map[string]map[string]string{},
+		createdVolumes:      []string{},
+		createdNetworks:     []string{},
 		restartedContainers: []string{},
-		removedContainers:  []string{},
-		removedVolumes:     []string{},
-		removedNetworks:    []string{},
-		writtenFiles:       map[string]string{},
-		extractedTars:      []string{},
-		removedPaths:       map[string][]string{},
+		removedContainers:   []string{},
+		removedVolumes:      []string{},
+		removedNetworks:     []string{},
+		writtenFiles:        map[string]string{},
+		extractedTars:       []string{},
+		removedPaths:        map[string][]string{},
 	}
 }
 
@@ -190,6 +191,14 @@ func (m *mockDockerClient) InspectContainerLabels(ctx context.Context, container
 
 // Compose operations (minimal implementations for testing)
 func (m *mockDockerClient) ComposeConfigFull(ctx context.Context, root string, files []string, profiles []string, envFiles []string, inline []string) (dockercli.ComposeConfigDoc, error) {
+	// Return a valid config with nginx service for website directory
+	if strings.Contains(root, "website") {
+		return dockercli.ComposeConfigDoc{
+			Services: map[string]dockercli.ComposeService{
+				"nginx": {Image: "nginx:latest"},
+			},
+		}, nil
+	}
 	return dockercli.ComposeConfigDoc{}, nil
 }
 

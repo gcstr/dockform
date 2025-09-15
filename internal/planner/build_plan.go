@@ -34,7 +34,7 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 	for name := range cfg.Volumes {
 		desiredVolumes[name] = struct{}{}
 	}
-	
+
 	volNames := sortedKeys(desiredVolumes)
 	for _, name := range volNames {
 		exists := false
@@ -42,17 +42,17 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 			_, exists = existingVolumes[name]
 		}
 		if exists {
-			resourcePlan.Volumes = append(resourcePlan.Volumes, 
+			resourcePlan.Volumes = append(resourcePlan.Volumes,
 				NewResource(ResourceVolume, name, ActionNoop, "exists"))
 		} else {
-			resourcePlan.Volumes = append(resourcePlan.Volumes, 
+			resourcePlan.Volumes = append(resourcePlan.Volumes,
 				NewResource(ResourceVolume, name, ActionCreate, ""))
 		}
 	}
 	// Plan removals for labeled volumes no longer needed
 	for name := range existingVolumes {
 		if _, want := desiredVolumes[name]; !want {
-			resourcePlan.Volumes = append(resourcePlan.Volumes, 
+			resourcePlan.Volumes = append(resourcePlan.Volumes,
 				NewResource(ResourceVolume, name, ActionDelete, ""))
 		}
 	}
@@ -65,17 +65,17 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 			_, exists = existingNetworks[name]
 		}
 		if exists {
-			resourcePlan.Networks = append(resourcePlan.Networks, 
+			resourcePlan.Networks = append(resourcePlan.Networks,
 				NewResource(ResourceNetwork, name, ActionNoop, "exists"))
 		} else {
-			resourcePlan.Networks = append(resourcePlan.Networks, 
+			resourcePlan.Networks = append(resourcePlan.Networks,
 				NewResource(ResourceNetwork, name, ActionCreate, ""))
 		}
 	}
 	// Plan removals for labeled networks no longer in config
 	for name := range existingNetworks {
 		if _, want := cfg.Networks[name]; !want {
-			resourcePlan.Networks = append(resourcePlan.Networks, 
+			resourcePlan.Networks = append(resourcePlan.Networks,
 				NewResource(ResourceNetwork, name, ActionDelete, ""))
 		}
 	}
@@ -88,23 +88,23 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 	// Track services that should be removed (group under Applications by project)
 	if p.docker != nil {
 		desiredServices := p.collectDesiredServices(ctx, cfg)
-		if len(desiredServices) > 0 {
-			if all, err := p.docker.ListComposeContainersAll(ctx); err == nil {
-				toDelete := map[string]map[string]struct{}{}
-				for _, it := range all {
-					if _, want := desiredServices[it.Service]; !want {
-						if toDelete[it.Project] == nil {
-							toDelete[it.Project] = map[string]struct{}{}
-						}
-						toDelete[it.Project][it.Service] = struct{}{}
+		// Check for orphaned containers even if no desired services exist
+		// This handles the case where the entire applications: map is removed
+		if all, err := p.docker.ListComposeContainersAll(ctx); err == nil {
+			toDelete := map[string]map[string]struct{}{}
+			for _, it := range all {
+				if _, want := desiredServices[it.Service]; !want {
+					if toDelete[it.Project] == nil {
+						toDelete[it.Project] = map[string]struct{}{}
 					}
+					toDelete[it.Project][it.Service] = struct{}{}
 				}
-				// Add deletions under Applications section
-				for appName, services := range toDelete {
-					for svc := range services {
-						resourcePlan.Applications[appName] = append(resourcePlan.Applications[appName],
-							NewResource(ResourceService, svc, ActionDelete, ""))
-					}
+			}
+			// Add deletions under Applications section
+			for appName, services := range toDelete {
+				for svc := range services {
+					resourcePlan.Applications[appName] = append(resourcePlan.Applications[appName],
+						NewResource(ResourceService, svc, ActionDelete, ""))
 				}
 			}
 		}
@@ -117,12 +117,12 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 
 	// Check if we have any resources
 	hasResources := len(resourcePlan.Volumes) > 0 || len(resourcePlan.Networks) > 0 ||
-		len(resourcePlan.Applications) > 0 || len(resourcePlan.Filesets) > 0 || 
+		len(resourcePlan.Applications) > 0 || len(resourcePlan.Filesets) > 0 ||
 		len(resourcePlan.Containers) > 0
-	
+
 	if !hasResources {
 		// Add a special "nothing to do" resource
-		resourcePlan.Volumes = append(resourcePlan.Volumes, 
+		resourcePlan.Volumes = append(resourcePlan.Volumes,
 			NewResource(ResourceVolume, "nothing to do", ActionNoop, "nothing to do"))
 	}
 
@@ -190,18 +190,18 @@ func (p *Planner) buildApplicationResourcesSequential(ctx context.Context, cfg m
 				appResources = append(appResources,
 					NewResource(ResourceService, service.Name, ActionCreate, ""))
 			case ServiceIdentifierMismatch:
-				appResources = append(appResources, 
+				appResources = append(appResources,
 					NewResource(ResourceService, service.Name, ActionReconcile, "identifier mismatch"))
 			case ServiceDrifted:
-				appResources = append(appResources, 
+				appResources = append(appResources,
 					NewResource(ResourceService, service.Name, ActionUpdate, "config drift"))
 			case ServiceRunning:
 				if service.DesiredHash != "" {
-					appResources = append(appResources, 
+					appResources = append(appResources,
 						NewResource(ResourceService, service.Name, ActionNoop, "up-to-date"))
 				} else {
 					// Fallback when hash is unavailable
-					appResources = append(appResources, 
+					appResources = append(appResources,
 						NewResource(ResourceService, service.Name, ActionNoop, "running"))
 				}
 			}
@@ -256,18 +256,18 @@ func (p *Planner) buildApplicationResourcesParallel(ctx context.Context, cfg man
 						resources = append(resources,
 							NewResource(ResourceService, service.Name, ActionCreate, ""))
 					case ServiceIdentifierMismatch:
-						resources = append(resources, 
+						resources = append(resources,
 							NewResource(ResourceService, service.Name, ActionReconcile, "identifier mismatch"))
 					case ServiceDrifted:
-						resources = append(resources, 
+						resources = append(resources,
 							NewResource(ResourceService, service.Name, ActionUpdate, "config drift"))
 					case ServiceRunning:
 						if service.DesiredHash != "" {
-							resources = append(resources, 
+							resources = append(resources,
 								NewResource(ResourceService, service.Name, ActionNoop, "up-to-date"))
 						} else {
 							// Fallback when hash is unavailable
-							resources = append(resources, 
+							resources = append(resources,
 								NewResource(ResourceService, service.Name, ActionNoop, "running"))
 						}
 					}
@@ -362,7 +362,7 @@ func (p *Planner) buildFilesetResources(ctx context.Context, filesetSpecs map[st
 	}
 
 	type filesetResult struct {
-		name       string
+		name      string
 		resources []Resource
 	}
 
@@ -380,8 +380,8 @@ func (p *Planner) buildFilesetResources(ctx context.Context, filesetSpecs map[st
 			// Build local index
 			local, err := filesets.BuildLocalIndex(a.SourceAbs, a.TargetPath, a.Exclude)
 			if err != nil {
-				resources = append(resources, 
-					NewResource(ResourceFile, "", ActionUpdate, 
+				resources = append(resources,
+					NewResource(ResourceFile, "", ActionUpdate,
 						fmt.Sprintf("unable to index local files: %v", err)))
 				resultsChan <- filesetResult{name: name, resources: resources}
 				return
@@ -396,23 +396,23 @@ func (p *Planner) buildFilesetResources(ctx context.Context, filesetSpecs map[st
 			diff := filesets.DiffIndexes(local, remote)
 
 			if local.TreeHash == remote.TreeHash {
-				resources = append(resources, 
+				resources = append(resources,
 					NewResource(ResourceFile, "", ActionNoop, "no file changes"))
 			} else {
 				for _, f := range diff.ToCreate {
-					resources = append(resources, 
+					resources = append(resources,
 						NewResource(ResourceFile, f.Path, ActionCreate, ""))
 				}
 				for _, f := range diff.ToUpdate {
-					resources = append(resources, 
+					resources = append(resources,
 						NewResource(ResourceFile, f.Path, ActionUpdate, ""))
 				}
 				for _, pth := range diff.ToDelete {
-					resources = append(resources, 
+					resources = append(resources,
 						NewResource(ResourceFile, pth, ActionDelete, ""))
 				}
 				if len(diff.ToCreate) == 0 && len(diff.ToUpdate) == 0 && len(diff.ToDelete) == 0 {
-					resources = append(resources, 
+					resources = append(resources,
 						NewResource(ResourceFile, "", ActionUpdate, "changes detected (details unavailable)"))
 				}
 			}
