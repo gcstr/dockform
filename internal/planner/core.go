@@ -12,9 +12,9 @@ type Planner struct {
 	parallel bool
 }
 
-func New() *Planner { return &Planner{} }
+func New() *Planner { return &Planner{parallel: true} }
 
-func NewWithDocker(client DockerClient) *Planner { return &Planner{docker: client} }
+func NewWithDocker(client DockerClient) *Planner { return &Planner{docker: client, parallel: true} }
 
 // WithPrinter sets the output printer for user-facing messages during apply/prune.
 func (p *Planner) WithPrinter(pr ui.Printer) *Planner {

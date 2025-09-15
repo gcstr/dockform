@@ -15,12 +15,12 @@ func TestParallelVsSequentialSameResults(t *testing.T) {
 	docker := newMockDocker()
 	docker.volumes = []string{"existing-vol1", "existing-vol2"}
 	docker.networks = []string{"existing-net1", "existing-net2"}
-	
+
 	// Add some mock volume file content
 	docker.volumeFiles = map[string]string{
 		"assets-vol": `{"tree_hash":"test123","files":{"file1.txt":"hash1"}}`,
 	}
-	
+
 	// Create test configuration with multiple applications
 	cfg := manifest.Config{
 		Docker: manifest.DockerConfig{
@@ -66,42 +66,42 @@ func TestParallelVsSequentialSameResults(t *testing.T) {
 			},
 		},
 	}
-	
+
 	ctx := context.Background()
-	
+
 	// Test sequential processing
 	sequentialPlanner := NewWithDocker(docker).WithParallel(false)
 	sequentialPlan, err := sequentialPlanner.BuildPlan(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Sequential BuildPlan failed: %v", err)
 	}
-	
+
 	// Test parallel processing
 	parallelPlanner := NewWithDocker(docker).WithParallel(true)
 	parallelPlan, err := parallelPlanner.BuildPlan(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Parallel BuildPlan failed: %v", err)
 	}
-	
+
 	// Compare the results - for this test we'll compare the structure rather than exact output
 	// since removal ordering can be non-deterministic in parallel processing
 	sequentialResources := sequentialPlan.Resources.AllResources()
 	parallelResources := parallelPlan.Resources.AllResources()
-	
+
 	if len(sequentialResources) != len(parallelResources) {
-		t.Errorf("Different number of plan resources: sequential=%d, parallel=%d", 
+		t.Errorf("Different number of plan resources: sequential=%d, parallel=%d",
 			len(sequentialResources), len(parallelResources))
 		return
 	}
-	
+
 	// Count different types of operations to ensure they match
 	sequentialCounts := countResourceActions(sequentialResources)
 	parallelCounts := countResourceActions(parallelResources)
-	
+
 	for action, seqCount := range sequentialCounts {
 		parCount, exists := parallelCounts[action]
 		if !exists || seqCount != parCount {
-			t.Errorf("Mismatch in %s operations: sequential=%d, parallel=%d", 
+			t.Errorf("Mismatch in %s operations: sequential=%d, parallel=%d",
 				action, seqCount, parCount)
 		}
 	}
@@ -110,13 +110,13 @@ func TestParallelVsSequentialSameResults(t *testing.T) {
 // TestServiceStateDetectorParallel tests the parallel service state detection specifically
 func TestServiceStateDetectorParallel(t *testing.T) {
 	docker := newMockDocker()
-	
+
 	// Mock some running containers
 	docker.composePsItems = []dockercli.ComposePsItem{
 		{Name: "app1-service1", Service: "service1"},
 		{Name: "app1-service2", Service: "service2"},
 	}
-	
+
 	// Mock container labels
 	docker.containerLabels = map[string]map[string]string{
 		"app1-service1": {
@@ -128,7 +128,7 @@ func TestServiceStateDetectorParallel(t *testing.T) {
 			"io.dockform.identifier":         "test-id",
 		},
 	}
-	
+
 	app := manifest.Application{
 		Root:  "/tmp/app1",
 		Files: []string{"docker-compose.yml"},
@@ -136,35 +136,35 @@ func TestServiceStateDetectorParallel(t *testing.T) {
 			Inline: []string{"ENV=test"},
 		},
 	}
-	
+
 	ctx := context.Background()
-	
+
 	// Test sequential processing
 	sequentialDetector := NewServiceStateDetector(docker).WithParallel(false)
 	sequentialResults, err := sequentialDetector.DetectAllServicesState(ctx, "app1", app, "test-id", nil)
 	if err != nil {
 		t.Fatalf("Sequential DetectAllServicesState failed: %v", err)
 	}
-	
+
 	// Test parallel processing
 	parallelDetector := NewServiceStateDetector(docker).WithParallel(true)
 	parallelResults, err := parallelDetector.DetectAllServicesState(ctx, "app1", app, "test-id", nil)
 	if err != nil {
 		t.Fatalf("Parallel DetectAllServicesState failed: %v", err)
 	}
-	
+
 	// Compare results
 	if len(sequentialResults) != len(parallelResults) {
-		t.Errorf("Different number of results: sequential=%d, parallel=%d", 
+		t.Errorf("Different number of results: sequential=%d, parallel=%d",
 			len(sequentialResults), len(parallelResults))
 		return
 	}
-	
+
 	// Compare each service result (order should be maintained)
 	for i := range sequentialResults {
 		seq := sequentialResults[i]
 		par := parallelResults[i]
-		
+
 		if seq.Name != par.Name {
 			t.Errorf("Service %d name mismatch: sequential=%s, parallel=%s", i, seq.Name, par.Name)
 		}
@@ -183,18 +183,18 @@ func TestServiceStateDetectorParallel(t *testing.T) {
 // TestPlannerParallelConfiguration tests the parallel configuration methods
 func TestPlannerParallelConfiguration(t *testing.T) {
 	planner := New()
-	
-	// Default should be false
-	if planner.parallel {
-		t.Error("Default parallel setting should be false")
+
+	// Default should be true
+	if !planner.parallel {
+		t.Error("Default parallel setting should be true")
 	}
-	
+
 	// Test enabling parallel
 	planner = planner.WithParallel(true)
 	if !planner.parallel {
 		t.Error("WithParallel(true) should enable parallel processing")
 	}
-	
+
 	// Test disabling parallel
 	planner = planner.WithParallel(false)
 	if planner.parallel {
@@ -206,18 +206,18 @@ func TestPlannerParallelConfiguration(t *testing.T) {
 func TestServiceStateDetectorConfiguration(t *testing.T) {
 	docker := newMockDocker()
 	detector := NewServiceStateDetector(docker)
-	
-	// Default should be false
-	if detector.parallel {
-		t.Error("Default parallel setting should be false")
+
+	// Default should be true
+	if !detector.parallel {
+		t.Error("Default parallel setting should be true")
 	}
-	
+
 	// Test enabling parallel
 	detector = detector.WithParallel(true)
 	if !detector.parallel {
 		t.Error("WithParallel(true) should enable parallel processing")
 	}
-	
+
 	// Test disabling parallel
 	detector = detector.WithParallel(false)
 	if detector.parallel {

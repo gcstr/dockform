@@ -14,27 +14,27 @@ func newPlanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			
-			// Configure parallel processing if requested
-			parallel, _ := cmd.Flags().GetBool("parallel")
-			if parallel {
-				ctx.Planner = ctx.Planner.WithParallel(true)
+
+			// Configure sequential processing if requested (default is parallel)
+			sequential, _ := cmd.Flags().GetBool("sequential")
+			if sequential {
+				ctx.Planner = ctx.Planner.WithParallel(false)
 			}
-			
+
 			// Build and display the plan
 			plan, err := ctx.BuildPlan()
 			if err != nil {
 				return err
 			}
-			
+
 			out := plan.String()
 			ctx.Printer.Plain("%s", out)
 			return nil
 		},
 	}
-	
-	// Add parallel flag
-	cmd.Flags().Bool("parallel", false, "Enable parallel processing for faster planning (uses more CPU and Docker daemon resources)")
-	
+
+	// Add sequential flag
+	cmd.Flags().Bool("sequential", false, "Use sequential processing instead of the default parallel processing (slower but uses less CPU and Docker daemon resources)")
+
 	return cmd
 }

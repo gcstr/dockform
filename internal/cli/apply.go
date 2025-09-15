@@ -17,6 +17,12 @@ func newApplyCmd() *cobra.Command {
 				return err
 			}
 
+			// Configure sequential processing if requested (default is parallel)
+			sequential, _ := cmd.Flags().GetBool("sequential")
+			if sequential {
+				ctx.Planner = ctx.Planner.WithParallel(false)
+			}
+
 			// Build and display the plan
 			plan, err := ctx.BuildPlan()
 			if err != nil {
@@ -52,5 +58,6 @@ func newApplyCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("skip-confirmation", false, "Skip confirmation prompt and apply immediately")
+	cmd.Flags().Bool("sequential", false, "Use sequential processing instead of the default parallel processing (slower but uses less CPU and Docker daemon resources)")
 	return cmd
 }
