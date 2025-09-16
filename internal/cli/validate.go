@@ -16,7 +16,7 @@ func newValidateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			
+
 			// If we get here, validation was successful
 			if _, err := fmt.Fprintln(cmd.OutOrStdout(), "validation successful"); err != nil {
 				return err

@@ -25,7 +25,7 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 
 	// Get all containers
 	items, _ := rm.planner.docker.ListComposeContainersAll(ctx)
-	
+
 	// Choose printer (Noop if none provided)
 	pr := rm.planner.pr
 	if pr == nil {
@@ -39,22 +39,22 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 			if it.Service == svc {
 				found = true
 				pr.Info("restarting service %s...", svc)
-				
+
 				if rm.planner.prog != nil {
 					rm.planner.prog.SetAction("restarting service " + svc)
 				}
-				
+
 				if err := rm.planner.docker.RestartContainer(ctx, it.Name); err != nil {
 					return apperr.Wrap("restartmanager.RestartPendingServices", apperr.External, err, "restart service %s", svc)
 				}
-				
+
 				if rm.planner.prog != nil {
 					rm.planner.prog.Increment()
 				}
 				break
 			}
 		}
-		
+
 		if !found {
 			pr.Warn("%s not found.", svc)
 		}

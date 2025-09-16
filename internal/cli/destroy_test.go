@@ -40,7 +40,7 @@ exit 0
 		t.Fatalf("destroy execute: %v", err)
 	}
 	got := out.String()
-	
+
 	// Should show plan with resources in the standard plan format
 	// The output should show Applications, Networks, and Volumes sections
 	if !strings.Contains(got, "Applications") || !strings.Contains(got, "test-project") {
@@ -95,7 +95,7 @@ exit 0
 		t.Fatalf("destroy execute: %v", err)
 	}
 	got := out.String()
-	
+
 	if !strings.Contains(got, "No managed resources found to destroy.") {
 		t.Fatalf("expected no resources message; got: %s", got)
 	}
@@ -134,7 +134,7 @@ exit 0
 		t.Fatalf("destroy execute: %v", err)
 	}
 	got := out.String()
-	
+
 	if !strings.Contains(got, " canceled") {
 		t.Fatalf("expected destruction to be canceled; got: %s", got)
 	}
@@ -182,7 +182,7 @@ exit 0
 		t.Fatalf("destroy execute: %v", err)
 	}
 	got := out.String()
-	
+
 	// Should not be canceled
 	if strings.Contains(got, " canceled") {
 		t.Fatalf("did not expect destruction to be canceled; got: %s", got)
@@ -229,7 +229,7 @@ exit 0
 		t.Fatalf("destroy execute with --skip-confirmation: %v", err)
 	}
 	got := out.String()
-	
+
 	if strings.Contains(got, "Type the identifier name") || strings.Contains(got, "Answer:") {
 		t.Fatalf("expected no confirmation prompt in output; got: %s", got)
 	}
@@ -284,4 +284,3 @@ exit 0
 		t.Fatalf("expected error from destroy when docker discovery fails, got nil")
 	}
 }
-

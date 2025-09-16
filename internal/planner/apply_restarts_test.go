@@ -23,7 +23,7 @@ func TestRestartManager_RestartPendingServices_NoPendingServices(t *testing.T) {
 	if len(restartPending) != 0 {
 		t.Error("Expected empty restart pending map")
 	}
-	
+
 	// The actual restart operation would be tested in integration tests
 	// This validates the basic logic flow
 	t.Log("Empty restart pending validation passed")
@@ -94,12 +94,12 @@ func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
 		expectedRestarts    []string
 	}{
 		{
-			name:            "no pending services",
-			pendingServices: map[string]struct{}{},
+			name:             "no pending services",
+			pendingServices:  map[string]struct{}{},
 			expectedRestarts: []string{},
 		},
 		{
-			name: "restart available service",
+			name:            "restart available service",
 			pendingServices: map[string]struct{}{"web": {}},
 			availableContainers: []dockercli.PsBrief{
 				{Service: "web", Name: "myapp_web_1"},
@@ -107,7 +107,7 @@ func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
 			expectedRestarts: []string{"myapp_web_1"},
 		},
 		{
-			name: "skip missing service",
+			name:            "skip missing service",
 			pendingServices: map[string]struct{}{"missing": {}},
 			availableContainers: []dockercli.PsBrief{
 				{Service: "web", Name: "myapp_web_1"},
@@ -115,7 +115,7 @@ func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
 			expectedRestarts: []string{},
 		},
 		{
-			name: "mixed available and missing services",
+			name:            "mixed available and missing services",
 			pendingServices: map[string]struct{}{"web": {}, "missing": {}, "db": {}},
 			availableContainers: []dockercli.PsBrief{
 				{Service: "web", Name: "myapp_web_1"},
@@ -130,7 +130,7 @@ func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
 			// Create mock Docker client with available containers
 			mockDocker := newMockDocker()
 			mockDocker.containers = tt.availableContainers
-			
+
 			planner := &Planner{docker: mockDocker}
 			restartManager := NewRestartManager(planner)
 

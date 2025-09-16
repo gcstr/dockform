@@ -39,7 +39,7 @@ func TestProgressEstimator_EstimateProgress_BasicLogic(t *testing.T) {
 	// We expect: 2 applications + 2 networks + 2 filesets + 2 volumes = 8 total work items
 	// This is basic validation that the logic counts configuration items
 	expectedMinWork := 6 // At minimum: apps + networks + filesets
-	
+
 	if len(cfg.Applications) < 1 {
 		t.Error("Expected at least 1 application in test config")
 	}
@@ -58,11 +58,11 @@ func TestProgressEstimator_EstimateProgress_BasicLogic(t *testing.T) {
 
 func TestProgressEstimator_CountVolumesToCreate(t *testing.T) {
 	tests := []struct {
-		name             string
-		filesets         map[string]manifest.FilesetSpec
-		volumes          map[string]manifest.TopLevelResourceSpec
-		existingVolumes  []string
-		expectedCount    int
+		name            string
+		filesets        map[string]manifest.FilesetSpec
+		volumes         map[string]manifest.TopLevelResourceSpec
+		existingVolumes []string
+		expectedCount   int
 	}{
 		{
 			name:            "no volumes needed",
@@ -105,7 +105,7 @@ func TestProgressEstimator_CountVolumesToCreate(t *testing.T) {
 			// Create mock Docker client with existing volumes
 			mockDocker := newMockDocker()
 			mockDocker.volumes = tt.existingVolumes
-			
+
 			planner := &Planner{docker: mockDocker}
 			estimator := NewProgressEstimator(planner)
 
@@ -162,7 +162,7 @@ func TestProgressEstimator_CountNetworksToCreate(t *testing.T) {
 			// Create mock Docker client with existing networks
 			mockDocker := newMockDocker()
 			mockDocker.networks = tt.existingNetworks
-			
+
 			planner := &Planner{docker: mockDocker}
 			estimator := NewProgressEstimator(planner)
 

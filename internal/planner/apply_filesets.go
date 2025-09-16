@@ -38,7 +38,7 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 
 	for _, name := range filesetNames {
 		fileset := cfg.Filesets[name]
-		
+
 		if fileset.SourceAbs == "" {
 			return nil, apperr.New("filesetmanager.SyncFilesets", apperr.InvalidInput, "fileset %s: resolved source path is empty", name)
 		}
@@ -55,9 +55,9 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 			raw, _ = fm.planner.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
 		}
 		remote, _ := filesets.ParseIndexJSON(raw)
-		
+
 		diff := filesets.DiffIndexes(local, remote)
-		
+
 		// If completely equal, skip this fileset
 		if local.TreeHash == remote.TreeHash {
 			continue

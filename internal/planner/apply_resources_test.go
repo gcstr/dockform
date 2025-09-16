@@ -73,7 +73,7 @@ func TestResourceManager_EnsureVolumesExist(t *testing.T) {
 			// Create mock Docker client with existing volumes
 			mockDocker := newMockDocker()
 			mockDocker.volumes = tt.existingVolumes
-			
+
 			planner := &Planner{docker: mockDocker}
 			resourceManager := NewResourceManager(planner)
 
@@ -167,7 +167,7 @@ func TestResourceManager_EnsureNetworksExist(t *testing.T) {
 			// Create mock Docker client with existing networks
 			mockDocker := newMockDocker()
 			mockDocker.networks = tt.existingNetworks
-			
+
 			planner := &Planner{docker: mockDocker}
 			resourceManager := NewResourceManager(planner)
 

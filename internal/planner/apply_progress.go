@@ -64,7 +64,7 @@ func (pe *ProgressEstimator) EstimateAndStartProgress(ctx context.Context, cfg m
 	if total > 0 {
 		pe.planner.prog.Start(total)
 	}
-	
+
 	return nil
 }
 

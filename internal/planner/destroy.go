@@ -42,7 +42,7 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 			rp.Containers = append(rp.Containers, res)
 		}
 	}
-	
+
 	// Add grouped containers to applications
 	for app, resources := range appContainers {
 		rp.Applications[app] = resources
@@ -63,13 +63,13 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 	if err != nil {
 		return nil, apperr.Wrap("planner.BuildDestroyPlan", apperr.External, err, "list volumes")
 	}
-	
+
 	// Map volumes to filesets if possible
 	volumeToFileset := make(map[string]string)
 	for fsName, fs := range cfg.Filesets {
 		volumeToFileset[fs.TargetVolume] = fsName
 	}
-	
+
 	for _, volume := range volumes {
 		// Check if this volume is associated with a fileset
 		if filesetName, hasFileset := volumeToFileset[volume]; hasFileset {
@@ -77,7 +77,7 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 			if _, exists := rp.Filesets[filesetName]; !exists {
 				rp.Filesets[filesetName] = []Resource{}
 			}
-			
+
 			// Get fileset config for details
 			fsConfig := cfg.Filesets[filesetName]
 			details := fmt.Sprintf("volume %s at %s will be destroyed", volume, fsConfig.TargetPath)
@@ -110,14 +110,14 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 	}
 
 	rp := plan.Resources
-	
+
 	// Calculate total operations for progress tracking
 	total := 0
 	for _, services := range rp.Applications {
 		total += len(services)
 	}
 	total += len(rp.Containers)
-	total += len(rp.Networks) 
+	total += len(rp.Networks)
 	total += len(rp.Volumes)
 	for _, files := range rp.Filesets {
 		// Count filesets as single operations (they represent volumes)
@@ -125,7 +125,7 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 			total++
 		}
 	}
-	
+
 	if p.prog != nil {
 		p.prog.Start(total)
 	}
@@ -136,7 +136,7 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 			if p.prog != nil {
 				p.prog.SetAction(fmt.Sprintf("removing service %s/%s", appName, svc.Name))
 			}
-			
+
 			// Find and remove actual containers for this service
 			containers, _ := p.docker.ListComposeContainersAll(ctx)
 			for _, c := range containers {
@@ -144,13 +144,13 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 					_ = p.docker.RemoveContainer(ctx, c.Name, true)
 				}
 			}
-			
+
 			if p.prog != nil {
 				p.prog.Increment()
 			}
 		}
 	}
-	
+
 	// Remove orphaned containers
 	for _, container := range rp.Containers {
 		if p.prog != nil {
@@ -191,7 +191,7 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 			}
 		}
 	}
-	
+
 	// Then, standalone volumes
 	for _, volume := range rp.Volumes {
 		if !volumesRemoved[volume.Name] {

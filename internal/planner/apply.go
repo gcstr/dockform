@@ -61,41 +61,41 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 // applyApplicationChanges processes applications and performs compose up for those that need updates.
 func (p *Planner) applyApplicationChanges(ctx context.Context, cfg manifest.Config, identifier string, restartPending map[string]struct{}) error {
 	detector := NewServiceStateDetector(p.docker)
-	
+
 	// Process applications in sorted order for deterministic behavior
 	appNames := make([]string, 0, len(cfg.Applications))
 	for name := range cfg.Applications {
 		appNames = append(appNames, name)
 	}
 	sort.Strings(appNames)
-	
+
 	for _, appName := range appNames {
 		app := cfg.Applications[appName]
-		
+
 		// Use ServiceStateDetector to analyze service states
 		services, err := detector.DetectAllServicesState(ctx, appName, app, identifier, cfg.Sops)
 		if err != nil {
 			return apperr.Wrap("planner.Apply", apperr.External, err, "failed to detect service states for application %s", appName)
 		}
-		
+
 		if len(services) == 0 {
 			continue // No services to manage
 		}
-		
+
 		// Check if any services need updates
 		if !NeedsApply(services) {
 			continue // All services are up-to-date
 		}
-		
+
 		// Build inline env for compose operations
 		inline := detector.BuildInlineEnv(ctx, app, cfg.Sops)
-		
+
 		// Get project name
 		proj := ""
 		if app.Project != nil {
 			proj = app.Project.Name
 		}
-		
+
 		// Perform compose up
 		if p.prog != nil {
 			p.prog.SetAction("docker compose up for " + appName)
@@ -106,7 +106,7 @@ func (p *Planner) applyApplicationChanges(ctx context.Context, cfg manifest.Conf
 		if p.prog != nil {
 			p.prog.Increment()
 		}
-		
+
 		// Best-effort: ensure identifier label is present on containers
 		if identifier != "" {
 			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
@@ -119,6 +119,6 @@ func (p *Planner) applyApplicationChanges(ctx context.Context, cfg manifest.Conf
 			}
 		}
 	}
-	
+
 	return nil
 }

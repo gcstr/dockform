@@ -109,7 +109,6 @@ func (r Resource) FormatAction() string {
 	}
 }
 
-
 // RenderResourcePlan renders a ResourcePlan with consistent formatting
 func RenderResourcePlan(rp *ResourcePlan) string {
 	var sections []ui.NestedSection
@@ -139,30 +138,30 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 	// Applications section with nested services
 	if len(rp.Applications) > 0 {
 		var appSections []ui.NestedSection
-		
+
 		// Sort application names for consistent output
 		appNames := make([]string, 0, len(rp.Applications))
 		for name := range rp.Applications {
 			appNames = append(appNames, name)
 		}
 		sort.Strings(appNames)
-		
+
 		for _, appName := range appNames {
 			services := rp.Applications[appName]
 			var items []ui.DiffLine
-			
+
 			for _, res := range services {
 				// For services, we don't repeat the app name since it's in the section title
 				name := ui.Italic(res.Name)
 				msg := fmt.Sprintf("%s %s", name, res.FormatAction())
 				items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
 			}
-			
+
 			if len(items) > 0 {
 				appSections = append(appSections, ui.NestedSection{Title: appName, Items: items})
 			}
 		}
-		
+
 		if len(appSections) > 0 {
 			sections = append(sections, ui.NestedSection{
 				Title:    "Applications",
@@ -174,18 +173,18 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 	// Filesets section with nested file changes
 	if len(rp.Filesets) > 0 {
 		var filesetSections []ui.NestedSection
-		
+
 		// Sort fileset names for consistent output
 		filesetNames := make([]string, 0, len(rp.Filesets))
 		for name := range rp.Filesets {
 			filesetNames = append(filesetNames, name)
 		}
 		sort.Strings(filesetNames)
-		
+
 		for _, filesetName := range filesetNames {
 			items := rp.Filesets[filesetName]
 			var diffLines []ui.DiffLine
-			
+
 			for _, res := range items {
 				var msg string
 				if res.Action == ActionNoop {
@@ -203,12 +202,12 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 				}
 				diffLines = append(diffLines, ui.DiffLine{Type: res.ChangeType, Message: msg})
 			}
-			
+
 			if len(diffLines) > 0 {
 				filesetSections = append(filesetSections, ui.NestedSection{Title: filesetName, Items: diffLines})
 			}
 		}
-		
+
 		if len(filesetSections) > 0 {
 			sections = append(sections, ui.NestedSection{
 				Title:    "Filesets",
@@ -230,10 +229,10 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 
 	// Calculate summary counts
 	createCount, updateCount, deleteCount := rp.CountActions()
-	
+
 	// Render sections
 	result := ui.RenderNestedSections(sections)
-	
+
 	// Add summary line
 	if createCount > 0 || updateCount > 0 || deleteCount > 0 {
 		if result != "" {
@@ -241,7 +240,7 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 		}
 		result += ui.FormatPlanSummary(createCount, updateCount, deleteCount)
 	}
-	
+
 	return result
 }
 
@@ -287,23 +286,23 @@ func (rp *ResourcePlan) CountActions() (create, update, delete int) {
 // AllResources returns all resources from the plan as a flat list (for testing)
 func (rp *ResourcePlan) AllResources() []Resource {
 	var all []Resource
-	
+
 	if rp == nil {
 		return all
 	}
-	
+
 	all = append(all, rp.Volumes...)
 	all = append(all, rp.Networks...)
-	
+
 	for _, services := range rp.Applications {
 		all = append(all, services...)
 	}
-	
+
 	for _, items := range rp.Filesets {
 		all = append(all, items...)
 	}
-	
+
 	all = append(all, rp.Containers...)
-	
+
 	return all
 }

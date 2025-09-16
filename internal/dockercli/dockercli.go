@@ -94,17 +94,17 @@ func (c *Client) InspectMultipleContainerLabels(ctx context.Context, containerNa
 	if len(containerNames) == 0 {
 		return nil, nil
 	}
-	
+
 	// Build the inspect command for multiple containers
 	args := append([]string{"inspect", "-f", "{{.Name}}\t{{json .Config.Labels}}"}, containerNames...)
 	out, err := c.exec.Run(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	result := make(map[string]map[string]string)
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	
+
 	for _, line := range lines {
 		if line == "" {
 			continue
@@ -113,13 +113,13 @@ func (c *Client) InspectMultipleContainerLabels(ctx context.Context, containerNa
 		if len(parts) != 2 {
 			continue
 		}
-		
+
 		containerName := strings.TrimPrefix(parts[0], "/") // Remove leading slash
 		var labels map[string]string
 		if err := json.Unmarshal([]byte(parts[1]), &labels); err != nil {
 			continue // Skip containers with parse errors
 		}
-		
+
 		// Filter to requested keys if specified
 		if len(keys) > 0 {
 			filtered := make(map[string]string)
@@ -130,10 +130,10 @@ func (c *Client) InspectMultipleContainerLabels(ctx context.Context, containerNa
 			}
 			labels = filtered
 		}
-		
+
 		result[containerName] = labels
 	}
-	
+
 	return result, nil
 }
 

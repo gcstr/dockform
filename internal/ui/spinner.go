@@ -123,4 +123,3 @@ func (s *Spinner) Stop() {
 		s.spacerAdded = false
 	}
 }
-

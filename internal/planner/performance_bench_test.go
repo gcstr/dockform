@@ -24,9 +24,9 @@ func benchmarkBuildPlan(b *testing.B, parallel bool) {
 	docker := newMockDocker()
 	docker.volumes = []string{"vol1", "vol2", "vol3", "existing-volume"}
 	docker.networks = []string{"net1", "net2", "net3", "existing-network"}
-	
+
 	planner := NewWithDocker(docker).WithParallel(parallel)
-	
+
 	// Create a test configuration with multiple applications and filesets
 	cfg := manifest.Config{
 		Docker: manifest.DockerConfig{
@@ -87,12 +87,12 @@ func benchmarkBuildPlan(b *testing.B, parallel bool) {
 			},
 		},
 	}
-	
+
 	ctx := context.Background()
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		_, err := planner.BuildPlan(ctx, cfg)
 		if err != nil {
@@ -114,21 +114,21 @@ func BenchmarkBuildPlanLargeParallel(b *testing.B) {
 // benchmarkBuildPlanLarge is the common benchmark function for large configurations
 func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 	docker := newMockDocker()
-	
+
 	// Add many existing volumes and networks to simulate real environments
 	for i := 0; i < 20; i++ {
 		docker.volumes = append(docker.volumes, fmt.Sprintf("existing-vol-%d", i))
 		docker.networks = append(docker.networks, fmt.Sprintf("existing-net-%d", i))
 	}
-	
+
 	planner := NewWithDocker(docker).WithParallel(parallel)
-	
+
 	// Create a large configuration with many applications and filesets
 	applications := make(map[string]manifest.Application)
 	filesets := make(map[string]manifest.FilesetSpec)
 	volumes := make(map[string]manifest.TopLevelResourceSpec)
 	networks := make(map[string]manifest.TopLevelResourceSpec)
-	
+
 	// Add 10 applications
 	for i := 0; i < 10; i++ {
 		applications[fmt.Sprintf("app%d", i)] = manifest.Application{
@@ -139,7 +139,7 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 			},
 		}
 	}
-	
+
 	// Add 15 filesets
 	for i := 0; i < 15; i++ {
 		filesets[fmt.Sprintf("assets%d", i)] = manifest.FilesetSpec{
@@ -150,17 +150,17 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 			Exclude:      []string{".git", "*.tmp"},
 		}
 	}
-	
+
 	// Add 5 volumes
 	for i := 0; i < 5; i++ {
 		volumes[fmt.Sprintf("shared-vol%d", i)] = manifest.TopLevelResourceSpec{}
 	}
-	
+
 	// Add 5 networks
 	for i := 0; i < 5; i++ {
 		networks[fmt.Sprintf("app-network%d", i)] = manifest.TopLevelResourceSpec{}
 	}
-	
+
 	cfg := manifest.Config{
 		Docker: manifest.DockerConfig{
 			Context:    "default",
@@ -171,12 +171,12 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 		Networks:     networks,
 		Filesets:     filesets,
 	}
-	
+
 	ctx := context.Background()
-	
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		_, err := planner.BuildPlan(ctx, cfg)
 		if err != nil {
