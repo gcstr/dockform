@@ -72,11 +72,10 @@ brews:
       name: homebrew-dockform
       branch: main
     url_template: "https://github.com/gcstr/dockform/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
-    homepage: "https://github.com/gcstr/dockform"
+    homepage: "https://dockform.io"
     description: "Manage Docker Compose projects declaratively"
     license: "MIT"
-    # TODO: Set to 'auto' once homebrew-dockform repo is public
-    skip_upload: true
+    skip_upload: false
     install: |
       bin.install "dockform"
     test: |

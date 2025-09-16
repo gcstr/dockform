@@ -95,7 +95,7 @@ go install github.com/gcstr/dockform@latest
 ### Homebrew
 
 ```sh
-brew tap dockform/tap
+brew tap gcstr/dockform
 brew install dockform
 ```
 
