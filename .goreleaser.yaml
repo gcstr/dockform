@@ -9,8 +9,6 @@ before:
   hooks:
     # Ensure modules are tidy before release
     - go mod tidy
-    # Set Go version for build info
-    - sh -c 'echo "GOVERSION=$(go version | cut -d" " -f3)" >> $GITHUB_ENV'
 
 builds:
   - id: dockform
@@ -27,7 +25,6 @@ builds:
       - -X github.com/gcstr/dockform/internal/cli.commit={{ .ShortCommit }}
       - -X github.com/gcstr/dockform/internal/cli.date={{ .CommitDate }}
       - -X github.com/gcstr/dockform/internal/cli.builtBy=goreleaser
-      - -X github.com/gcstr/dockform/internal/cli.goVersion={{ .Env.GOVERSION }}
     goos:
       - linux
       - darwin
