@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   goreleaser:
@@ -29,5 +30,6 @@ jobs:
           version: latest
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use HOMEBREW_TOKEN (PAT) for Homebrew formula updates
+          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
 
