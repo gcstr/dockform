@@ -80,7 +80,7 @@ func newDocsCmd() *cobra.Command {
 
 			fmt.Printf("Generated CLI docs in %s with VitePress integration\n", outDir)
 			fmt.Printf("Generated sidebar.mts for VitePress config\n")
-			fmt.Printf("Import in .vitepress/config.ts: import cliSidebar from '../docs/cli/sidebar'\n")
+			fmt.Printf("Import in .vitepress/config.ts: import cliSidebar from '../cli/sidebar'\n")
 			fmt.Printf("Add to config: sidebar: { '%s': cliSidebar }\n", basePath)
 
 			return nil
@@ -88,7 +88,7 @@ func newDocsCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&outDir, "out", "o", "docs/cli", "Output directory for generated docs")
-	cmd.Flags().StringVarP(&basePath, "base", "b", "/docs/cli/", "Base path for VitePress links (e.g., /docs/cli/)")
+	cmd.Flags().StringVarP(&basePath, "base", "b", "/cli/", "Base path for VitePress links (e.g., /docs/cli/)")
 
 	return cmd
 }

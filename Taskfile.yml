@@ -119,7 +119,6 @@ tasks:
     cmds:
       - '{{.GO}} run github.com/goreleaser/goreleaser/v2@latest release --clean'
 
-
   docs:cli:
     desc: Generate CLI docs from Cobra into docs/cli
     cmds:
