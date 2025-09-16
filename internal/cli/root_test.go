@@ -55,8 +55,8 @@ func TestRoot_VersionFlagPrints(t *testing.T) {
 		t.Fatalf("execute --version: %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, Version()+"\n") {
-		t.Fatalf("version output mismatch; got: %q", got)
+	if !strings.Contains(got, Version()) {
+		t.Fatalf("version output should contain version; got: %q", got)
 	}
 }
 

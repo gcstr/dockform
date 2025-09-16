@@ -16,10 +16,11 @@ var verbose bool
 
 // build-time variables injected via -ldflags; defaults are used for dev builds.
 var (
-	version = "0.1.0-dev"
-	commit  = ""
-	date    = ""
-	builtBy = ""
+	version   = "0.1.0-dev"
+	commit    = ""
+	date      = ""
+	builtBy   = ""
+	goVersion = ""
 )
 
 // Execute runs the root command and handles error formatting and exit codes.
@@ -60,20 +61,30 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newValidateCmd())
 	cmd.AddCommand(newSecretCmd())
 	cmd.AddCommand(newManifestCmd())
+	cmd.AddCommand(newVersionCmd())
 
 	// Register optional developer-only commands
 	registerDocsCmd(cmd)
 
 	cmd.SetHelpTemplate(cmd.HelpTemplate() + "\n\nProject home: https://github.com/gcstr/dockform\n")
 
-	cmd.SetVersionTemplate(fmt.Sprintf("%s\n", VersionDetailed()))
-	cmd.Version = VersionDetailed()
+	cmd.SetVersionTemplate(fmt.Sprintf("%s\n", VersionSimple()))
+	cmd.Version = VersionSimple()
 
 	return cmd
 }
 
 func Version() string {
 	return version
+}
+
+// VersionSimple returns version number with build info for --version flag
+func VersionSimple() string {
+	v := version
+	if commit != "" {
+		v += " (" + commit[:7] + ")" // Short commit hash only
+	}
+	return v
 }
 
 // VersionDetailed returns version info with build metadata if available.
