@@ -73,7 +73,6 @@ type NetworkSpec struct {
 	Gateway      string            `yaml:"gateway"`
 	IPRange      string            `yaml:"ip_range"`
 	AuxAddresses map[string]string `yaml:"aux_addresses"`
-	OnMismatch   string            `yaml:"on_mismatch"` // error (default) | recreate | ignore
 }
 
 // FilesetSpec defines a local directory to sync into a docker volume at a target path.

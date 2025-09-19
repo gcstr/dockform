@@ -146,6 +146,10 @@ func (m *mockDockerClient) RemoveNetwork(ctx context.Context, name string) error
 	return nil
 }
 
+func (m *mockDockerClient) InspectNetwork(ctx context.Context, name string) (dockercli.NetworkInspect, error) {
+	return dockercli.NetworkInspect{Name: name}, nil
+}
+
 // Container operations
 func (m *mockDockerClient) ListComposeContainersAll(ctx context.Context) ([]dockercli.PsBrief, error) {
 	return m.containers, nil

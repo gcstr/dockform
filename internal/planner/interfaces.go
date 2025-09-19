@@ -25,6 +25,7 @@ type DockerClient interface {
 	ListNetworks(ctx context.Context) ([]string, error)
 	CreateNetwork(ctx context.Context, name string, labels map[string]string, opts ...dockercli.NetworkCreateOpts) error
 	RemoveNetwork(ctx context.Context, name string) error
+	InspectNetwork(ctx context.Context, name string) (dockercli.NetworkInspect, error)
 
 	// Container operations
 	ListComposeContainersAll(ctx context.Context) ([]dockercli.PsBrief, error)

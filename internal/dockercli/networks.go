@@ -2,6 +2,7 @@ package dockercli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/gcstr/dockform/internal/util"
@@ -76,4 +77,48 @@ func (c *Client) CreateNetwork(ctx context.Context, name string, labels map[stri
 func (c *Client) RemoveNetwork(ctx context.Context, name string) error {
 	_, err := c.exec.Run(ctx, "network", "rm", name)
 	return err
+}
+
+// NetworkInspectIPAMConfig represents a single IPAM config entry
+type NetworkInspectIPAMConfig struct {
+	Subnet       string            `json:"Subnet"`
+	Gateway      string            `json:"Gateway"`
+	IPRange      string            `json:"IPRange"`
+	AuxAddresses map[string]string `json:"AuxiliaryAddresses"`
+}
+
+// NetworkInspectIPAM represents IPAM section of network inspect
+type NetworkInspectIPAM struct {
+	Driver string                     `json:"Driver"`
+	Config []NetworkInspectIPAMConfig `json:"Config"`
+}
+
+// NetworkInspect represents the subset of docker network inspect we need
+type NetworkInspect struct {
+	Name       string             `json:"Name"`
+	Driver     string             `json:"Driver"`
+	Options    map[string]string  `json:"Options"`
+	Internal   bool               `json:"Internal"`
+	Attachable bool               `json:"Attachable"`
+	EnableIPv6 bool               `json:"EnableIPv6"`
+	IPAM       NetworkInspectIPAM `json:"IPAM"`
+	Containers map[string]struct {
+		Name string `json:"Name"`
+	} `json:"Containers"`
+}
+
+// InspectNetwork returns details about a docker network
+func (c *Client) InspectNetwork(ctx context.Context, name string) (NetworkInspect, error) {
+	if name == "" {
+		return NetworkInspect{}, nil
+	}
+	out, err := c.exec.Run(ctx, "network", "inspect", "-f", "{{json .}}", name)
+	if err != nil {
+		return NetworkInspect{}, err
+	}
+	var ni NetworkInspect
+	if err := json.Unmarshal([]byte(out), &ni); err != nil {
+		return NetworkInspect{}, err
+	}
+	return ni, nil
 }

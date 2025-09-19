@@ -100,9 +100,57 @@ func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest
 			continue
 		}
 
-		// Exists: optional reconcile policy
-		switch spec.OnMismatch {
-		case "recreate":
+		// Exists: detect drift (inspect actual vs desired)
+		ni, _ := rm.planner.docker.InspectNetwork(ctx, name)
+		drift := false
+		if spec.Driver != "" && ni.Driver != spec.Driver {
+			drift = true
+		}
+		if spec.Internal != ni.Internal || spec.Attachable != ni.Attachable || spec.IPv6 != ni.EnableIPv6 {
+			drift = true
+		}
+		// Compare desired options as subset
+		if len(spec.Options) > 0 {
+			for k, v := range spec.Options {
+				if ni.Options == nil || ni.Options[k] != v {
+					drift = true
+					break
+				}
+			}
+		}
+		// Compare IPAM first config
+		if spec.Subnet != "" || spec.Gateway != "" || spec.IPRange != "" || len(spec.AuxAddresses) > 0 {
+			var cfg0 dockercli.NetworkInspectIPAMConfig
+			if len(ni.IPAM.Config) > 0 {
+				cfg0 = ni.IPAM.Config[0]
+			}
+			if (spec.Subnet != "" && cfg0.Subnet != spec.Subnet) ||
+				(spec.Gateway != "" && cfg0.Gateway != spec.Gateway) ||
+				(spec.IPRange != "" && cfg0.IPRange != spec.IPRange) {
+				drift = true
+			}
+			if !drift && len(spec.AuxAddresses) > 0 {
+				for k, v := range spec.AuxAddresses {
+					if cfg0.AuxAddresses == nil || cfg0.AuxAddresses[k] != v {
+						drift = true
+						break
+					}
+				}
+			}
+		}
+
+		if drift {
+			// Ensure only our containers are attached; abort if others present
+			for _, container := range ni.Containers {
+				labels, _ := rm.planner.docker.InspectContainerLabels(ctx, container.Name, []string{"io.dockform.identifier"})
+				if v, ok := labels["io.dockform.identifier"]; !ok || v != cfg.Docker.Identifier {
+					return apperr.New("resourcemanager.EnsureNetworksExist", apperr.Precondition, "network %s in use by unmanaged container %s", name, container.Name)
+				}
+			}
+			// Remove our containers so compose can recreate them
+			for _, container := range ni.Containers {
+				_ = rm.planner.docker.RemoveContainer(ctx, container.Name, true)
+			}
 			if rm.planner.prog != nil {
 				rm.planner.prog.SetAction("recreating network " + name)
 			}
@@ -115,10 +163,6 @@ func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest
 			if rm.planner.prog != nil {
 				rm.planner.prog.Increment()
 			}
-		case "ignore", "", "error":
-			// No-op for now for error/ignore; mismatch detection requires inspect
-		default:
-			// Unknown policy treated as ignore
 		}
 	}
 
