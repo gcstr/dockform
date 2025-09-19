@@ -22,13 +22,15 @@ func (c *Client) ListNetworks(ctx context.Context) ([]string, error) {
 
 // NetworkCreateOpts represents supported docker network create flags.
 type NetworkCreateOpts struct {
-	Driver     string
-	Options    map[string]string
-	Internal   bool
-	Attachable bool
-	IPv6       bool
-	Subnet     string
-	Gateway    string
+	Driver       string
+	Options      map[string]string
+	Internal     bool
+	Attachable   bool
+	IPv6         bool
+	Subnet       string
+	Gateway      string
+	IPRange      string
+	AuxAddresses map[string]string
 }
 
 func (c *Client) CreateNetwork(ctx context.Context, name string, labels map[string]string, opts ...NetworkCreateOpts) error {
@@ -58,6 +60,12 @@ func (c *Client) CreateNetwork(ctx context.Context, name string, labels map[stri
 		}
 		if o.Gateway != "" {
 			args = append(args, "--gateway", o.Gateway)
+		}
+		if o.IPRange != "" {
+			args = append(args, "--ip-range", o.IPRange)
+		}
+		for k, v := range o.AuxAddresses {
+			args = append(args, "--aux-address", fmt.Sprintf("%s=%s", k, v))
 		}
 	}
 	args = append(args, name)

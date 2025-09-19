@@ -64,7 +64,7 @@ func TestCreateNetwork_AddsLabels(t *testing.T) {
 func TestCreateNetwork_WithDriverAndOptions(t *testing.T) {
 	stub := &netExecStub{}
 	c := &Client{exec: stub}
-	opts := NetworkCreateOpts{Driver: "bridge", Options: map[string]string{"com.docker.network.bridge.name": "df_mynet", "com.docker.network.bridge.enable_icc": "false"}}
+	opts := NetworkCreateOpts{Driver: "bridge", Options: map[string]string{"com.docker.network.bridge.name": "df_mynet", "com.docker.network.bridge.enable_icc": "false"}, IPv6: true, Subnet: "172.18.0.0/16", Gateway: "172.18.0.1", IPRange: "172.18.0.0/24", AuxAddresses: map[string]string{"host1": "172.18.0.2"}}
 	if err := c.CreateNetwork(context.Background(), "mynet", map[string]string{"io.dockform.identifier": "demo"}, opts); err != nil {
 		t.Fatalf("create network with opts: %v", err)
 	}
@@ -74,6 +74,9 @@ func TestCreateNetwork_WithDriverAndOptions(t *testing.T) {
 	}
 	if !strings.Contains(joined, "--opt com.docker.network.bridge.name=df_mynet") || !strings.Contains(joined, "--opt com.docker.network.bridge.enable_icc=false") {
 		t.Fatalf("expected options flags, got: %s", joined)
+	}
+	if !strings.Contains(joined, "--ipv6") || !strings.Contains(joined, "--subnet 172.18.0.0/16") || !strings.Contains(joined, "--gateway 172.18.0.1") || !strings.Contains(joined, "--ip-range 172.18.0.0/24") || !strings.Contains(joined, "--aux-address host1=172.18.0.2") {
+		t.Fatalf("expected ipam flags, got: %s", joined)
 	}
 	if stub.lastArgs[len(stub.lastArgs)-1] != "mynet" {
 		t.Fatalf("network name position mismatch: %#v", stub.lastArgs)

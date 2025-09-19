@@ -64,8 +64,16 @@ type TopLevelResourceSpec struct{}
 
 // NetworkSpec allows configuring docker network driver and options.
 type NetworkSpec struct {
-	Driver  string            `yaml:"driver"`
-	Options map[string]string `yaml:"options"`
+	Driver       string            `yaml:"driver"`
+	Options      map[string]string `yaml:"options"`
+	Internal     bool              `yaml:"internal"`
+	Attachable   bool              `yaml:"attachable"`
+	IPv6         bool              `yaml:"ipv6"`
+	Subnet       string            `yaml:"subnet"`
+	Gateway      string            `yaml:"gateway"`
+	IPRange      string            `yaml:"ip_range"`
+	AuxAddresses map[string]string `yaml:"aux_addresses"`
+	OnMismatch   string            `yaml:"on_mismatch"` // error (default) | recreate | ignore
 }
 
 // FilesetSpec defines a local directory to sync into a docker volume at a target path.

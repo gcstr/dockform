@@ -71,19 +71,54 @@ func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest
 		return apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "list networks")
 	}
 
-	// Create missing networks
+	// Create or reconcile networks
 	for name, spec := range cfg.Networks {
-		if _, exists := existingNetworks[name]; !exists {
+		_, exists := existingNetworks[name]
+		// Map manifest spec to docker opts
+		opts := dockercli.NetworkCreateOpts{
+			Driver:       spec.Driver,
+			Options:      spec.Options,
+			Internal:     spec.Internal,
+			Attachable:   spec.Attachable,
+			IPv6:         spec.IPv6,
+			Subnet:       spec.Subnet,
+			Gateway:      spec.Gateway,
+			IPRange:      spec.IPRange,
+			AuxAddresses: spec.AuxAddresses,
+		}
+
+		if !exists {
 			if rm.planner.prog != nil {
 				rm.planner.prog.SetAction("creating network " + name)
 			}
-			opts := dockercli.NetworkCreateOpts{Driver: spec.Driver, Options: spec.Options}
 			if err := rm.planner.docker.CreateNetwork(ctx, name, labels, opts); err != nil {
 				return apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "create network %s", name)
 			}
 			if rm.planner.prog != nil {
 				rm.planner.prog.Increment()
 			}
+			continue
+		}
+
+		// Exists: optional reconcile policy
+		switch spec.OnMismatch {
+		case "recreate":
+			if rm.planner.prog != nil {
+				rm.planner.prog.SetAction("recreating network " + name)
+			}
+			if err := rm.planner.docker.RemoveNetwork(ctx, name); err != nil {
+				return apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "remove network %s", name)
+			}
+			if err := rm.planner.docker.CreateNetwork(ctx, name, labels, opts); err != nil {
+				return apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "recreate network %s", name)
+			}
+			if rm.planner.prog != nil {
+				rm.planner.prog.Increment()
+			}
+		case "ignore", "", "error":
+			// No-op for now for error/ignore; mismatch detection requires inspect
+		default:
+			// Unknown policy treated as ignore
 		}
 	}
 
