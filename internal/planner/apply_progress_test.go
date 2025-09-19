@@ -26,7 +26,7 @@ func TestProgressEstimator_EstimateProgress_BasicLogic(t *testing.T) {
 			"web": {Root: "./web", Files: []string{"docker-compose.yml"}},
 			"api": {Root: "./api", Files: []string{"docker-compose.yml"}},
 		},
-		Networks: map[string]manifest.TopLevelResourceSpec{
+		Networks: map[string]manifest.NetworkSpec{
 			"app-network": {},
 			"db-network":  {},
 		},
@@ -129,19 +129,19 @@ func TestProgressEstimator_CountVolumesToCreate(t *testing.T) {
 func TestProgressEstimator_CountNetworksToCreate(t *testing.T) {
 	tests := []struct {
 		name             string
-		networks         map[string]manifest.TopLevelResourceSpec
+		networks         map[string]manifest.NetworkSpec
 		existingNetworks []string
 		expectedCount    int
 	}{
 		{
 			name:             "no networks needed",
-			networks:         map[string]manifest.TopLevelResourceSpec{},
+			networks:         map[string]manifest.NetworkSpec{},
 			existingNetworks: []string{},
 			expectedCount:    0,
 		},
 		{
 			name: "network needs creation",
-			networks: map[string]manifest.TopLevelResourceSpec{
+			networks: map[string]manifest.NetworkSpec{
 				"app-network": {},
 			},
 			existingNetworks: []string{},
@@ -149,7 +149,7 @@ func TestProgressEstimator_CountNetworksToCreate(t *testing.T) {
 		},
 		{
 			name: "network already exists",
-			networks: map[string]manifest.TopLevelResourceSpec{
+			networks: map[string]manifest.NetworkSpec{
 				"app-network": {},
 			},
 			existingNetworks: []string{"app-network"},

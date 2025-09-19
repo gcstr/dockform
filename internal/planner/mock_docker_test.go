@@ -125,7 +125,7 @@ func (m *mockDockerClient) ListNetworks(ctx context.Context) ([]string, error) {
 	return m.networks, nil
 }
 
-func (m *mockDockerClient) CreateNetwork(ctx context.Context, name string, labels map[string]string) error {
+func (m *mockDockerClient) CreateNetwork(ctx context.Context, name string, labels map[string]string, opts ...dockercli.NetworkCreateOpts) error {
 	if m.createNetworkError != nil {
 		return m.createNetworkError
 	}

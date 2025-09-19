@@ -61,6 +61,25 @@ func TestCreateNetwork_AddsLabels(t *testing.T) {
 	}
 }
 
+func TestCreateNetwork_WithDriverAndOptions(t *testing.T) {
+	stub := &netExecStub{}
+	c := &Client{exec: stub}
+	opts := NetworkCreateOpts{Driver: "bridge", Options: map[string]string{"com.docker.network.bridge.name": "df_mynet", "com.docker.network.bridge.enable_icc": "false"}}
+	if err := c.CreateNetwork(context.Background(), "mynet", map[string]string{"io.dockform.identifier": "demo"}, opts); err != nil {
+		t.Fatalf("create network with opts: %v", err)
+	}
+	joined := strings.Join(stub.lastArgs, " ")
+	if !strings.Contains(joined, "--driver bridge") {
+		t.Fatalf("expected driver flag, got: %s", joined)
+	}
+	if !strings.Contains(joined, "--opt com.docker.network.bridge.name=df_mynet") || !strings.Contains(joined, "--opt com.docker.network.bridge.enable_icc=false") {
+		t.Fatalf("expected options flags, got: %s", joined)
+	}
+	if stub.lastArgs[len(stub.lastArgs)-1] != "mynet" {
+		t.Fatalf("network name position mismatch: %#v", stub.lastArgs)
+	}
+}
+
 func TestRemoveNetwork_Args(t *testing.T) {
 	stub := &netExecStub{}
 	c := &Client{exec: stub}

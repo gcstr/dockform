@@ -105,7 +105,7 @@ func TestPlanner_BuildPlan_AddRemoveStart(t *testing.T) {
 		Docker:       manifest.DockerConfig{Identifier: "demo"},
 		Applications: map[string]manifest.Application{"app": {Root: appRoot, Files: []string{"compose.yml"}}},
 		Filesets:     map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app"}},
-		Networks:     map[string]manifest.TopLevelResourceSpec{"n1": {}},
+		Networks:     map[string]manifest.NetworkSpec{"n1": {}},
 	}
 	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)

@@ -171,7 +171,7 @@ func TestApply_Filesets_SyncAndRestart(t *testing.T) {
 	cfg := manifest.Config{
 		Docker:   manifest.DockerConfig{Identifier: "demo"},
 		Filesets: map[string]manifest.FilesetSpec{"data": {SourceAbs: src, TargetVolume: "data", TargetPath: "/opt/data", RestartServices: []string{"nginx"}}},
-		Networks: map[string]manifest.TopLevelResourceSpec{},
+		Networks: map[string]manifest.NetworkSpec{},
 	}
 	d := dockercli.New("").WithIdentifier("demo")
 	if err := NewWithDocker(d).Apply(context.Background(), cfg); err != nil {

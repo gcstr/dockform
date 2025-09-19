@@ -11,7 +11,7 @@ type Config struct {
 	Secrets      *Secrets                        `yaml:"secrets"`
 	Environment  *Environment                    `yaml:"environment"`
 	Applications map[string]Application          `yaml:"applications" validate:"dive"`
-	Networks     map[string]TopLevelResourceSpec `yaml:"networks"`
+	Networks     map[string]NetworkSpec          `yaml:"networks"`
 	Volumes      map[string]TopLevelResourceSpec `yaml:"volumes"`
 	Filesets     map[string]FilesetSpec          `yaml:"filesets"`
 	BaseDir      string                          `yaml:"-"`
@@ -59,8 +59,14 @@ type Secrets struct {
 	Sops []string `yaml:"sops"`
 }
 
-// TopLevelResourceSpec mirrors YAML for volumes/networks.
+// TopLevelResourceSpec mirrors YAML for volumes.
 type TopLevelResourceSpec struct{}
+
+// NetworkSpec allows configuring docker network driver and options.
+type NetworkSpec struct {
+	Driver  string            `yaml:"driver"`
+	Options map[string]string `yaml:"options"`
+}
 
 // FilesetSpec defines a local directory to sync into a docker volume at a target path.
 type FilesetSpec struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
@@ -71,12 +72,13 @@ func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest
 	}
 
 	// Create missing networks
-	for name := range cfg.Networks {
+	for name, spec := range cfg.Networks {
 		if _, exists := existingNetworks[name]; !exists {
 			if rm.planner.prog != nil {
 				rm.planner.prog.SetAction("creating network " + name)
 			}
-			if err := rm.planner.docker.CreateNetwork(ctx, name, labels); err != nil {
+			opts := dockercli.NetworkCreateOpts{Driver: spec.Driver, Options: spec.Options}
+			if err := rm.planner.docker.CreateNetwork(ctx, name, labels, opts); err != nil {
 				return apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "create network %s", name)
 			}
 			if rm.planner.prog != nil {

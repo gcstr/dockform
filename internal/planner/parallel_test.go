@@ -53,7 +53,7 @@ func TestParallelVsSequentialSameResults(t *testing.T) {
 		Volumes: map[string]manifest.TopLevelResourceSpec{
 			"shared-vol": {},
 		},
-		Networks: map[string]manifest.TopLevelResourceSpec{
+		Networks: map[string]manifest.NetworkSpec{
 			"app-network": {},
 		},
 		Filesets: map[string]manifest.FilesetSpec{

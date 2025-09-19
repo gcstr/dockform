@@ -60,7 +60,7 @@ func benchmarkBuildPlan(b *testing.B, parallel bool) {
 			"shared-vol1": {},
 			"shared-vol2": {},
 		},
-		Networks: map[string]manifest.TopLevelResourceSpec{
+		Networks: map[string]manifest.NetworkSpec{
 			"app-network": {},
 		},
 		Filesets: map[string]manifest.FilesetSpec{
@@ -127,7 +127,7 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 	applications := make(map[string]manifest.Application)
 	filesets := make(map[string]manifest.FilesetSpec)
 	volumes := make(map[string]manifest.TopLevelResourceSpec)
-	networks := make(map[string]manifest.TopLevelResourceSpec)
+	networks := make(map[string]manifest.NetworkSpec)
 
 	// Add 10 applications
 	for i := 0; i < 10; i++ {
@@ -158,7 +158,7 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 
 	// Add 5 networks
 	for i := 0; i < 5; i++ {
-		networks[fmt.Sprintf("app-network%d", i)] = manifest.TopLevelResourceSpec{}
+		networks[fmt.Sprintf("app-network%d", i)] = manifest.NetworkSpec{}
 	}
 
 	cfg := manifest.Config{

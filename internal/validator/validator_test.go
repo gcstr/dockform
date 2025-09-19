@@ -453,7 +453,7 @@ func TestValidate_Assets_SourceRequired(t *testing.T) {
 	defer withStubDocker(t)()
 	cfg := manifest.Config{
 		Docker:       manifest.DockerConfig{Context: "default", Identifier: "test-id"},
-		Networks:     map[string]manifest.TopLevelResourceSpec{},
+		Networks:     map[string]manifest.NetworkSpec{},
 		Applications: map[string]manifest.Application{},
 		Filesets:     map[string]manifest.FilesetSpec{"a": {SourceAbs: "", TargetVolume: "v", TargetPath: "/t"}},
 	}
@@ -469,7 +469,7 @@ func TestValidate_Assets_SourceNotFound_AndNotDir(t *testing.T) {
 	d := dockercli.New("")
 	cfg := manifest.Config{
 		Docker:       manifest.DockerConfig{Context: "default", Identifier: "test-id"},
-		Networks:     map[string]manifest.TopLevelResourceSpec{},
+		Networks:     map[string]manifest.NetworkSpec{},
 		Applications: map[string]manifest.Application{},
 	}
 	// Not found

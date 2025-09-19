@@ -23,7 +23,7 @@ type DockerClient interface {
 
 	// Network operations
 	ListNetworks(ctx context.Context) ([]string, error)
-	CreateNetwork(ctx context.Context, name string, labels map[string]string) error
+	CreateNetwork(ctx context.Context, name string, labels map[string]string, opts ...dockercli.NetworkCreateOpts) error
 	RemoveNetwork(ctx context.Context, name string) error
 
 	// Container operations

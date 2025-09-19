@@ -125,19 +125,19 @@ func TestResourceManager_EnsureVolumesExist(t *testing.T) {
 func TestResourceManager_EnsureNetworksExist(t *testing.T) {
 	tests := []struct {
 		name             string
-		networks         map[string]manifest.TopLevelResourceSpec
+		networks         map[string]manifest.NetworkSpec
 		existingNetworks []string
 		expectedCreated  []string
 	}{
 		{
 			name:             "no networks needed",
-			networks:         map[string]manifest.TopLevelResourceSpec{},
+			networks:         map[string]manifest.NetworkSpec{},
 			existingNetworks: []string{},
 			expectedCreated:  []string{},
 		},
 		{
 			name: "create network",
-			networks: map[string]manifest.TopLevelResourceSpec{
+			networks: map[string]manifest.NetworkSpec{
 				"app-network": {},
 			},
 			existingNetworks: []string{},
@@ -145,7 +145,7 @@ func TestResourceManager_EnsureNetworksExist(t *testing.T) {
 		},
 		{
 			name: "skip existing network",
-			networks: map[string]manifest.TopLevelResourceSpec{
+			networks: map[string]manifest.NetworkSpec{
 				"app-network": {},
 			},
 			existingNetworks: []string{"app-network"},
@@ -153,7 +153,7 @@ func TestResourceManager_EnsureNetworksExist(t *testing.T) {
 		},
 		{
 			name: "mixed networks",
-			networks: map[string]manifest.TopLevelResourceSpec{
+			networks: map[string]manifest.NetworkSpec{
 				"app-network": {},
 				"db-network":  {},
 			},

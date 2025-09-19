@@ -71,7 +71,7 @@ func TestNormalize_NetworkKeyValidation(t *testing.T) {
 	// Valid network key
 	cfgValid := Config{
 		Docker:   DockerConfig{Identifier: "id"},
-		Networks: map[string]TopLevelResourceSpec{"my-network": {}},
+		Networks: map[string]NetworkSpec{"my-network": {}},
 	}
 	if err := cfgValid.normalizeAndValidate("/base"); err != nil {
 		t.Fatalf("unexpected error for valid network key: %v", err)
@@ -80,7 +80,7 @@ func TestNormalize_NetworkKeyValidation(t *testing.T) {
 	// Invalid network key
 	cfgInvalid := Config{
 		Docker:   DockerConfig{Identifier: "id"},
-		Networks: map[string]TopLevelResourceSpec{"Bad Network": {}},
+		Networks: map[string]NetworkSpec{"Bad Network": {}},
 	}
 	if err := cfgInvalid.normalizeAndValidate("/base"); err == nil {
 		t.Fatalf("expected error for invalid network key")

@@ -160,7 +160,7 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
 		Filesets: map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app"}},
-		Networks: map[string]manifest.TopLevelResourceSpec{"n1": {}},
+		Networks: map[string]manifest.NetworkSpec{"n1": {}},
 	}
 	d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
@@ -206,7 +206,7 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 		// Mix of explicit volumes and volumes from filesets
 		Volumes:  map[string]manifest.TopLevelResourceSpec{"explicit-vol": {}, "shared-data": {}},
 		Filesets: map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "fileset-vol", TargetPath: "/app"}},
-		Networks: map[string]manifest.TopLevelResourceSpec{"n1": {}},
+		Networks: map[string]manifest.NetworkSpec{"n1": {}},
 	}
 	d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
