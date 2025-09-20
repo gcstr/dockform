@@ -26,6 +26,10 @@ func (n *netExecStub) RunWithStdin(ctx context.Context, stdin io.Reader, args ..
 	n.lastArgs = args
 	return "", nil
 }
+func (n *netExecStub) RunWithStdout(ctx context.Context, stdout io.Writer, args ...string) error {
+	n.lastArgs = args
+	return nil
+}
 
 func TestListNetworks_ParsesAndFilters(t *testing.T) {
 	stub := &netExecStub{}

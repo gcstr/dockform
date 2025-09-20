@@ -60,6 +60,15 @@ func (e *execStub) RunWithStdin(ctx context.Context, stdin io.Reader, args ...st
 	return "", nil
 }
 
+func (e *execStub) RunWithStdout(ctx context.Context, stdout io.Writer, args ...string) error {
+	e.lastArgs = args
+	if stdout != nil {
+		// Write a small marker to simulate streamed output
+		_, _ = stdout.Write([]byte("STREAMED"))
+	}
+	return nil
+}
+
 func TestCheckDaemon_SuccessAndFailure(t *testing.T) {
 	stub := &execStub{}
 	c := &Client{exec: stub, contextName: "ctx"}

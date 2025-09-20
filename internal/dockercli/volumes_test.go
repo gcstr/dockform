@@ -27,6 +27,11 @@ func (v *volExecStub) RunWithStdin(ctx context.Context, stdin io.Reader, args ..
 	return "", nil
 }
 
+func (v *volExecStub) RunWithStdout(ctx context.Context, stdout io.Writer, args ...string) error {
+	v.lastArgs = args
+	return nil
+}
+
 func TestListVolumes_ParsesAndFilters(t *testing.T) {
 	stub := &volExecStub{}
 	c := &Client{exec: stub}

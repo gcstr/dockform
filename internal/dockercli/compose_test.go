@@ -44,6 +44,10 @@ func (f *fakeExec) RunWithStdin(ctx context.Context, stdin io.Reader, args ...st
 	f.lastArgs = args
 	return "", nil
 }
+func (f *fakeExec) RunWithStdout(ctx context.Context, stdout io.Writer, args ...string) error {
+	f.lastArgs = args
+	return nil
+}
 func (f *fakeExec) dispatch(args []string) (string, error) {
 	if hasSuffix(args, []string{"config", "--services"}) {
 		return f.outServices, f.errServices

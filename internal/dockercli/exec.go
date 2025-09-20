@@ -18,6 +18,9 @@ type Exec interface {
 	RunInDir(ctx context.Context, dir string, args ...string) (string, error)
 	RunInDirWithEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error)
 	RunWithStdin(ctx context.Context, stdin io.Reader, args ...string) (string, error)
+	// RunWithStdout streams the stdout of the docker command to the provided writer without buffering it in memory.
+	// Stderr is still captured and included in any returned error for debuggability.
+	RunWithStdout(ctx context.Context, stdout io.Writer, args ...string) error
 }
 
 // SystemExec is a real implementation that shells out to the docker CLI.
@@ -94,7 +97,12 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 		cmd.Stdin = opts.Stdin
 	}
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	// Allow caller-provided Stdout when opts.Stdout is set via RunWithStdout
+	if sw, ok := ctx.Value(stdOutWriterKey{}).(io.Writer); ok && sw != nil {
+		cmd.Stdout = sw
+	} else {
+		cmd.Stdout = &stdout
+	}
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
 	dur := time.Since(start)
@@ -104,7 +112,12 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 		exitCode = cmd.ProcessState.ExitCode()
 	}
 
-	res := Result{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: exitCode, Duration: dur}
+	// If stdout was streamed to a writer, avoid materializing it in Result
+	outStr := ""
+	if _, ok := ctx.Value(stdOutWriterKey{}).(io.Writer); !ok {
+		outStr = stdout.String()
+	}
+	res := Result{Stdout: outStr, Stderr: stderr.String(), ExitCode: exitCode, Duration: dur}
 
 	if s.Logger != nil {
 		s.Logger(ExecEvent{Phase: "finish", Args: args, Dir: opts.Dir, Duration: dur, ExitCode: exitCode, Err: runErr})
@@ -134,4 +147,19 @@ func (s SystemExec) RunInDirWithEnv(ctx context.Context, dir string, extraEnv []
 func (s SystemExec) RunWithStdin(ctx context.Context, stdin io.Reader, args ...string) (string, error) {
 	res, err := s.RunDetailed(ctx, Options{Stdin: stdin}, args...)
 	return res.Stdout, err
+}
+
+// stdOutWriterKey is a context key type used to pass a stdout writer to RunDetailed
+type stdOutWriterKey struct{}
+
+// RunWithStdout executes the docker command and streams stdout to the provided writer.
+// It does not buffer stdout in memory.
+func (s SystemExec) RunWithStdout(ctx context.Context, stdout io.Writer, args ...string) error {
+	if stdout == nil {
+		return apperr.New("dockercli.Exec", apperr.InvalidInput, "stdout writer required")
+	}
+	// Pass writer via context to avoid changing Options signature
+	ctxWith := context.WithValue(ctx, stdOutWriterKey{}, stdout)
+	_, err := s.RunDetailed(ctxWith, Options{}, args...)
+	return err
 }
