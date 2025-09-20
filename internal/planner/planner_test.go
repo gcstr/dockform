@@ -204,7 +204,7 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
 		// Mix of explicit volumes and volumes from filesets
-		Volumes:  map[string]manifest.TopLevelResourceSpec{"explicit-vol": {}, "shared-data": {}},
+		Volumes:  map[string]manifest.VolumeSpec{"explicit-vol": {}, "shared-data": {}},
 		Filesets: map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "fileset-vol", TargetPath: "/app"}},
 		Networks: map[string]manifest.NetworkSpec{"n1": {}},
 	}

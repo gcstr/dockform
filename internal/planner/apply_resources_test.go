@@ -11,7 +11,7 @@ func TestResourceManager_EnsureVolumesExist(t *testing.T) {
 	tests := []struct {
 		name                string
 		filesets            map[string]manifest.FilesetSpec
-		volumes             map[string]manifest.TopLevelResourceSpec
+		volumes             map[string]manifest.VolumeSpec
 		existingVolumes     []string
 		expectedCreated     []string
 		expectedVolumeCount int
@@ -19,7 +19,7 @@ func TestResourceManager_EnsureVolumesExist(t *testing.T) {
 		{
 			name:                "no volumes needed",
 			filesets:            map[string]manifest.FilesetSpec{},
-			volumes:             map[string]manifest.TopLevelResourceSpec{},
+			volumes:             map[string]manifest.VolumeSpec{},
 			existingVolumes:     []string{},
 			expectedCreated:     []string{},
 			expectedVolumeCount: 0,
@@ -29,7 +29,7 @@ func TestResourceManager_EnsureVolumesExist(t *testing.T) {
 			filesets: map[string]manifest.FilesetSpec{
 				"data": {TargetVolume: "app-data"},
 			},
-			volumes:             map[string]manifest.TopLevelResourceSpec{},
+			volumes:             map[string]manifest.VolumeSpec{},
 			existingVolumes:     []string{},
 			expectedCreated:     []string{"app-data"},
 			expectedVolumeCount: 1,
@@ -37,7 +37,7 @@ func TestResourceManager_EnsureVolumesExist(t *testing.T) {
 		{
 			name:     "create explicit volume",
 			filesets: map[string]manifest.FilesetSpec{},
-			volumes: map[string]manifest.TopLevelResourceSpec{
+			volumes: map[string]manifest.VolumeSpec{
 				"db-data": {},
 			},
 			existingVolumes:     []string{},
@@ -49,7 +49,7 @@ func TestResourceManager_EnsureVolumesExist(t *testing.T) {
 			filesets: map[string]manifest.FilesetSpec{
 				"data": {TargetVolume: "app-data"},
 			},
-			volumes:             map[string]manifest.TopLevelResourceSpec{},
+			volumes:             map[string]manifest.VolumeSpec{},
 			existingVolumes:     []string{"app-data"},
 			expectedCreated:     []string{},
 			expectedVolumeCount: 1, // existing volume is returned in the map
@@ -59,7 +59,7 @@ func TestResourceManager_EnsureVolumesExist(t *testing.T) {
 			filesets: map[string]manifest.FilesetSpec{
 				"data": {TargetVolume: "app-data"},
 			},
-			volumes: map[string]manifest.TopLevelResourceSpec{
+			volumes: map[string]manifest.VolumeSpec{
 				"db-data": {},
 			},
 			existingVolumes:     []string{"app-data"},
@@ -204,7 +204,7 @@ func TestVolumeDeduplication(t *testing.T) {
 			"api-assets": {TargetVolume: "shared-vol"}, // Same volume
 			"db-backup":  {TargetVolume: "backup-vol"},
 		},
-		Volumes: map[string]manifest.TopLevelResourceSpec{
+		Volumes: map[string]manifest.VolumeSpec{
 			"shared-vol": {}, // Explicit definition should not cause duplication
 			"other-vol":  {},
 		},

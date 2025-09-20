@@ -49,7 +49,7 @@ func TestNormalize_VolumeKeyValidation(t *testing.T) {
 	// Valid volume key
 	cfgValid := Config{
 		Docker:  DockerConfig{Identifier: "id"},
-		Volumes: map[string]TopLevelResourceSpec{"my-volume": {}},
+		Volumes: map[string]VolumeSpec{"my-volume": {}},
 	}
 	if err := cfgValid.normalizeAndValidate("/base"); err != nil {
 		t.Fatalf("unexpected error for valid volume key: %v", err)
@@ -58,7 +58,7 @@ func TestNormalize_VolumeKeyValidation(t *testing.T) {
 	// Invalid volume key
 	cfgInvalid := Config{
 		Docker:  DockerConfig{Identifier: "id"},
-		Volumes: map[string]TopLevelResourceSpec{"Bad Volume": {}},
+		Volumes: map[string]VolumeSpec{"Bad Volume": {}},
 	}
 	if err := cfgInvalid.normalizeAndValidate("/base"); err == nil {
 		t.Fatalf("expected error for invalid volume key")

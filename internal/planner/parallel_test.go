@@ -50,7 +50,7 @@ func TestParallelVsSequentialSameResults(t *testing.T) {
 				},
 			},
 		},
-		Volumes: map[string]manifest.TopLevelResourceSpec{
+		Volumes: map[string]manifest.VolumeSpec{
 			"shared-vol": {},
 		},
 		Networks: map[string]manifest.NetworkSpec{

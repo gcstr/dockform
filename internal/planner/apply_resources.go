@@ -45,8 +45,74 @@ func (rm *ResourceManager) EnsureVolumesExist(ctx context.Context, cfg manifest.
 			if rm.planner.prog != nil {
 				rm.planner.prog.SetAction("creating volume " + name)
 			}
-			if err := rm.planner.docker.CreateVolume(ctx, name, labels); err != nil {
-				return nil, apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "create volume %s", name)
+			if spec, ok := cfg.Volumes[name]; ok && (spec.Driver != "" || len(spec.Options) > 0) {
+				if err := rm.planner.docker.CreateVolume(ctx, name, labels, dockercli.VolumeCreateOpts{Driver: spec.Driver, Options: spec.Options}); err != nil {
+					return nil, apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "create volume %s", name)
+				}
+			} else {
+				if err := rm.planner.docker.CreateVolume(ctx, name, labels); err != nil {
+					return nil, apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "create volume %s", name)
+				}
+			}
+
+			// Detect volume drift for explicit volumes and error on mismatch (no auto-recreate)
+			for name, spec := range cfg.Volumes {
+				// Skip if volume doesn't exist yet
+				if _, exists := existingVolumes[name]; !exists {
+					continue
+				}
+				if spec.Driver == "" && len(spec.Options) == 0 {
+					continue
+				}
+				vi, err := rm.planner.docker.InspectVolume(ctx, name)
+				if err != nil {
+					return nil, apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "inspect volume %s", name)
+				}
+				// Compare: driver exact when specified; options are subset match
+				drift := false
+				if spec.Driver != "" && vi.Driver != spec.Driver {
+					drift = true
+				}
+				if !drift && len(spec.Options) > 0 {
+					for k, v := range spec.Options {
+						if vi.Options == nil || vi.Options[k] != v {
+							drift = true
+							break
+						}
+					}
+				}
+				if drift {
+					// If migrate is requested, perform a safe migration: create temp volume with desired opts, copy data, swap
+					if spec.Migrate {
+						tempName := name + "-df-migrate"
+						// Create temp volume
+						if err := rm.planner.docker.CreateVolume(ctx, tempName, labels, dockercli.VolumeCreateOpts{Driver: spec.Driver, Options: spec.Options}); err != nil {
+							return nil, apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "create temp volume %s", tempName)
+						}
+						// Copy data: stream tar from old to new using helper container path
+						// We reuse ExtractTarToVolume by first reading tar via a helper container. Build tar from old volume root.
+						if err := rm.planner.docker.CopyVolumeData(ctx, name, tempName); err != nil {
+							return nil, apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "copy data %s -> %s", name, tempName)
+						}
+						if rm.planner.prog != nil {
+							rm.planner.prog.SetAction("replacing volume " + name)
+						}
+						// Remove old volume and recreate with desired opts
+						if err := rm.planner.docker.RemoveVolume(ctx, name); err != nil {
+							return nil, apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "remove original volume %s", name)
+						}
+						if err := rm.planner.docker.CreateVolume(ctx, name, labels, dockercli.VolumeCreateOpts{Driver: spec.Driver, Options: spec.Options}); err != nil {
+							return nil, apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "recreate volume %s", name)
+						}
+						if err := rm.planner.docker.CopyVolumeData(ctx, tempName, name); err != nil {
+							return nil, apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "copy data back %s -> %s", tempName, name)
+						}
+						// Cleanup temp volume
+						_ = rm.planner.docker.RemoveVolume(ctx, tempName)
+						continue
+					}
+					return nil, apperr.New("resourcemanager.EnsureVolumesExist", apperr.Conflict, "volume %s configuration drift detected (desired driver/options differ); refusing to modify existing volume", name)
+				}
 			}
 			if rm.planner.prog != nil {
 				rm.planner.prog.Increment()

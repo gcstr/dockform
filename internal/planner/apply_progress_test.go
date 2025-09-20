@@ -60,14 +60,14 @@ func TestProgressEstimator_CountVolumesToCreate(t *testing.T) {
 	tests := []struct {
 		name            string
 		filesets        map[string]manifest.FilesetSpec
-		volumes         map[string]manifest.TopLevelResourceSpec
+		volumes         map[string]manifest.VolumeSpec
 		existingVolumes []string
 		expectedCount   int
 	}{
 		{
 			name:            "no volumes needed",
 			filesets:        map[string]manifest.FilesetSpec{},
-			volumes:         map[string]manifest.TopLevelResourceSpec{},
+			volumes:         map[string]manifest.VolumeSpec{},
 			existingVolumes: []string{},
 			expectedCount:   0,
 		},
@@ -76,14 +76,14 @@ func TestProgressEstimator_CountVolumesToCreate(t *testing.T) {
 			filesets: map[string]manifest.FilesetSpec{
 				"data": {TargetVolume: "app-data"},
 			},
-			volumes:         map[string]manifest.TopLevelResourceSpec{},
+			volumes:         map[string]manifest.VolumeSpec{},
 			existingVolumes: []string{},
 			expectedCount:   1,
 		},
 		{
 			name:     "explicit volume needs creation",
 			filesets: map[string]manifest.FilesetSpec{},
-			volumes: map[string]manifest.TopLevelResourceSpec{
+			volumes: map[string]manifest.VolumeSpec{
 				"db-data": {},
 			},
 			existingVolumes: []string{},
@@ -94,7 +94,7 @@ func TestProgressEstimator_CountVolumesToCreate(t *testing.T) {
 			filesets: map[string]manifest.FilesetSpec{
 				"data": {TargetVolume: "app-data"},
 			},
-			volumes:         map[string]manifest.TopLevelResourceSpec{},
+			volumes:         map[string]manifest.VolumeSpec{},
 			existingVolumes: []string{"app-data"},
 			expectedCount:   0,
 		},

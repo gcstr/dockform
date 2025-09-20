@@ -6,15 +6,15 @@ import (
 
 // Config is the root desired-state structure parsed from YAML.
 type Config struct {
-	Docker       DockerConfig                    `yaml:"docker"`
-	Sops         *SopsConfig                     `yaml:"sops"`
-	Secrets      *Secrets                        `yaml:"secrets"`
-	Environment  *Environment                    `yaml:"environment"`
-	Applications map[string]Application          `yaml:"applications" validate:"dive"`
-	Networks     map[string]NetworkSpec          `yaml:"networks"`
-	Volumes      map[string]TopLevelResourceSpec `yaml:"volumes"`
-	Filesets     map[string]FilesetSpec          `yaml:"filesets"`
-	BaseDir      string                          `yaml:"-"`
+	Docker       DockerConfig           `yaml:"docker"`
+	Sops         *SopsConfig            `yaml:"sops"`
+	Secrets      *Secrets               `yaml:"secrets"`
+	Environment  *Environment           `yaml:"environment"`
+	Applications map[string]Application `yaml:"applications" validate:"dive"`
+	Networks     map[string]NetworkSpec `yaml:"networks"`
+	Volumes      map[string]VolumeSpec  `yaml:"volumes"`
+	Filesets     map[string]FilesetSpec `yaml:"filesets"`
+	BaseDir      string                 `yaml:"-"`
 }
 
 type DockerConfig struct {
@@ -61,6 +61,13 @@ type Secrets struct {
 
 // TopLevelResourceSpec mirrors YAML for volumes.
 type TopLevelResourceSpec struct{}
+
+// VolumeSpec allows configuring docker volume driver and options.
+type VolumeSpec struct {
+	Driver  string            `yaml:"driver"`
+	Options map[string]string `yaml:"options"`
+	Migrate bool              `yaml:"migrate"`
+}
 
 // NetworkSpec allows configuring docker network driver and options.
 type NetworkSpec struct {

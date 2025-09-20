@@ -12,8 +12,10 @@ import (
 type DockerClient interface {
 	// Volume operations
 	ListVolumes(ctx context.Context) ([]string, error)
-	CreateVolume(ctx context.Context, name string, labels map[string]string) error
+	CreateVolume(ctx context.Context, name string, labels map[string]string, opts ...dockercli.VolumeCreateOpts) error
 	RemoveVolume(ctx context.Context, name string) error
+	InspectVolume(ctx context.Context, name string) (dockercli.VolumeInspect, error)
+	CopyVolumeData(ctx context.Context, src, dst string) error
 
 	// Volume file operations
 	ReadFileFromVolume(ctx context.Context, volumeName, targetPath, relFile string) (string, error)

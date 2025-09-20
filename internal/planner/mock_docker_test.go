@@ -66,7 +66,7 @@ func (m *mockDockerClient) ListVolumes(ctx context.Context) ([]string, error) {
 	return m.volumes, nil
 }
 
-func (m *mockDockerClient) CreateVolume(ctx context.Context, name string, labels map[string]string) error {
+func (m *mockDockerClient) CreateVolume(ctx context.Context, name string, labels map[string]string, opts ...dockercli.VolumeCreateOpts) error {
 	if m.createVolumeError != nil {
 		return m.createVolumeError
 	}
@@ -84,6 +84,14 @@ func (m *mockDockerClient) RemoveVolume(ctx context.Context, name string) error 
 			break
 		}
 	}
+	return nil
+}
+
+func (m *mockDockerClient) InspectVolume(ctx context.Context, name string) (dockercli.VolumeInspect, error) {
+	return dockercli.VolumeInspect{Name: name}, nil
+}
+
+func (m *mockDockerClient) CopyVolumeData(ctx context.Context, src, dst string) error {
 	return nil
 }
 

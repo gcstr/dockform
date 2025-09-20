@@ -61,6 +61,19 @@ func TestCreateVolume_AddsLabels(t *testing.T) {
 	}
 }
 
+func TestCreateVolume_WithDriverAndOptions(t *testing.T) {
+	stub := &volExecStub{}
+	c := &Client{exec: stub}
+	opts := VolumeCreateOpts{Driver: "local", Options: map[string]string{"type": "none", "o": "bind", "device": "/tmp"}}
+	if err := c.CreateVolume(context.Background(), "v2", map[string]string{"io.dockform.identifier": "demo"}, opts); err != nil {
+		t.Fatalf("create volume with opts: %v", err)
+	}
+	joined := strings.Join(stub.lastArgs, " ")
+	if !strings.Contains(joined, "--driver local") || !strings.Contains(joined, "--opt type=none") || !strings.Contains(joined, "--opt o=bind") || !strings.Contains(joined, "--opt device=/tmp") {
+		t.Fatalf("expected driver/opts flags, got: %s", joined)
+	}
+}
+
 func TestRemoveVolume_Args(t *testing.T) {
 	stub := &volExecStub{}
 	c := &Client{exec: stub}

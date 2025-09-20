@@ -38,7 +38,7 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		c.Networks = map[string]NetworkSpec{}
 	}
 	if c.Volumes == nil {
-		c.Volumes = map[string]TopLevelResourceSpec{}
+		c.Volumes = map[string]VolumeSpec{}
 	}
 	if c.Filesets == nil {
 		c.Filesets = map[string]FilesetSpec{}

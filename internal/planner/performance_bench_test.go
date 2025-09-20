@@ -56,7 +56,7 @@ func benchmarkBuildPlan(b *testing.B, parallel bool) {
 				},
 			},
 		},
-		Volumes: map[string]manifest.TopLevelResourceSpec{
+		Volumes: map[string]manifest.VolumeSpec{
 			"shared-vol1": {},
 			"shared-vol2": {},
 		},
@@ -126,7 +126,7 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 	// Create a large configuration with many applications and filesets
 	applications := make(map[string]manifest.Application)
 	filesets := make(map[string]manifest.FilesetSpec)
-	volumes := make(map[string]manifest.TopLevelResourceSpec)
+	volumes := make(map[string]manifest.VolumeSpec)
 	networks := make(map[string]manifest.NetworkSpec)
 
 	// Add 10 applications
@@ -153,7 +153,7 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 
 	// Add 5 volumes
 	for i := 0; i < 5; i++ {
-		volumes[fmt.Sprintf("shared-vol%d", i)] = manifest.TopLevelResourceSpec{}
+		volumes[fmt.Sprintf("shared-vol%d", i)] = manifest.VolumeSpec{}
 	}
 
 	// Add 5 networks
