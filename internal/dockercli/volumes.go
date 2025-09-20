@@ -172,6 +172,19 @@ func (c *Client) ListContainersUsingVolume(ctx context.Context, volumeName strin
 	return util.SplitNonEmptyLines(out), nil
 }
 
+// ListRunningContainersUsingVolume returns names of running containers that reference the volume.
+func (c *Client) ListRunningContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error) {
+	if strings.TrimSpace(volumeName) == "" {
+		return nil, apperr.New("dockercli.ListRunningContainersUsingVolume", apperr.InvalidInput, "volume name required")
+	}
+	args := []string{"ps", "--filter", "volume=" + volumeName, "--format", "{{.Names}}"}
+	out, err := c.exec.Run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return util.SplitNonEmptyLines(out), nil
+}
+
 // StopContainers stops the given containers gracefully.
 func (c *Client) StopContainers(ctx context.Context, names []string) error {
 	if len(names) == 0 {
@@ -183,6 +196,22 @@ func (c *Client) StopContainers(ctx context.Context, names []string) error {
 			continue
 		}
 		if _, err := c.exec.Run(ctx, "container", "stop", n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// StartContainers starts the given containers.
+func (c *Client) StartContainers(ctx context.Context, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	for _, n := range names {
+		if strings.TrimSpace(n) == "" {
+			continue
+		}
+		if _, err := c.exec.Run(ctx, "container", "start", n); err != nil {
 			return err
 		}
 	}

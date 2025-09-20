@@ -232,16 +232,21 @@ func newVolumeRestoreCmd() *cobra.Command {
 				return apperr.New("cli.volume.restore", apperr.NotFound, "volume %q not found in Docker context", volName)
 			}
 
-			// Check containers using volume
-			users, err := clictx.Docker.ListContainersUsingVolume(ctx, volName)
+			// Check containers using volume and track which were running
+			allUsers, err := clictx.Docker.ListContainersUsingVolume(ctx, volName)
 			if err != nil {
 				return err
 			}
-			if len(users) > 0 {
+			runningUsers, _ := clictx.Docker.ListRunningContainersUsingVolume(ctx, volName)
+			runningSet := map[string]struct{}{}
+			for _, n := range runningUsers {
+				runningSet[n] = struct{}{}
+			}
+			if len(allUsers) > 0 {
 				if !stopContainers {
-					return apperr.New("cli.volume.restore", apperr.Conflict, "containers are using volume %q: %s (use --stop-containers)", volName, strings.Join(users, ", "))
+					return apperr.New("cli.volume.restore", apperr.Conflict, "containers are using volume %q: %s (use --stop-containers)", volName, strings.Join(allUsers, ", "))
 				}
-				if err := clictx.Docker.StopContainers(ctx, users); err != nil {
+				if err := clictx.Docker.StopContainers(ctx, allUsers); err != nil {
 					return err
 				}
 			}
@@ -309,6 +314,19 @@ func newVolumeRestoreCmd() *cobra.Command {
 				}
 			} else {
 				return apperr.New("cli.volume.restore", apperr.InvalidInput, "unsupported snapshot extension (expected .tar.zst or .tar)")
+			}
+
+			// Restart containers that were running before restore
+			if stopContainers && len(runningSet) > 0 {
+				var toStart []string
+				for name := range runningSet {
+					toStart = append(toStart, name)
+				}
+				// Sort for determinism in tests and UX
+				sort.Strings(toStart)
+				if err := clictx.Docker.StartContainers(ctx, toStart); err != nil {
+					return err
+				}
 			}
 
 			pr.Info("Restored snapshot into volume %s", volName)
