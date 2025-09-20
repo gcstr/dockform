@@ -66,7 +66,6 @@ type TopLevelResourceSpec struct{}
 type VolumeSpec struct {
 	Driver  string            `yaml:"driver"`
 	Options map[string]string `yaml:"options"`
-	Migrate bool              `yaml:"migrate"`
 }
 
 // NetworkSpec allows configuring docker network driver and options.

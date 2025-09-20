@@ -35,6 +35,7 @@ type DockerClient interface {
 	RemoveContainer(ctx context.Context, name string, force bool) error
 	UpdateContainerLabels(ctx context.Context, containerName string, labels map[string]string) error
 	InspectContainerLabels(ctx context.Context, containerName string, keys []string) (map[string]string, error)
+	ListContainersByVolume(ctx context.Context, volumeName string) ([]string, error)
 
 	// Compose operations
 	ComposeConfigFull(ctx context.Context, root string, files []string, profiles []string, envFiles []string, inline []string) (dockercli.ComposeConfigDoc, error)

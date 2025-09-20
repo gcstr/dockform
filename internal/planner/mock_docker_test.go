@@ -252,6 +252,10 @@ func (m *mockDockerClient) SyncDirToVolume(ctx context.Context, volumeName, targ
 	return nil
 }
 
+func (m *mockDockerClient) ListContainersByVolume(ctx context.Context, volumeName string) ([]string, error) {
+	return []string{}, nil
+}
+
 // Daemon check
 func (m *mockDockerClient) CheckDaemon(ctx context.Context) error {
 	return nil

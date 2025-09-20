@@ -179,6 +179,19 @@ func (c *Client) ListComposeContainersAll(ctx context.Context) ([]PsBrief, error
 	return items, nil
 }
 
+// ListContainersByVolume returns container names that have the given volume attached (any label/identifier).
+func (c *Client) ListContainersByVolume(ctx context.Context, volumeName string) ([]string, error) {
+	if strings.TrimSpace(volumeName) == "" {
+		return []string{}, nil
+	}
+	args := []string{"ps", "-a", "--format", "{{.Names}}", "--filter", "volume=" + volumeName}
+	out, err := c.exec.Run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return util.SplitNonEmptyLines(out), nil
+}
+
 // SyncDirToVolume streams a tar of localDir to the named volume's targetPath.
 // Requirements:
 // - targetPath must be absolute and not '/'
