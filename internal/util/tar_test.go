@@ -87,6 +87,39 @@ func TestTarFilesToWriter_SkipsSymlinks(t *testing.T) {
 	}
 }
 
+func TestTarFilesToWriter_EmitsParentDirsAndRegulars(t *testing.T) {
+	dir := t.TempDir()
+	// Create nested files
+	if err := os.MkdirAll(filepath.Join(dir, "a", "b"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	mustWriteFile(t, filepath.Join(dir, "a", "b", "c.txt"), []byte("C"))
+	mustWriteFile(t, filepath.Join(dir, "root.txt"), []byte("R"))
+
+	var buf bytes.Buffer
+	if err := TarFilesToWriter(dir, []string{"a/b/c.txt", "root.txt"}, &buf); err != nil {
+		t.Fatalf("tar files: %v", err)
+	}
+	tr := tar.NewReader(bytes.NewReader(buf.Bytes()))
+	var names []string
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("next: %v", err)
+		}
+		names = append(names, hdr.Name)
+	}
+	sort.Strings(names)
+	// Expect parent directory headers emitted once
+	expect := []string{"a/", "a/b/", "a/b/c.txt", "root.txt"}
+	if !equalSlices(names, expect) {
+		t.Fatalf("unexpected tar entries:\n got: %#v\nwant: %#v", names, expect)
+	}
+}
+
 func isWindows() bool {
 	// Avoid importing runtime in multiple places; thin wrapper
 	return strings.Contains(strings.ToLower(os.Getenv("OS")), "windows")
