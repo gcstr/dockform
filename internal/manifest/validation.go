@@ -44,10 +44,15 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		c.Filesets = map[string]FilesetSpec{}
 	}
 
-	// Validate volume names
-	for volumeName := range c.Volumes {
+	// Validate volume names and drivers
+	for volumeName, volSpec := range c.Volumes {
 		if !appKeyRegex.MatchString(volumeName) {
 			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid volume key %q: must match ^[a-z0-9_.-]+$", volumeName)
+		}
+		if d := strings.TrimSpace(volSpec.Driver); d != "" {
+			if !isAllowedVolumeDriver(d) {
+				return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid volume driver %q for volume %q: supported drivers are: local, portworx, longhorn, openebs, rexray, convoy", d, volumeName)
+			}
 		}
 	}
 
@@ -230,4 +235,14 @@ func rebaseRootEnvToApp(baseDir, resolvedRoot string, files []string) []string {
 		}
 	}
 	return out
+}
+
+// isAllowedVolumeDriver restricts volume drivers to posix-compliant drivers we support.
+func isAllowedVolumeDriver(d string) bool {
+	switch strings.ToLower(d) {
+	case "local", "portworx", "longhorn", "openebs", "rexray", "convoy":
+		return true
+	default:
+		return false
+	}
 }
