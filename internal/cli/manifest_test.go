@@ -56,6 +56,37 @@ func TestManifest_Render_InterpolatesEnvAndWarnsOnMissing(t *testing.T) {
 	}
 }
 
+func TestManifest_Render_ShowsActualFilename(t *testing.T) {
+	// Create a manifest with a custom filename
+	dir := t.TempDir()
+	customPath := filepath.Join(dir, "custom-manifest.yml")
+	content := "docker:\n  identifier: test\n"
+	if err := os.WriteFile(customPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"manifest", "render", "-c", customPath})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("manifest render execute: %v", err)
+	}
+
+	// In non-TTY mode, should just output the YAML content
+	got := out.String()
+	if !strings.Contains(got, "identifier: test") {
+		t.Fatalf("expected manifest content in output; got: %s", got)
+	}
+
+	// Should have trailing newline
+	if !strings.HasSuffix(got, "\n") {
+		t.Fatalf("expected trailing newline in output; got: %q", got)
+	}
+}
+
 func TestManifest_Render_InvalidPath_ReturnsError(t *testing.T) {
 	root := newRootCmd()
 	var out bytes.Buffer

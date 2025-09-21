@@ -23,7 +23,7 @@ func newManifestRenderCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, _ := cmd.Flags().GetString("config")
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-			out, missing, err := manifest.RenderWithWarnings(file)
+			out, filename, missing, err := manifest.RenderWithWarningsAndPath(file)
 			if err != nil {
 				return err
 			}
@@ -32,7 +32,7 @@ func newManifestRenderCmd() *cobra.Command {
 			}
 			// Render in a full-screen viewport pager when attached to a TTY;
 			// otherwise fall back to plain printing to preserve pipes/tests.
-			if err := ui.RenderYAMLInPagerTTY(cmd.InOrStdin(), cmd.OutOrStdout(), out, "Manifest (interpolated)"); err != nil {
+			if err := ui.RenderYAMLInPagerTTY(cmd.InOrStdin(), cmd.OutOrStdout(), out, filename); err != nil {
 				return err
 			}
 			return nil

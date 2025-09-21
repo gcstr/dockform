@@ -92,6 +92,28 @@ func RenderWithWarnings(path string) (string, []string, error) {
 	return interpolated, missing, nil
 }
 
+// RenderWithWarningsAndPath reads the manifest file and returns interpolated YAML,
+// the resolved file path, and the list of missing env var names.
+func RenderWithWarningsAndPath(path string) (string, string, []string, error) {
+	guessed, err := resolveConfigPath(path)
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	guessedAbs, err := filepath.Abs(guessed)
+	if err != nil {
+		return "", "", nil, apperr.Wrap("manifest.Render", apperr.InvalidInput, err, "abs path")
+	}
+
+	b, err := os.ReadFile(guessedAbs)
+	if err != nil {
+		return "", "", nil, apperr.Wrap("manifest.Render", apperr.NotFound, err, "read config")
+	}
+
+	interpolated, missing := interpolateEnvPlaceholders(string(b))
+	return interpolated, filepath.Base(guessedAbs), missing, nil
+}
+
 // Render reads the manifest file at the provided path (or discovers it like Load)
 // and returns the YAML content with ${VAR} placeholders interpolated from the
 // current environment. Missing variables are replaced with empty strings and a

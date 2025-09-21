@@ -3,6 +3,7 @@ package manifest
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/apperr"
@@ -130,5 +131,108 @@ func TestLoadWithWarnings_InvalidYAML(t *testing.T) {
 	}
 	if !apperr.IsKind(err, apperr.InvalidInput) {
 		t.Fatalf("expected InvalidInput, got: %v", err)
+	}
+}
+
+func TestRenderWithWarningsAndPath_ReturnsFilenameAndContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test-config.yml")
+	t.Setenv("TEST_VAR", "test-value")
+	content := "docker:\n  context: ${TEST_VAR}\n  identifier: myapp\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	out, filename, missing, err := RenderWithWarningsAndPath(path)
+	if err != nil {
+		t.Fatalf("RenderWithWarningsAndPath: %v", err)
+	}
+
+	// Check filename is just the base name
+	if filename != "test-config.yml" {
+		t.Fatalf("expected filename 'test-config.yml', got %q", filename)
+	}
+
+	// Check content is interpolated
+	if !strings.Contains(out, "context: test-value") {
+		t.Fatalf("expected interpolated content, got: %q", out)
+	}
+
+	// Check no missing vars
+	if len(missing) != 0 {
+		t.Fatalf("expected no missing vars, got: %v", missing)
+	}
+}
+
+func TestRenderWithWarningsAndPath_ReportsMissingVars(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dockform.yml")
+	// Ensure MISSING_VAR is not set
+	if err := os.Unsetenv("MISSING_VAR"); err != nil {
+		t.Fatalf("unsetenv: %v", err)
+	}
+	content := "docker:\n  context: ${MISSING_VAR}\n  identifier: myapp\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	out, filename, missing, err := RenderWithWarningsAndPath(path)
+	if err != nil {
+		t.Fatalf("RenderWithWarningsAndPath: %v", err)
+	}
+
+	// Check filename
+	if filename != "dockform.yml" {
+		t.Fatalf("expected filename 'dockform.yml', got %q", filename)
+	}
+
+	// Check missing var is reported
+	if len(missing) != 1 || missing[0] != "MISSING_VAR" {
+		t.Fatalf("expected missing [MISSING_VAR], got: %v", missing)
+	}
+
+	// Check content has empty replacement
+	if !strings.Contains(out, "context: \n") {
+		t.Fatalf("expected empty replacement for missing var, got: %q", out)
+	}
+}
+
+func TestRenderWithWarningsAndPath_DirectoryResolution(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dockform.yml")
+	content := "docker:\n  identifier: myapp\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	// Pass directory instead of file
+	out, filename, missing, err := RenderWithWarningsAndPath(dir)
+	if err != nil {
+		t.Fatalf("RenderWithWarningsAndPath: %v", err)
+	}
+
+	// Should resolve to dockform.yml
+	if filename != "dockform.yml" {
+		t.Fatalf("expected filename 'dockform.yml', got %q", filename)
+	}
+
+	if !strings.Contains(out, "identifier: myapp") {
+		t.Fatalf("expected content from resolved file, got: %q", out)
+	}
+
+	if len(missing) != 0 {
+		t.Fatalf("expected no missing vars, got: %v", missing)
+	}
+}
+
+func TestRenderWithWarningsAndPath_NonExistentFile(t *testing.T) {
+	bogusPath := filepath.Join(t.TempDir(), "does-not-exist.yml")
+
+	_, _, _, err := RenderWithWarningsAndPath(bogusPath)
+	if err == nil {
+		t.Fatalf("expected error for non-existent file, got nil")
+	}
+	if !apperr.IsKind(err, apperr.NotFound) {
+		t.Fatalf("expected NotFound error, got: %v", err)
 	}
 }
