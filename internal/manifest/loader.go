@@ -110,8 +110,23 @@ func RenderWithWarningsAndPath(path string) (string, string, []string, error) {
 		return "", "", nil, apperr.Wrap("manifest.Render", apperr.NotFound, err, "read config")
 	}
 
+	// Get relative path from current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		// Fallback to base filename if we can't get cwd
+		interpolated, missing := interpolateEnvPlaceholders(string(b))
+		return interpolated, filepath.Base(guessedAbs), missing, nil
+	}
+
+	relPath, err := filepath.Rel(cwd, guessedAbs)
+	if err != nil {
+		// Fallback to base filename if relative path calculation fails
+		interpolated, missing := interpolateEnvPlaceholders(string(b))
+		return interpolated, filepath.Base(guessedAbs), missing, nil
+	}
+
 	interpolated, missing := interpolateEnvPlaceholders(string(b))
-	return interpolated, filepath.Base(guessedAbs), missing, nil
+	return interpolated, relPath, missing, nil
 }
 
 // Render reads the manifest file at the provided path (or discovers it like Load)

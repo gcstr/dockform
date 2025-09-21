@@ -60,6 +60,8 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newValidateCmd())
 	cmd.AddCommand(newSecretCmd())
 	cmd.AddCommand(newManifestCmd())
+	// New top-level compose command
+	cmd.AddCommand(newComposeCmd())
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newVolumeCmd())
 

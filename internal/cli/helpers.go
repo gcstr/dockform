@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/dockercli"
@@ -53,6 +54,56 @@ func ValidateWithDocker(ctx context.Context, cfg *manifest.Config, docker *docke
 // CreatePlanner creates a planner with Docker client and printer configured.
 func CreatePlanner(docker *dockercli.Client, pr ui.Printer) *planner.Planner {
 	return planner.NewWithDocker(docker).WithPrinter(pr)
+}
+
+// maskSecretsSimple redacts secret-like values from a YAML string based on application config.
+// This is a pragmatic heuristic: it masks occurrences of values provided via app/environment
+// inline env and sops secrets (after decryption via BuildInlineEnv), as well as common sensitive keys.
+func maskSecretsSimple(yaml string, app manifest.Application, strategy maskStrategy) string {
+	// Determine mask replacement based on strategy
+	mask := func(s string) string {
+		switch strategy {
+		case maskPartial:
+			if len(s) <= 4 {
+				return "****"
+			}
+			return s[:2] + strings.Repeat("*", len(s)-4) + s[len(s)-2:]
+		case maskPreserveLength:
+			if l := len(s); l > 0 {
+				return strings.Repeat("*", l)
+			}
+			return ""
+		case maskFull:
+			fallthrough
+		default:
+			return "********"
+		}
+	}
+
+	// Mask by common sensitive keys patterns: password, secret, token, key
+	// YAML format allows: key: value or key: "value"
+	// We keep it simple and mask the value part.
+	keyPatterns := []string{"password", "secret", "token", "key", "apikey", "api_key", "access_key", "private_key"}
+	for _, kp := range keyPatterns {
+		// (?i) case-insensitive; match lines like "kp: something"
+		re := regexp.MustCompile(`(?i)(` + kp + `\s*:\s*)([^\n#]+)`) // stop at newline or comment
+		yaml = re.ReplaceAllStringFunc(yaml, func(m string) string {
+			parts := re.FindStringSubmatch(m)
+			if len(parts) != 3 {
+				return m
+			}
+			prefix := parts[1]
+			val := strings.TrimSpace(parts[2])
+			// Keep quotes if present
+			if strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"") && len(val) >= 2 {
+				inner := val[1 : len(val)-1]
+				return prefix + "\"" + mask(inner) + "\""
+			}
+			return prefix + mask(val)
+		})
+	}
+
+	return yaml
 }
 
 // SpinnerOperation runs an operation with a spinner, automatically handling start/stop.

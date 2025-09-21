@@ -148,9 +148,9 @@ func TestRenderWithWarningsAndPath_ReturnsFilenameAndContent(t *testing.T) {
 		t.Fatalf("RenderWithWarningsAndPath: %v", err)
 	}
 
-	// Check filename is just the base name
-	if filename != "test-config.yml" {
-		t.Fatalf("expected filename 'test-config.yml', got %q", filename)
+	// Check filename is a relative path that ends with the base name
+	if !strings.HasSuffix(filename, "test-config.yml") {
+		t.Fatalf("expected filename to end with 'test-config.yml', got %q", filename)
 	}
 
 	// Check content is interpolated
@@ -181,9 +181,9 @@ func TestRenderWithWarningsAndPath_ReportsMissingVars(t *testing.T) {
 		t.Fatalf("RenderWithWarningsAndPath: %v", err)
 	}
 
-	// Check filename
-	if filename != "dockform.yml" {
-		t.Fatalf("expected filename 'dockform.yml', got %q", filename)
+	// Check filename is a relative path that ends with the base name
+	if !strings.HasSuffix(filename, "dockform.yml") {
+		t.Fatalf("expected filename to end with 'dockform.yml', got %q", filename)
 	}
 
 	// Check missing var is reported
@@ -211,9 +211,9 @@ func TestRenderWithWarningsAndPath_DirectoryResolution(t *testing.T) {
 		t.Fatalf("RenderWithWarningsAndPath: %v", err)
 	}
 
-	// Should resolve to dockform.yml
-	if filename != "dockform.yml" {
-		t.Fatalf("expected filename 'dockform.yml', got %q", filename)
+	// Should resolve to dockform.yml (relative path)
+	if !strings.HasSuffix(filename, "dockform.yml") {
+		t.Fatalf("expected filename to end with 'dockform.yml', got %q", filename)
 	}
 
 	if !strings.Contains(out, "identifier: myapp") {

@@ -209,7 +209,6 @@ func TestPagerModel_SmallWidth_HandlesGracefully(t *testing.T) {
 	}
 }
 
-
 func TestRenderYAMLInPagerTTY_WriteError_ReturnsError(t *testing.T) {
 	yamlContent := "docker:\n  identifier: test\n"
 	title := "test.yml"

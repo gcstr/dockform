@@ -91,6 +91,19 @@ func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files
 	return doc, nil
 }
 
+// ComposeConfigRaw returns the fully resolved compose configuration as YAML text.
+// It is equivalent to running `docker compose config` with the provided files,
+// profiles and env files, resolved relative to workingDir. Inline environment
+// variables are provided via the process environment for the command.
+func (c *Client) ComposeConfigRaw(ctx context.Context, workingDir string, files, profiles, envFiles []string, inlineEnv []string) (string, error) {
+	args := c.composeBaseArgs(files, profiles, envFiles, "")
+	args = append(args, "config")
+	if len(inlineEnv) > 0 {
+		return c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
+	}
+	return c.exec.RunInDir(ctx, workingDir, args...)
+}
+
 // ComposePs lists running (or created) compose services for the project.
 func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string) ([]ComposePsItem, error) {
 	args := c.composeBaseArgs(files, profiles, envFiles, projectName)
