@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/ui"
 	"github.com/spf13/cobra"
@@ -32,13 +30,10 @@ func newManifestRenderCmd() *cobra.Command {
 			for _, name := range missing {
 				pr.Warn("environment variable %s is not set; replacing with empty string", name)
 			}
-			if _, err := fmt.Fprint(cmd.OutOrStdout(), out); err != nil {
+			// Render in a full-screen viewport pager when attached to a TTY;
+			// otherwise fall back to plain printing to preserve pipes/tests.
+			if err := ui.RenderYAMLInPagerTTY(cmd.InOrStdin(), cmd.OutOrStdout(), out, "Manifest (interpolated)"); err != nil {
 				return err
-			}
-			if len(out) == 0 || out[len(out)-1] != '\n' {
-				if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-					return err
-				}
 			}
 			return nil
 		},
