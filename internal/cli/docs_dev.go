@@ -160,11 +160,12 @@ func buildSidebar(cmd *cobra.Command, basePath string) []SidebarItem {
 	rootPath := []string{cmd.Name()}
 	rootItem := walk(cmd, rootPath, true) // Mark as root
 
-	// Wrap everything under an unclickable "CLI Reference" header
+	// Wrap everything under "CLI Reference" header
 	return []SidebarItem{
 		{
-			Text:  "CLI Reference",
-			Items: []SidebarItem{rootItem},
+			Text:      "CLI Reference",
+			Collapsed: &[]bool{true}[0],
+			Items:     []SidebarItem{rootItem},
 		},
 	}
 }
