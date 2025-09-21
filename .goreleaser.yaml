@@ -71,6 +71,7 @@ brews:
       owner: gcstr
       name: homebrew-dockform
       branch: main
+    directory: Formula
     url_template: "https://github.com/gcstr/dockform/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
     homepage: "https://dockform.io"
     description: "Manage Docker Compose projects declaratively"
