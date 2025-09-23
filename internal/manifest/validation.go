@@ -8,18 +8,19 @@ import (
 	"github.com/gcstr/dockform/internal/apperr"
 )
 
-// findDefaultComposeFile looks for docker-compose files with .yaml or .yml extensions
-// in the given directory, preferring .yaml over .yml if both exist.
+// findDefaultComposeFile looks for compose files in the given directory, selecting in order:
+// compose.yaml > compose.yml > docker-compose.yaml > docker-compose.yml. If none exist,
+// it defaults to compose.yaml under the provided directory.
 func findDefaultComposeFile(dir string) string {
-	candidates := []string{"docker-compose.yaml", "docker-compose.yml"}
+	candidates := []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
 	for _, candidate := range candidates {
 		fullPath := filepath.Join(dir, candidate)
 		if _, err := os.Stat(fullPath); err == nil {
 			return fullPath
 		}
 	}
-	// If neither exists, default to .yml for consistency with existing behavior
-	return filepath.Join(dir, "docker-compose.yml")
+	// If none exist, default to compose.yaml for modern Compose behavior
+	return filepath.Join(dir, "compose.yaml")
 }
 
 func (c *Config) normalizeAndValidate(baseDir string) error {
