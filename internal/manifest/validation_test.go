@@ -38,8 +38,8 @@ func TestNormalize_DefaultsEnvMergingAndFiles(t *testing.T) {
 	if !reflect.DeepEqual(app.EnvFile, wantEnv) {
 		t.Fatalf("env files mismatch:\nwant: %#v\n got: %#v", wantEnv, app.EnvFile)
 	}
-	// When Files empty, default docker-compose.yml under resolved root
-	wantFiles := []string{filepath.Join(wantRoot, "docker-compose.yml")}
+	// When Files empty, default compose.yaml under resolved root
+	wantFiles := []string{filepath.Join(wantRoot, "compose.yaml")}
 	if !reflect.DeepEqual(app.Files, wantFiles) {
 		t.Fatalf("files mismatch:\nwant: %#v\n got: %#v", wantFiles, app.Files)
 	}
@@ -227,7 +227,26 @@ func TestFilesets_ValidationAndNormalization(t *testing.T) {
 }
 
 func TestFindDefaultComposeFile(t *testing.T) {
-	// Test finding docker-compose.yaml when both exist (prefer .yaml)
+	// Test selection order: compose.yaml > compose.yml > docker-compose.yaml > docker-compose.yml
+	t.Run("prefer_compose_yaml_over_others", func(t *testing.T) {
+		dir := t.TempDir()
+		composeYaml := filepath.Join(dir, "compose.yaml")
+		composeYml := filepath.Join(dir, "compose.yml")
+		dcYaml := filepath.Join(dir, "docker-compose.yaml")
+		dcYml := filepath.Join(dir, "docker-compose.yml")
+
+		// Create all files
+		for _, p := range []string{composeYaml, composeYml, dcYaml, dcYml} {
+			if err := os.WriteFile(p, []byte("version: '3'\nservices: {}"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		result := findDefaultComposeFile(dir)
+		if result != composeYaml {
+			t.Fatalf("expected %s, got %s", composeYaml, result)
+		}
+	})
 	t.Run("prefer_yaml_when_both_exist", func(t *testing.T) {
 		dir := t.TempDir()
 		yamlFile := filepath.Join(dir, "docker-compose.yaml")
@@ -248,9 +267,9 @@ func TestFindDefaultComposeFile(t *testing.T) {
 	})
 
 	// Test finding docker-compose.yml when only yml exists
-	t.Run("find_yml_when_only_yml_exists", func(t *testing.T) {
+	t.Run("find_compose_yml_when_only_compose_yml_exists", func(t *testing.T) {
 		dir := t.TempDir()
-		ymlFile := filepath.Join(dir, "docker-compose.yml")
+		ymlFile := filepath.Join(dir, "compose.yml")
 
 		if err := os.WriteFile(ymlFile, []byte("version: '3'\nservices: {}"), 0644); err != nil {
 			t.Fatal(err)
@@ -262,10 +281,10 @@ func TestFindDefaultComposeFile(t *testing.T) {
 		}
 	})
 
-	// Test finding docker-compose.yaml when only yaml exists
-	t.Run("find_yaml_when_only_yaml_exists", func(t *testing.T) {
+	// Test finding compose.yaml when only compose.yaml exists
+	t.Run("find_compose_yaml_when_only_compose_yaml_exists", func(t *testing.T) {
 		dir := t.TempDir()
-		yamlFile := filepath.Join(dir, "docker-compose.yaml")
+		yamlFile := filepath.Join(dir, "compose.yaml")
 
 		if err := os.WriteFile(yamlFile, []byte("version: '3'\nservices: {}"), 0644); err != nil {
 			t.Fatal(err)
@@ -277,10 +296,10 @@ func TestFindDefaultComposeFile(t *testing.T) {
 		}
 	})
 
-	// Test default when neither exists
-	t.Run("default_yml_when_neither_exists", func(t *testing.T) {
+	// Test default when none exists
+	t.Run("default_compose_yaml_when_none_exists", func(t *testing.T) {
 		dir := t.TempDir()
-		expected := filepath.Join(dir, "docker-compose.yml")
+		expected := filepath.Join(dir, "compose.yaml")
 
 		result := findDefaultComposeFile(dir)
 		if result != expected {
@@ -290,15 +309,15 @@ func TestFindDefaultComposeFile(t *testing.T) {
 }
 
 func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
-	// Test that normalization picks up docker-compose.yaml when available
-	t.Run("picks_up_yaml_extension", func(t *testing.T) {
+	// Test that normalization picks up compose.yaml when available
+	t.Run("picks_up_compose_yaml", func(t *testing.T) {
 		base := t.TempDir()
 		appDir := filepath.Join(base, "app")
 		if err := os.MkdirAll(appDir, 0755); err != nil {
 			t.Fatal(err)
 		}
 
-		yamlFile := filepath.Join(appDir, "docker-compose.yaml")
+		yamlFile := filepath.Join(appDir, "compose.yaml")
 		if err := os.WriteFile(yamlFile, []byte("version: '3'\nservices: {}"), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -324,15 +343,15 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 		}
 	})
 
-	// Test that normalization picks up docker-compose.yml when yaml doesn't exist
-	t.Run("picks_up_yml_extension", func(t *testing.T) {
+	// Test that normalization picks up compose.yml when compose.yaml doesn't exist
+	t.Run("picks_up_compose_yml", func(t *testing.T) {
 		base := t.TempDir()
 		appDir := filepath.Join(base, "app")
 		if err := os.MkdirAll(appDir, 0755); err != nil {
 			t.Fatal(err)
 		}
 
-		ymlFile := filepath.Join(appDir, "docker-compose.yml")
+		ymlFile := filepath.Join(appDir, "compose.yml")
 		if err := os.WriteFile(ymlFile, []byte("version: '3'\nservices: {}"), 0644); err != nil {
 			t.Fatal(err)
 		}

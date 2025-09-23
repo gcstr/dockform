@@ -122,7 +122,7 @@ func newComposeRenderCmd() *cobra.Command {
 					title = title + " (+" + strconv.Itoa(len(app.Files)-1) + ")"
 				}
 			} else {
-				title = "docker-compose.yml"
+				title = "compose.yaml"
 			}
 
 			return ui.RenderYAMLInPagerTTY(cmd.InOrStdin(), cmd.OutOrStdout(), raw, title)
