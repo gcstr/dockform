@@ -155,11 +155,31 @@ func (m *mockDockerClient) ListComposeContainersAll(ctx context.Context) ([]dock
 	return m.containers, nil
 }
 
+func (m *mockDockerClient) ListRunningContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error) {
+	// For tests that need it, derive from containers slice by matching a label or name
+	// Here we just return any container names we have to simulate running ones
+	out := []string{}
+	for _, c := range m.containers {
+		out = append(out, c.Name)
+	}
+	return out, nil
+}
+
 func (m *mockDockerClient) RestartContainer(ctx context.Context, name string) error {
 	if m.restartError != nil {
 		return m.restartError
 	}
 	m.restartedContainers = append(m.restartedContainers, name)
+	return nil
+}
+
+func (m *mockDockerClient) StopContainers(ctx context.Context, names []string) error {
+	// No-op for tests
+	return nil
+}
+
+func (m *mockDockerClient) StartContainers(ctx context.Context, names []string) error {
+	// No-op for tests
 	return nil
 }
 

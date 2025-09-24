@@ -81,6 +81,7 @@ type FilesetSpec struct {
 	TargetVolume    string   `yaml:"target_volume"`
 	TargetPath      string   `yaml:"target_path"`
 	RestartServices []string `yaml:"restart_services"`
+	ApplyMode       string   `yaml:"apply_mode"`
 	Exclude         []string `yaml:"exclude"`
 	SourceAbs       string   `yaml:"-"`
 }

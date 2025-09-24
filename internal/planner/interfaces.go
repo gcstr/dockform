@@ -29,7 +29,10 @@ type DockerClient interface {
 
 	// Container operations
 	ListComposeContainersAll(ctx context.Context) ([]dockercli.PsBrief, error)
+	ListRunningContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error)
 	RestartContainer(ctx context.Context, name string) error
+	StopContainers(ctx context.Context, names []string) error
+	StartContainers(ctx context.Context, names []string) error
 	RemoveContainer(ctx context.Context, name string, force bool) error
 	UpdateContainerLabels(ctx context.Context, containerName string, labels map[string]string) error
 	InspectContainerLabels(ctx context.Context, containerName string, keys []string) (map[string]string, error)

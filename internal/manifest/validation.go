@@ -205,6 +205,16 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		if a.TargetPath == "/" {
 			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_path cannot be '/'", filesetName)
 		}
+		// apply_mode: default to hot, validate values
+		mode := strings.ToLower(strings.TrimSpace(a.ApplyMode))
+		if mode == "" {
+			mode = "hot"
+		}
+		if mode != "hot" && mode != "cold" {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: apply_mode must be 'hot' or 'cold'", filesetName)
+		}
+		a.ApplyMode = mode
+
 		// Resolve source relative to baseDir
 		srcAbs := a.Source
 		if !filepath.IsAbs(srcAbs) {

@@ -63,6 +63,21 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 			continue
 		}
 
+		// Determine apply mode (default hot)
+		isCold := fileset.ApplyMode == "cold"
+
+		// For cold mode, stop running containers using the target volume before syncing
+		var previouslyRunning []string
+		if isCold {
+			if fm.planner.prog != nil {
+				fm.planner.prog.SetAction("stopping containers for fileset " + name)
+			}
+			if names, err := fm.planner.docker.ListRunningContainersUsingVolume(ctx, fileset.TargetVolume); err == nil {
+				previouslyRunning = append(previouslyRunning, names...)
+				_ = fm.planner.docker.StopContainers(ctx, previouslyRunning)
+			}
+		}
+
 		// Sync files (create + update)
 		if err := fm.syncFilesetFiles(ctx, name, fileset, diff); err != nil {
 			return nil, err
@@ -78,14 +93,24 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 			return nil, err
 		}
 
+		// For cold mode, start previously running containers again
+		if isCold && len(previouslyRunning) > 0 {
+			if fm.planner.prog != nil {
+				fm.planner.prog.SetAction("starting containers for fileset " + name)
+			}
+			_ = fm.planner.docker.StartContainers(ctx, previouslyRunning)
+		}
+
 		if fm.planner.prog != nil {
 			fm.planner.prog.Increment()
 		}
 
-		// Queue services for restart
-		for _, svc := range fileset.RestartServices {
-			if svc != "" {
-				restartPending[svc] = struct{}{}
+		// Queue services for restart only for hot mode
+		if !isCold {
+			for _, svc := range fileset.RestartServices {
+				if svc != "" {
+					restartPending[svc] = struct{}{}
+				}
 			}
 		}
 	}
