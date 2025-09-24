@@ -1,0 +1,14 @@
+providers:
+  docker:
+    exposedbydefault: false
+
+entrypoints:
+  web:
+    address: ":80"
+
+api:
+  dashboard: true
+  insecure: true
+
+log:
+  level: INFO
