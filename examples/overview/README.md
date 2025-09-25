@@ -1,29 +1,15 @@
+# Manifest File Overview
+
+```yaml
 docker:
   context: default
-  identifier: demo
-
-filesets:
-  files:
-    source: website/assets/
-    target_volume: demo-volume-1
-    target_path: /assets
-    restart_services:
-      - nginx
-    exclude:
-      - "**/.DS_Store"
-      - "*.bak"
-      - "tmp/**"
-      - "secrets/"
-      # - "**/*.svg"
+  identifier: overview
 
 sops:
   age:
     key_file: ${AGE_KEY_FILE}
   recipients: 
     - age1vmn3nv333mprv02cn8qyafxaz94zg368lnk5gsclmme9ryludysswn5rgr
-    - age1g39p42mle5uva3tqns37dmjy5znqyftfav0ldccxy7we9hh9vdlqzeyd7g
-    - age1uyu44nt7l8cupegcyamasfhv023jrhylc4gxv8nq3y434k40y35swcu595
-    - age1qdmqmutxujygy9fm68vkymu0yypr2kgly9dx5ewezpcpzfh6mv7qja3n6x
 
 secrets:
   sops:
@@ -53,5 +39,23 @@ applications:
       sops:
         - secrets.env
 
+filesets:
+  files:
+    source: website/assets/
+    target_volume: demo-volume-1
+    target_path: /assets
+    restart_services:
+      - nginx
+    exclude:
+      - "**/.DS_Store"
+      - "*.bak"
+      - "tmp/**"
+      - "secrets/"
+      # - "**/*.svg"
+
+volumes:
+  my-volume:
+
 networks:
   demo-network:
+```
