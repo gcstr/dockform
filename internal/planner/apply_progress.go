@@ -173,10 +173,11 @@ func (pe *ProgressEstimator) countServiceRestarts(ctx context.Context, cfg manif
 		return 0, nil
 	}
 
-	// Collect unique restart services
+	// Collect unique restart services using resolution semantics
 	restartServices := map[string]struct{}{}
 	for _, fs := range cfg.Filesets {
-		for _, svc := range fs.RestartServices {
+		targets, _ := resolveTargetServices(ctx, pe.planner.docker, fs)
+		for _, svc := range targets {
 			if strings.TrimSpace(svc) != "" {
 				restartServices[svc] = struct{}{}
 			}

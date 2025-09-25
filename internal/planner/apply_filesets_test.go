@@ -71,28 +71,28 @@ func TestFilesetManager_ConfigValidation(t *testing.T) {
 func TestFilesetManager_RestartServicesParsing(t *testing.T) {
 	tests := []struct {
 		name            string
-		restartServices []string
+		restartServices manifest.RestartTargets
 		expectedCount   int
 	}{
 		{
 			name:            "no restart services",
-			restartServices: []string{},
+			restartServices: manifest.RestartTargets{},
 			expectedCount:   0,
 		},
 		{
 			name:            "single service",
-			restartServices: []string{"web"},
+			restartServices: manifest.RestartTargets{Services: []string{"web"}},
 			expectedCount:   1,
 		},
 		{
 			name:            "multiple services",
-			restartServices: []string{"web", "api", "db"},
+			restartServices: manifest.RestartTargets{Services: []string{"web", "api", "db"}},
 			expectedCount:   3,
 		},
 		{
-			name:            "services with empty strings",
-			restartServices: []string{"web", "", "api"},
-			expectedCount:   3, // Configuration stores as-is
+			name:            "attached mode",
+			restartServices: manifest.RestartTargets{Attached: true},
+			expectedCount:   0, // Would be resolved at runtime
 		},
 	}
 
@@ -104,14 +104,16 @@ func TestFilesetManager_RestartServicesParsing(t *testing.T) {
 				RestartServices: tt.restartServices,
 			}
 
-			if len(fileset.RestartServices) != tt.expectedCount {
-				t.Errorf("expected %d services, got %d", tt.expectedCount, len(fileset.RestartServices))
+			if len(fileset.RestartServices.Services) != tt.expectedCount {
+				t.Errorf("expected %d services, got %d", tt.expectedCount, len(fileset.RestartServices.Services))
 			}
 
-			// Verify content matches
-			for i, expected := range tt.restartServices {
-				if i < len(fileset.RestartServices) && fileset.RestartServices[i] != expected {
-					t.Errorf("expected service %q at index %d, got %q", expected, i, fileset.RestartServices[i])
+			// Verify content matches for explicit services
+			if !fileset.RestartServices.Attached {
+				for i, expected := range tt.restartServices.Services {
+					if i < len(fileset.RestartServices.Services) && fileset.RestartServices.Services[i] != expected {
+						t.Errorf("expected service %q at index %d, got %q", expected, i, fileset.RestartServices.Services[i])
+					}
 				}
 			}
 		})

@@ -66,15 +66,33 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 		// Determine apply mode (default hot)
 		isCold := fileset.ApplyMode == "cold"
 
-		// For cold mode, stop running containers using the target volume before syncing
-		var previouslyRunning []string
-		if isCold {
+		// Compute target services to restart/stop based on restart_services semantics
+		targetServices, _ := resolveTargetServices(ctx, fm.planner.docker, fileset)
+
+		// For cold mode, stop targets (if any) before syncing
+		var stoppedContainers []string
+		if isCold && len(targetServices) > 0 {
 			if fm.planner.prog != nil {
-				fm.planner.prog.SetAction("stopping containers for fileset " + name)
+				fm.planner.prog.SetAction("stopping services for fileset " + name)
 			}
-			if names, err := fm.planner.docker.ListRunningContainersUsingVolume(ctx, fileset.TargetVolume); err == nil {
-				previouslyRunning = append(previouslyRunning, names...)
-				_ = fm.planner.docker.StopContainers(ctx, previouslyRunning)
+			// Get all containers and find ones matching the target services
+			if items, err := fm.planner.docker.ListComposeContainersAll(ctx); err == nil {
+				var containersToStop []string
+				for _, svc := range targetServices {
+					if svc == "" {
+						continue
+					}
+					for _, it := range items {
+						if it.Service == svc {
+							containersToStop = append(containersToStop, it.Name)
+							stoppedContainers = append(stoppedContainers, it.Name)
+							break
+						}
+					}
+				}
+				if len(containersToStop) > 0 {
+					_ = fm.planner.docker.StopContainers(ctx, containersToStop)
+				}
 			}
 		}
 
@@ -93,12 +111,12 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 			return nil, err
 		}
 
-		// For cold mode, start previously running containers again
-		if isCold && len(previouslyRunning) > 0 {
+		// For cold mode, start previously stopped containers again
+		if isCold && len(stoppedContainers) > 0 {
 			if fm.planner.prog != nil {
-				fm.planner.prog.SetAction("starting containers for fileset " + name)
+				fm.planner.prog.SetAction("starting services for fileset " + name)
 			}
-			_ = fm.planner.docker.StartContainers(ctx, previouslyRunning)
+			_ = fm.planner.docker.StartContainers(ctx, stoppedContainers)
 		}
 
 		if fm.planner.prog != nil {
@@ -107,7 +125,7 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 
 		// Queue services for restart only for hot mode
 		if !isCold {
-			for _, svc := range fileset.RestartServices {
+			for _, svc := range targetServices {
 				if svc != "" {
 					restartPending[svc] = struct{}{}
 				}

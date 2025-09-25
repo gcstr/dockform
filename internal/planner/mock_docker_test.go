@@ -155,6 +155,15 @@ func (m *mockDockerClient) ListComposeContainersAll(ctx context.Context) ([]dock
 	return m.containers, nil
 }
 
+func (m *mockDockerClient) ListContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error) {
+	// For tests, return all container names to simulate volume attachment
+	var out []string
+	for _, c := range m.containers {
+		out = append(out, c.Name)
+	}
+	return out, nil
+}
+
 func (m *mockDockerClient) ListRunningContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error) {
 	// For tests that need it, derive from containers slice by matching a label or name
 	// Here we just return any container names we have to simulate running ones

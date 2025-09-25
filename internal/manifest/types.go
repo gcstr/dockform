@@ -1,7 +1,9 @@
 package manifest
 
 import (
+	"fmt"
 	"regexp"
+	"strings"
 )
 
 // Config is the root desired-state structure parsed from YAML.
@@ -77,13 +79,69 @@ type NetworkSpec struct {
 
 // FilesetSpec defines a local directory to sync into a docker volume at a target path.
 type FilesetSpec struct {
-	Source          string   `yaml:"source"`
-	TargetVolume    string   `yaml:"target_volume"`
-	TargetPath      string   `yaml:"target_path"`
-	RestartServices []string `yaml:"restart_services"`
-	ApplyMode       string   `yaml:"apply_mode"`
-	Exclude         []string `yaml:"exclude"`
-	SourceAbs       string   `yaml:"-"`
+	Source          string         `yaml:"source"`
+	TargetVolume    string         `yaml:"target_volume"`
+	TargetPath      string         `yaml:"target_path"`
+	RestartServices RestartTargets `yaml:"restart_services"`
+	ApplyMode       string         `yaml:"apply_mode"`
+	Exclude         []string       `yaml:"exclude"`
+	SourceAbs       string         `yaml:"-"`
+}
+
+// RestartTargets represents either an explicit list of services to restart, or
+// the sentinel value "attached" which means: discover services that mount the
+// fileset's target_volume.
+type RestartTargets struct {
+	Attached bool
+	Services []string
+}
+
+// UnmarshalYAML supports either a string (must be "attached") or a list of strings.
+// If omitted or null, it results in no restarts.
+func (r *RestartTargets) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Try string first
+	var s string
+	if err := unmarshal(&s); err == nil {
+		s2 := strings.TrimSpace(strings.ToLower(s))
+		if s2 == "" {
+			*r = RestartTargets{}
+			return nil
+		}
+		if s2 != "attached" {
+			return fmt.Errorf("restart_services: string value must be 'attached' or a list")
+		}
+		*r = RestartTargets{Attached: true}
+		return nil
+	}
+	// Try list of strings
+	var list []string
+	if err := unmarshal(&list); err == nil {
+		// Normalize and dedupe while preserving order
+		seen := map[string]struct{}{}
+		out := make([]string, 0, len(list))
+		for _, it := range list {
+			v := strings.TrimSpace(it)
+			if v == "" {
+				continue
+			}
+			if _, ok := seen[v]; ok {
+				continue
+			}
+			seen[v] = struct{}{}
+			out = append(out, v)
+		}
+		*r = RestartTargets{Services: out}
+		return nil
+	}
+	// Try interface{} to catch null
+	var any interface{}
+	if err := unmarshal(&any); err == nil {
+		if any == nil {
+			*r = RestartTargets{}
+			return nil
+		}
+	}
+	return fmt.Errorf("restart_services: must be 'attached' or list of service names")
 }
 
 var (
