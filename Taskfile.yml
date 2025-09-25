@@ -9,6 +9,8 @@ vars:
   COVER_OUT: '{{.ENV.COVER_OUT | default "cover.out"}}'
   GOLANGCI_LINT_PKG: '{{.ENV.GOLANGCI_LINT_PKG | default "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"}}'
   ARGS: '{{.ENV.ARGS | default ""}}'
+  CURRENT_TAG: 
+    sh: git describe --abbrev=0 --tags
 
 tasks:
   default:
@@ -124,4 +126,20 @@ tasks:
     cmds:
       - '{{.GO}} run -tags dev {{.MAIN}} docs --out docs/cli'
 
+  release:tag:
+    desc: Intefactively create a new tag and push it to the remote repository
+    cmds:
+      - cmd: gum style --border normal --margin "1" --padding "1 2" --border-foreground 212 "Current tag -> $(gum style --foreground 212 '{{.CURRENT_TAG}}')"
+        silent: true
+      - cmd: |
+          set -e
+          NEW_TAG=$(gum input --placeholder "New tag")
+          gum confirm "Create tag $NEW_TAG?" || exit 1
+          echo "Creating tag $NEW_TAG"
+          git tag -a $NEW_TAG -m "release $NEW_TAG"
+          gum confirm "Push tag $NEW_TAG?" || exit 1
+          git push origin $NEW_TAG
+        silent: true
 
+
+      
