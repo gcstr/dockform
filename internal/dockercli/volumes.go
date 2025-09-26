@@ -272,7 +272,7 @@ func parseInt64(s string) (int64, error) {
 	var n int64
 	for _, ch := range []byte(strings.TrimSpace(s)) {
 		if ch < '0' || ch > '9' {
-			return 0, fmt.Errorf("invalid digit")
+			return 0, apperr.New("dockercli.parseInt64", apperr.InvalidInput, "invalid digit")
 		}
 		n = n*10 + int64(ch-'0')
 	}

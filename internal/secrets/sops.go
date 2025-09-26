@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -63,7 +64,7 @@ func DecryptAndParse(ctx context.Context, path string, ageKeyFile string) ([]str
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
-			return nil, apperr.Wrap("secrets.DecryptAndParse", apperr.External, fmt.Errorf("%s", string(ee.Stderr)), "sops decrypt %s", path)
+			return nil, apperr.Wrap("secrets.DecryptAndParse", apperr.External, errors.New(string(ee.Stderr)), "sops decrypt %s", path)
 		}
 		return nil, apperr.Wrap("secrets.DecryptAndParse", apperr.External, err, "sops decrypt %s", path)
 	}

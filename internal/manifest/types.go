@@ -1,9 +1,10 @@
 package manifest
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/gcstr/dockform/internal/apperr"
 )
 
 // Config is the root desired-state structure parsed from YAML.
@@ -108,7 +109,7 @@ func (r *RestartTargets) UnmarshalYAML(unmarshal func(interface{}) error) error 
 			return nil
 		}
 		if s2 != "attached" {
-			return fmt.Errorf("restart_services: string value must be 'attached' or a list")
+			return apperr.New("manifest.RestartTargets.UnmarshalYAML", apperr.InvalidInput, "restart_services: string value must be 'attached' or a list")
 		}
 		*r = RestartTargets{Attached: true}
 		return nil
@@ -141,7 +142,7 @@ func (r *RestartTargets) UnmarshalYAML(unmarshal func(interface{}) error) error 
 			return nil
 		}
 	}
-	return fmt.Errorf("restart_services: must be 'attached' or list of service names")
+	return apperr.New("manifest.RestartTargets.UnmarshalYAML", apperr.InvalidInput, "restart_services: must be 'attached' or list of service names")
 }
 
 var (

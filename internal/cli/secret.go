@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/secrets"
 	"github.com/spf13/cobra"
@@ -28,7 +29,7 @@ func newSecretCmd() *cobra.Command {
 
 func resolveRecipientsAndKey(cfg manifest.Config) ([]string, string, error) {
 	if cfg.Sops == nil || cfg.Sops.Age == nil || cfg.Sops.Age.KeyFile == "" {
-		return nil, "", fmt.Errorf("sops age key_file not configured")
+		return nil, "", apperr.New("cli.resolveRecipientsAndKey", apperr.InvalidInput, "sops age key_file not configured")
 	}
 	recipients := cfg.Sops.Recipients
 	if len(recipients) == 0 {
@@ -58,7 +59,7 @@ func newSecretCreateCmd() *cobra.Command {
 			}
 			path := args[0]
 			if _, err := os.Stat(path); err == nil {
-				return fmt.Errorf("target exists: %s", path)
+				return apperr.New("cli.newSecretCreateCmd", apperr.InvalidInput, "target exists: %s", path)
 			}
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				return err

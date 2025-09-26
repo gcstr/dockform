@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -107,7 +108,7 @@ func EncryptDotenvFileWithSops(ctx context.Context, path string, recipients []st
 	cmd := exec.CommandContext(ctx, "sops", args...)
 	cmd.Env = os.Environ()
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.External, fmt.Errorf("%s", string(out)), "sops encrypt %s", path)
+		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.External, errors.New(string(out)), "sops encrypt %s", path)
 	}
 	return nil
 }
