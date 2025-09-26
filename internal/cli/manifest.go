@@ -32,7 +32,18 @@ func newManifestRenderCmd() *cobra.Command {
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			out, filename, missing, err := manifest.RenderWithWarningsAndPath(file)
 			if err != nil {
-				return err
+				// Interactive discovery if no manifest at CWD and no explicit --config
+				if file == "" && apperr.IsKind(err, apperr.NotFound) {
+					if selPath, ok, selErr := selectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+						_ = cmd.Flags().Set("config", selPath)
+						out, filename, missing, err = manifest.RenderWithWarningsAndPath(selPath)
+					} else if selErr != nil {
+						return selErr
+					}
+				}
+				if err != nil {
+					return err
+				}
 			}
 			for _, name := range missing {
 				pr.Warn("environment variable %s is not set; replacing with empty string", name)

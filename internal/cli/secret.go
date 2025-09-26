@@ -11,6 +11,7 @@ import (
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/secrets"
+	"github.com/gcstr/dockform/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -49,7 +50,16 @@ func newSecretCreateCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfgPath, _ := cmd.Flags().GetString("config")
+			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
+			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
+				if selPath, ok, selErr := selectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+					_ = cmd.Flags().Set("config", selPath)
+					cfg, err = manifest.Load(selPath)
+				} else if selErr != nil {
+					return selErr
+				}
+			}
 			if err != nil {
 				return err
 			}
@@ -87,7 +97,16 @@ func newSecretRekeyCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfgPath, _ := cmd.Flags().GetString("config")
+			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
+			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
+				if selPath, ok, selErr := selectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+					_ = cmd.Flags().Set("config", selPath)
+					cfg, err = manifest.Load(selPath)
+				} else if selErr != nil {
+					return selErr
+				}
+			}
 			if err != nil {
 				return err
 			}
@@ -131,7 +150,16 @@ func newSecretDecryptCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfgPath, _ := cmd.Flags().GetString("config")
+			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
+			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
+				if selPath, ok, selErr := selectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+					_ = cmd.Flags().Set("config", selPath)
+					cfg, err = manifest.Load(selPath)
+				} else if selErr != nil {
+					return selErr
+				}
+			}
 			if err != nil {
 				return err
 			}
@@ -156,7 +184,16 @@ func newSecretEditCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfgPath, _ := cmd.Flags().GetString("config")
+			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
+			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
+				if selPath, ok, selErr := selectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+					_ = cmd.Flags().Set("config", selPath)
+					cfg, err = manifest.Load(selPath)
+				} else if selErr != nil {
+					return selErr
+				}
+			}
 			if err != nil {
 				return err
 			}
