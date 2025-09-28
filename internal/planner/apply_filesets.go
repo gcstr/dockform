@@ -7,6 +7,7 @@ import (
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/filesets"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/util"
 )
@@ -23,6 +24,7 @@ func NewFilesetManager(planner *Planner) *FilesetManager {
 
 // SyncFilesets synchronizes all filesets into their target volumes and returns services that need restart.
 func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config, existingVolumes map[string]struct{}) (map[string]struct{}, error) {
+	log := logger.FromContext(ctx).With("component", "fileset")
 	restartPending := map[string]struct{}{}
 
 	if len(cfg.Filesets) == 0 {
@@ -60,6 +62,8 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 
 		// If completely equal, skip this fileset
 		if local.TreeHash == remote.TreeHash {
+			st := logger.StartStep(log, "fileset_sync", name, "resource_kind", "fileset", "target_volume", fileset.TargetVolume)
+			st.OK(false) // No changes needed
 			continue
 		}
 
@@ -96,19 +100,27 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 			}
 		}
 
+		// Start logging the sync operation
+		st := logger.StartStep(log, "fileset_sync", name,
+			"resource_kind", "fileset",
+			"target_volume", fileset.TargetVolume,
+			"apply_mode", fileset.ApplyMode,
+			"files_changed", len(diff.ToCreate)+len(diff.ToUpdate),
+			"files_deleted", len(diff.ToDelete))
+
 		// Sync files (create + update)
 		if err := fm.syncFilesetFiles(ctx, name, fileset, diff); err != nil {
-			return nil, err
+			return nil, st.Fail(err)
 		}
 
 		// Delete removed files
 		if err := fm.deleteFilesetFiles(ctx, name, fileset, diff); err != nil {
-			return nil, err
+			return nil, st.Fail(err)
 		}
 
 		// Write updated index
 		if err := fm.writeFilesetIndex(ctx, name, fileset, local); err != nil {
-			return nil, err
+			return nil, st.Fail(err)
 		}
 
 		// For cold mode, start previously stopped containers again
@@ -118,6 +130,8 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 			}
 			_ = fm.planner.docker.StartContainers(ctx, stoppedContainers)
 		}
+
+		st.OK(true) // Fileset was successfully synced
 
 		if fm.planner.prog != nil {
 			fm.planner.prog.Increment()

@@ -22,6 +22,7 @@ import (
 
 // CLIContext contains all the components needed for most CLI operations.
 type CLIContext struct {
+	Ctx     context.Context
 	Config  *manifest.Config
 	Docker  *dockercli.Client
 	Printer ui.Printer
@@ -265,7 +266,7 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 
 	// Validate in spinner
 	err = SpinnerOperation(pr, "Validating...", func() error {
-		return ValidateWithDocker(context.Background(), cfg, docker)
+		return ValidateWithDocker(cmd.Context(), cfg, docker)
 	})
 	if err != nil {
 		return nil, err
@@ -275,6 +276,7 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	planner := CreatePlanner(docker, pr)
 
 	return &CLIContext{
+		Ctx:     cmd.Context(),
 		Config:  cfg,
 		Docker:  docker,
 		Printer: pr,
@@ -289,7 +291,7 @@ func (ctx *CLIContext) BuildPlan() (*planner.Plan, error) {
 
 	stdPr := ctx.Printer.(ui.StdPrinter)
 	err = SpinnerOperation(stdPr, "Planning...", func() error {
-		plan, err = ctx.Planner.BuildPlan(context.Background(), *ctx.Config)
+		plan, err = ctx.Planner.BuildPlan(ctx.Ctx, *ctx.Config)
 		return err
 	})
 
@@ -300,7 +302,7 @@ func (ctx *CLIContext) BuildPlan() (*planner.Plan, error) {
 func (ctx *CLIContext) ApplyPlan() error {
 	stdPr := ctx.Printer.(ui.StdPrinter)
 	return ProgressOperation(stdPr, "Applying", func(pb *ui.Progress) error {
-		return ctx.Planner.WithProgress(pb).Apply(context.Background(), *ctx.Config)
+		return ctx.Planner.WithProgress(pb).Apply(ctx.Ctx, *ctx.Config)
 	})
 }
 
@@ -308,7 +310,7 @@ func (ctx *CLIContext) ApplyPlan() error {
 func (ctx *CLIContext) PrunePlan() error {
 	stdPr := ctx.Printer.(ui.StdPrinter)
 	return SpinnerOperation(stdPr, "Pruning...", func() error {
-		return ctx.Planner.Prune(context.Background(), *ctx.Config)
+		return ctx.Planner.Prune(ctx.Ctx, *ctx.Config)
 	})
 }
 
@@ -384,7 +386,7 @@ func (ctx *CLIContext) BuildDestroyPlan() (*planner.Plan, error) {
 
 	stdPr := ctx.Printer.(ui.StdPrinter)
 	err = SpinnerOperation(stdPr, "Discovering resources...", func() error {
-		plan, err = ctx.Planner.BuildDestroyPlan(context.Background(), *ctx.Config)
+		plan, err = ctx.Planner.BuildDestroyPlan(ctx.Ctx, *ctx.Config)
 		return err
 	})
 

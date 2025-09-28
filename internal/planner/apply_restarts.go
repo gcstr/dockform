@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/ui"
 )
 
@@ -23,6 +24,8 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 		return nil
 	}
 
+	log := logger.FromContext(ctx).With("component", "restart")
+
 	// Get all containers
 	items, _ := rm.planner.docker.ListComposeContainersAll(ctx)
 
@@ -38,6 +41,7 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 		for _, it := range items {
 			if it.Service == svc {
 				found = true
+				st := logger.StartStep(log, "service_restart", svc, "resource_kind", "service", "container", it.Name)
 				pr.Info("restarting service %s...", svc)
 
 				if rm.planner.prog != nil {
@@ -45,9 +49,10 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 				}
 
 				if err := rm.planner.docker.RestartContainer(ctx, it.Name); err != nil {
-					return apperr.Wrap("restartmanager.RestartPendingServices", apperr.External, err, "restart service %s", svc)
+					return st.Fail(apperr.Wrap("restartmanager.RestartPendingServices", apperr.External, err, "restart service %s", svc))
 				}
 
+				st.OK(true)
 				if rm.planner.prog != nil {
 					rm.planner.prog.Increment()
 				}
@@ -56,7 +61,9 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 		}
 
 		if !found {
+			st := logger.StartStep(log, "service_restart", svc, "resource_kind", "service")
 			pr.Warn("%s not found.", svc)
+			st.Fail(apperr.New("restartmanager.RestartPendingServices", apperr.NotFound, "service %s not found", svc))
 		}
 	}
 

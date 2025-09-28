@@ -7,11 +7,20 @@ import (
 	"sync"
 
 	"github.com/gcstr/dockform/internal/filesets"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
 // BuildPlan produces a structured plan with resources organized by type.
 func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, error) {
+	log := logger.FromContext(ctx).With("component", "planner")
+	st := logger.StartStep(log, "plan_build", cfg.Docker.Identifier,
+		"resource_kind", "plan",
+		"volumes_desired", len(cfg.Volumes),
+		"networks_desired", len(cfg.Networks),
+		"filesets_desired", len(cfg.Filesets),
+		"applications_desired", len(cfg.Applications))
+
 	resourcePlan := &ResourcePlan{
 		Volumes:      []Resource{},
 		Networks:     []Resource{},
@@ -24,6 +33,9 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 	var existingVolumes, existingNetworks map[string]struct{}
 	if p.docker != nil {
 		existingVolumes, existingNetworks = p.getExistingResourcesConcurrently(ctx)
+		log.Debug("resource_discovery",
+			"volumes_found", len(existingVolumes),
+			"networks_found", len(existingNetworks))
 	}
 
 	// Plan volumes - combine volumes from filesets and explicit volumes
@@ -125,6 +137,19 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		resourcePlan.Volumes = append(resourcePlan.Volumes,
 			NewResource(ResourceVolume, "nothing to do", ActionNoop, "nothing to do"))
 	}
+
+	// Calculate plan statistics for logging
+	createCount, updateCount, deleteCount := resourcePlan.CountActions()
+	totalChanges := createCount + updateCount + deleteCount
+
+	// Log completion with plan summary
+	st.OK(totalChanges > 0,
+		"volumes_existing", len(existingVolumes),
+		"networks_existing", len(existingNetworks),
+		"changes_create", createCount,
+		"changes_update", updateCount,
+		"changes_delete", deleteCount,
+		"changes_total", totalChanges)
 
 	return &Plan{Resources: resourcePlan}, nil
 }
