@@ -74,18 +74,18 @@ func (m selectModel) View() string {
 	// Add blank line above title
 	b.WriteString("\n")
 	// Title
-	b.WriteString(" ")
+	// b.WriteString(" ")
 	b.WriteString(styleSectionTitle.Render(m.title))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 	// Options
 	for i, opt := range m.options {
 		if i == m.cursor {
 			// Highlight the entire line (prefix + text) in purple/magenta like the example
 			purpleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#C084FC")) // Purple-400
-			wholeLine := " [x] " + opt
+			wholeLine := "[x] " + opt
 			b.WriteString(purpleStyle.Render(wholeLine))
 		} else {
-			b.WriteString(" [ ] " + opt)
+			b.WriteString("[ ] " + opt)
 		}
 		b.WriteString("\n")
 	}
