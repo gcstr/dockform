@@ -5,6 +5,7 @@ import (
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
@@ -61,6 +62,7 @@ func (rm *ResourceManager) EnsureVolumesExist(ctx context.Context, cfg manifest.
 
 // EnsureNetworksExist creates any missing networks defined in the manifest.
 func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest.Config, labels map[string]string) error {
+	log := logger.FromContext(ctx).With("component", "network")
 	// Get existing networks
 	existingNetworks := map[string]struct{}{}
 	if nets, err := rm.planner.docker.ListNetworks(ctx); err == nil {
@@ -88,12 +90,14 @@ func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest
 		}
 
 		if !exists {
+			st := logger.StartStep(log, "network_ensure", name, "resource_kind", "network")
 			if rm.planner.prog != nil {
 				rm.planner.prog.SetAction("creating network " + name)
 			}
 			if err := rm.planner.docker.CreateNetwork(ctx, name, labels, opts); err != nil {
-				return apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "create network %s", name)
+				return st.Fail(apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "create network %s", name))
 			}
+			st.OK(true)
 			if rm.planner.prog != nil {
 				rm.planner.prog.Increment()
 			}

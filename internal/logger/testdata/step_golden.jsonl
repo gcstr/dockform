@@ -1,0 +1,4 @@
+{"level":"info","msg":"network_ensure","action":"network_ensure","component":"network","command":"dockform plan","resource":"df_net","run_id":"abc123","status":"started"}
+{"level":"info","msg":"network_ensure","action":"network_ensure","changed":true,"component":"network","command":"dockform plan","resource":"df_net","run_id":"abc123","status":"ok"}
+
+

@@ -7,9 +7,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/logger"
 )
 
 // Exec abstracts docker command execution for ease of testing.
@@ -66,6 +68,7 @@ func (s *SystemExec) WithDefaultTimeout(d time.Duration) *SystemExec { s.Default
 func (s *SystemExec) WithLogger(h LoggerHook) *SystemExec { s.Logger = h; return s }
 
 func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error) {
+	l := logger.FromContext(ctx).With("component", "dockercli")
 	// Honor per-call timeout, falling back to default if set
 	if opts.Timeout <= 0 && s.DefaultTimeout > 0 {
 		opts.Timeout = s.DefaultTimeout
@@ -79,6 +82,7 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 	if s.Logger != nil {
 		s.Logger(ExecEvent{Phase: "start", Args: args, Dir: opts.Dir})
 	}
+	st := logger.StartStep(l, "docker_exec", strings.Join(args, " "), "resource_kind", "process")
 
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, "docker", args...)
@@ -124,8 +128,10 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 	}
 
 	if runErr != nil {
+		st.Fail(runErr, "exit_code", exitCode)
 		return res, apperr.Wrap("dockercli.Exec", apperr.External, runErr, "%s", res.Stderr)
 	}
+	st.OK(exitCode == 0, "exit_code", exitCode)
 	return res, nil
 }
 
