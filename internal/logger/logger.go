@@ -163,6 +163,29 @@ func (m *multiLogger) With(keyvals ...any) Logger {
 	return &multiLogger{sinks: next}
 }
 
+// Fanout returns a Logger that forwards every log call to all provided sinks.
+// If only one sink is provided, that sink is returned unchanged.
+// This does not modify the behavior or configuration of the provided loggers;
+// it simply aggregates them.
+func Fanout(sinks ...Logger) Logger {
+	if len(sinks) == 0 {
+		return Nop()
+	}
+	if len(sinks) == 1 {
+		return sinks[0]
+	}
+	// Flatten nested multiLoggers to avoid deep chains
+	flat := make([]Logger, 0, len(sinks))
+	for _, s := range sinks {
+		if ml, ok := s.(*multiLogger); ok {
+			flat = append(flat, ml.sinks...)
+			continue
+		}
+		flat = append(flat, s)
+	}
+	return &multiLogger{sinks: flat}
+}
+
 // Step is a helper for emitting started/ok/failed events with consistent keys.
 type Step struct {
 	logger   Logger

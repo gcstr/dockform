@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"context"
+
+	"github.com/gcstr/dockform/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -44,13 +47,21 @@ func newApplyCmd() *cobra.Command {
 				return nil
 			}
 
-			// Apply the plan
-			if err := ctx.ApplyPlan(); err != nil {
-				return err
-			}
+			// Apply + Prune with rolling logs when stdout is a TTY
+			_, err = ui.RunWithRollingLog(cmd.Context(), func(runCtx context.Context) (string, error) {
+				prev := ctx.Ctx
+				ctx.Ctx = runCtx
+				defer func() { ctx.Ctx = prev }()
 
-			// Prune unused resources
-			if err := ctx.PrunePlan(); err != nil {
+				if err := ctx.ApplyPlan(); err != nil {
+					return "", err
+				}
+				if err := ctx.PrunePlan(); err != nil {
+					return "", err
+				}
+				return "│ Done.", nil
+			})
+			if err != nil {
 				return err
 			}
 

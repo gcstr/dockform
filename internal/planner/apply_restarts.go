@@ -63,7 +63,7 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 		if !found {
 			st := logger.StartStep(log, "service_restart", svc, "resource_kind", "service")
 			pr.Warn("%s not found.", svc)
-			st.Fail(apperr.New("restartmanager.RestartPendingServices", apperr.NotFound, "service %s not found", svc))
+			_ = st.Fail(apperr.New("restartmanager.RestartPendingServices", apperr.NotFound, "service %s not found", svc))
 		}
 	}
 

@@ -7,6 +7,7 @@ import (
 
 	"io"
 	"os"
+	"strconv"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
@@ -271,6 +272,12 @@ type StdPrinter struct {
 }
 
 func (p StdPrinter) Plain(format string, a ...any) {
+	// Suppress printing when rolling TUI is active
+	if v := os.Getenv("DOCKFORM_TUI_ACTIVE"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil && b {
+			return
+		}
+	}
 	if p.Out == nil {
 		return
 	}
@@ -278,6 +285,12 @@ func (p StdPrinter) Plain(format string, a ...any) {
 }
 
 func (p StdPrinter) Info(format string, a ...any) {
+	// Suppress printing when rolling TUI is active
+	if v := os.Getenv("DOCKFORM_TUI_ACTIVE"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil && b {
+			return
+		}
+	}
 	if p.Out == nil {
 		return
 	}
@@ -288,6 +301,12 @@ func (p StdPrinter) Info(format string, a ...any) {
 }
 
 func (p StdPrinter) Warn(format string, a ...any) {
+	// Suppress printing when rolling TUI is active
+	if v := os.Getenv("DOCKFORM_TUI_ACTIVE"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil && b {
+			return
+		}
+	}
 	if p.Err == nil {
 		return
 	}
@@ -298,6 +317,12 @@ func (p StdPrinter) Warn(format string, a ...any) {
 }
 
 func (p StdPrinter) Error(format string, a ...any) {
+	// Suppress printing when rolling TUI is active
+	if v := os.Getenv("DOCKFORM_TUI_ACTIVE"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil && b {
+			return
+		}
+	}
 	if p.Err == nil {
 		return
 	}

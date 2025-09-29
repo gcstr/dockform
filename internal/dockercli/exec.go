@@ -128,7 +128,7 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 	}
 
 	if runErr != nil {
-		st.Fail(runErr, "exit_code", exitCode)
+		_ = st.Fail(runErr, "exit_code", exitCode)
 		return res, apperr.Wrap("dockercli.Exec", apperr.External, runErr, "%s", res.Stderr)
 	}
 	st.OK(exitCode == 0, "exit_code", exitCode)
