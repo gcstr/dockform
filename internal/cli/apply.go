@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/spf13/cobra"
+
+	"github.com/gcstr/dockform/internal/planner"
 )
 
 func newApplyCmd() *cobra.Command {
@@ -25,8 +27,9 @@ func newApplyCmd() *cobra.Command {
 				ctx.Planner = ctx.Planner.WithParallel(false)
 			}
 
-			// Build and display the plan with rolling logs (or direct when verbose)
-			planOut, _, err := RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
+			// Build the plan with rolling logs (or direct when verbose)
+			var builtPlan *planner.Plan
+			planOut, usedTUI, err := RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
 				prev := ctx.Ctx
 				ctx.Ctx = runCtx
 				defer func() { ctx.Ctx = prev }()
@@ -34,12 +37,24 @@ func newApplyCmd() *cobra.Command {
 				if err != nil {
 					return "", err
 				}
+				builtPlan = plan
 				return plan.String(), nil
 			})
 			if err != nil {
 				return err
 			}
-			ctx.Printer.Plain("%s", planOut)
+			if !usedTUI {
+				ctx.Printer.Plain("%s", planOut)
+			}
+
+			// If the plan has no create/update/delete actions, inform and exit early
+			if builtPlan != nil && builtPlan.Resources != nil {
+				createCount, updateCount, deleteCount := builtPlan.Resources.CountActions()
+				if createCount == 0 && updateCount == 0 && deleteCount == 0 {
+					ctx.Printer.Plain("Nothing to apply. Exiting.")
+					return nil
+				}
+			}
 
 			// Get confirmation from user
 			confirmed, err := GetConfirmation(cmd, ctx.Printer, ConfirmationOptions{
