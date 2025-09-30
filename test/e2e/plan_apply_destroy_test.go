@@ -203,7 +203,7 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 		t.Fatalf("expected label io.dockform.identifier=%s, got %q", identifier, labelVal)
 	}
 
-	// 2) Plan -> Confirm -> Apply
+	// 2) Plan -> Confirm -> Apply (should be idempotent, no changes)
 	pOut, pErr, pCode := runCmdDetailed(t, root, env, bin, "plan", "-c", exampleCfg)
 	if pCode != 0 {
 		t.Fatalf("plan failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", pCode, pOut, pErr)
@@ -216,8 +216,11 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	if aCode != 0 {
 		t.Fatalf("apply (with confirm) failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", aCode, aOut, aErr)
 	}
-	if !strings.Contains(aOut, "Dockform will apply the changes listed above") || !strings.Contains(aOut, "Answer") {
-		t.Fatalf("confirmation prompt not shown or not respected:\n%s", aOut)
+	// When there are no changes, apply should exit early without prompting
+	if strings.Contains(aOut, "Nothing to apply") {
+		// Expected: no-op case, no confirmation shown
+	} else if !strings.Contains(aOut, "Dockform will apply the changes listed above") || !strings.Contains(aOut, "Answer") {
+		t.Fatalf("confirmation prompt not shown or not respected when changes exist:\n%s", aOut)
 	}
 
 	// 3) Idempotency: subsequent plan should be noop/up-to-date
