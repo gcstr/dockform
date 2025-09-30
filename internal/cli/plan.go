@@ -26,20 +26,28 @@ func newPlanCmd() *cobra.Command {
 
 			// Build plan normally
 			var out string
-			_, err = ui.RunWithRollingLog(cmd.Context(), func(runCtx context.Context) (string, error) {
-				prev := ctx.Ctx
-				ctx.Ctx = runCtx
-				defer func() { ctx.Ctx = prev }()
-
+			if verbose {
 				plan, err := ctx.BuildPlan()
 				if err != nil {
-					return "", err
+					return err
 				}
 				out = plan.String()
-				return "", nil
-			})
-			if err != nil {
-				return err
+			} else {
+				_, err = ui.RunWithRollingLog(cmd.Context(), func(runCtx context.Context) (string, error) {
+					prev := ctx.Ctx
+					ctx.Ctx = runCtx
+					defer func() { ctx.Ctx = prev }()
+
+					plan, err := ctx.BuildPlan()
+					if err != nil {
+						return "", err
+					}
+					out = plan.String()
+					return "", nil
+				})
+				if err != nil {
+					return err
+				}
 			}
 
 			ctx.Printer.Plain("%s", out)

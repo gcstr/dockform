@@ -47,22 +47,31 @@ func newApplyCmd() *cobra.Command {
 				return nil
 			}
 
-			// Apply + Prune with rolling logs when stdout is a TTY
-			_, err = ui.RunWithRollingLog(cmd.Context(), func(runCtx context.Context) (string, error) {
-				prev := ctx.Ctx
-				ctx.Ctx = runCtx
-				defer func() { ctx.Ctx = prev }()
-
+			// Apply + Prune with rolling logs when stdout is a TTY; verbose prints logs normally
+			if verbose {
 				if err := ctx.ApplyPlan(); err != nil {
-					return "", err
+					return err
 				}
 				if err := ctx.PrunePlan(); err != nil {
-					return "", err
+					return err
 				}
-				return "│ Done.", nil
-			})
-			if err != nil {
-				return err
+			} else {
+				_, err = ui.RunWithRollingLog(cmd.Context(), func(runCtx context.Context) (string, error) {
+					prev := ctx.Ctx
+					ctx.Ctx = runCtx
+					defer func() { ctx.Ctx = prev }()
+
+					if err := ctx.ApplyPlan(); err != nil {
+						return "", err
+					}
+					if err := ctx.PrunePlan(); err != nil {
+						return "", err
+					}
+					return "│ Done.", nil
+				})
+				if err != nil {
+					return err
+				}
 			}
 
 			return nil

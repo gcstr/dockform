@@ -57,9 +57,13 @@ func newRootCmd() *cobra.Command {
 			logFile, _ := cmd.Flags().GetString("log-file")
 			noColor, _ := cmd.Flags().GetBool("no-color")
 
-			// Do not emit structured logs to the terminal by default.
-			// Always discard primary sink; if --log-file is set, only the JSON file sink will be used.
-			l, closer, err := logger.New(logger.Options{Out: io.Discard, Level: level, Format: format, NoColor: noColor, LogFile: logFile})
+			// Default: do not emit structured logs to the terminal.
+			// When verbose is true, send logs to stderr using the configured format (auto→pretty on TTY).
+			primaryOut := io.Discard
+			if verbose {
+				primaryOut = cmd.ErrOrStderr()
+			}
+			l, closer, err := logger.New(logger.Options{Out: primaryOut, Level: level, Format: format, NoColor: noColor, LogFile: logFile})
 			if err != nil {
 				return err
 			}
