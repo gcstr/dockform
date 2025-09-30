@@ -5,6 +5,7 @@ import (
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
@@ -20,6 +21,8 @@ func NewResourceManager(planner *Planner) *ResourceManager {
 
 // EnsureVolumesExist creates any missing volumes derived from filesets and explicit volume definitions.
 func (rm *ResourceManager) EnsureVolumesExist(ctx context.Context, cfg manifest.Config, labels map[string]string) (map[string]struct{}, error) {
+	log := logger.FromContext(ctx).With("component", "volume")
+
 	// Get existing volumes
 	existingVolumes := map[string]struct{}{}
 	if vols, err := rm.planner.docker.ListVolumes(ctx); err == nil {
@@ -42,17 +45,23 @@ func (rm *ResourceManager) EnsureVolumesExist(ctx context.Context, cfg manifest.
 	// Create missing volumes
 	for name := range desiredVolumes {
 		if _, exists := existingVolumes[name]; !exists {
+			st := logger.StartStep(log, "volume_ensure", name, "resource_kind", "volume")
 			if rm.planner.prog != nil {
 				rm.planner.prog.SetAction("creating volume " + name)
 			}
 			if err := rm.planner.docker.CreateVolume(ctx, name, labels); err != nil {
-				return nil, apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "create volume %s", name)
+				return nil, st.Fail(apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "create volume %s", name))
 			}
+			st.OK(true)
 			if rm.planner.prog != nil {
 				rm.planner.prog.Increment()
 			}
 			// Add to existing volumes map for return value
 			existingVolumes[name] = struct{}{}
+		} else {
+			// Volume already exists - log as no-change
+			st := logger.StartStep(log, "volume_ensure", name, "resource_kind", "volume")
+			st.OK(false)
 		}
 	}
 
@@ -61,6 +70,7 @@ func (rm *ResourceManager) EnsureVolumesExist(ctx context.Context, cfg manifest.
 
 // EnsureNetworksExist creates any missing networks defined in the manifest.
 func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest.Config, labels map[string]string) error {
+	log := logger.FromContext(ctx).With("component", "network")
 	// Get existing networks
 	existingNetworks := map[string]struct{}{}
 	if nets, err := rm.planner.docker.ListNetworks(ctx); err == nil {
@@ -88,12 +98,14 @@ func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest
 		}
 
 		if !exists {
+			st := logger.StartStep(log, "network_ensure", name, "resource_kind", "network")
 			if rm.planner.prog != nil {
 				rm.planner.prog.SetAction("creating network " + name)
 			}
 			if err := rm.planner.docker.CreateNetwork(ctx, name, labels, opts); err != nil {
-				return apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "create network %s", name)
+				return st.Fail(apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "create network %s", name))
 			}
+			st.OK(true)
 			if rm.planner.prog != nil {
 				rm.planner.prog.Increment()
 			}
@@ -140,11 +152,12 @@ func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest
 		}
 
 		if drift {
+			st := logger.StartStep(log, "network_recreate", name, "resource_kind", "network", "reason", "drift_detected")
 			// Ensure only our containers are attached; abort if others present
 			for _, container := range ni.Containers {
 				labels, _ := rm.planner.docker.InspectContainerLabels(ctx, container.Name, []string{"io.dockform.identifier"})
 				if v, ok := labels["io.dockform.identifier"]; !ok || v != cfg.Docker.Identifier {
-					return apperr.New("resourcemanager.EnsureNetworksExist", apperr.Precondition, "network %s in use by unmanaged container %s", name, container.Name)
+					return st.Fail(apperr.New("resourcemanager.EnsureNetworksExist", apperr.Precondition, "network %s in use by unmanaged container %s", name, container.Name))
 				}
 			}
 			// Remove our containers so compose can recreate them
@@ -155,14 +168,19 @@ func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest
 				rm.planner.prog.SetAction("recreating network " + name)
 			}
 			if err := rm.planner.docker.RemoveNetwork(ctx, name); err != nil {
-				return apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "remove network %s", name)
+				return st.Fail(apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "remove network %s", name))
 			}
 			if err := rm.planner.docker.CreateNetwork(ctx, name, labels, opts); err != nil {
-				return apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "recreate network %s", name)
+				return st.Fail(apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "recreate network %s", name))
 			}
+			st.OK(true)
 			if rm.planner.prog != nil {
 				rm.planner.prog.Increment()
 			}
+		} else {
+			// Network exists and matches desired state - log as no-change
+			st := logger.StartStep(log, "network_ensure", name, "resource_kind", "network")
+			st.OK(false)
 		}
 	}
 

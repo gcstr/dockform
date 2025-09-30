@@ -5,13 +5,22 @@ import (
 	"sort"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
 // Apply creates missing top-level resources with labels and performs compose up, labeling containers with identifier.
 func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
+	log := logger.FromContext(ctx).With("component", "planner")
+	st := logger.StartStep(log, "apply_infrastructure", cfg.Docker.Identifier,
+		"resource_kind", "infrastructure",
+		"volumes", len(cfg.Volumes),
+		"networks", len(cfg.Networks),
+		"filesets", len(cfg.Filesets),
+		"applications", len(cfg.Applications))
+
 	if p.docker == nil {
-		return apperr.New("planner.Apply", apperr.Precondition, "docker client not configured")
+		return st.Fail(apperr.New("planner.Apply", apperr.Precondition, "docker client not configured"))
 	}
 
 	identifier := cfg.Docker.Identifier
@@ -23,38 +32,39 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	// Initialize progress tracking
 	progressEstimator := NewProgressEstimator(p)
 	if err := progressEstimator.EstimateAndStartProgress(ctx, cfg, identifier); err != nil {
-		return err
+		return st.Fail(err)
 	}
 
 	// Create missing volumes and networks
 	resourceManager := NewResourceManager(p)
 	existingVolumes, err := resourceManager.EnsureVolumesExist(ctx, cfg, labels)
 	if err != nil {
-		return err
+		return st.Fail(err)
 	}
 
 	if err := resourceManager.EnsureNetworksExist(ctx, cfg, labels); err != nil {
-		return err
+		return st.Fail(err)
 	}
 
 	// Synchronize filesets
 	filesetManager := NewFilesetManager(p)
 	restartPending, err := filesetManager.SyncFilesets(ctx, cfg, existingVolumes)
 	if err != nil {
-		return err
+		return st.Fail(err)
 	}
 
 	// Apply application changes
 	if err := p.applyApplicationChanges(ctx, cfg, identifier, restartPending); err != nil {
-		return err
+		return st.Fail(err)
 	}
 
 	// Restart services that need it
 	restartManager := NewRestartManager(p)
 	if err := restartManager.RestartPendingServices(ctx, restartPending); err != nil {
-		return err
+		return st.Fail(err)
 	}
 
+	st.OK(true)
 	return nil
 }
 

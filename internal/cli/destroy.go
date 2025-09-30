@@ -64,8 +64,17 @@ regardless of what's in your current configuration file.`,
 				return nil
 			}
 
-			// Execute the destruction
-			if err := ctx.ExecuteDestroy(context.Background()); err != nil {
+			// Execute the destruction with rolling logs (or direct when verbose)
+			_, _, err = RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
+				prev := ctx.Ctx
+				ctx.Ctx = runCtx
+				defer func() { ctx.Ctx = prev }()
+				if err := ctx.ExecuteDestroy(context.Background()); err != nil {
+					return "", err
+				}
+				return "│ Done.", nil
+			})
+			if err != nil {
 				return err
 			}
 

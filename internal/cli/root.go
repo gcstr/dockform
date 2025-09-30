@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/spf13/cobra"
 )
 
@@ -48,10 +50,46 @@ func newRootCmd() *cobra.Command {
 		Short:         "Manage Docker Compose projects declaratively",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// Initialize structured logger based on flags/environment
+			level, _ := cmd.Flags().GetString("log-level")
+			format, _ := cmd.Flags().GetString("log-format")
+			logFile, _ := cmd.Flags().GetString("log-file")
+			noColor, _ := cmd.Flags().GetBool("no-color")
+
+			// Default: do not emit structured logs to the terminal.
+			// When verbose is true, send logs to stderr using the configured format (auto→pretty on TTY).
+			primaryOut := io.Discard
+			if verbose {
+				primaryOut = cmd.ErrOrStderr()
+			}
+			l, closer, err := logger.New(logger.Options{Out: primaryOut, Level: level, Format: format, NoColor: noColor, LogFile: logFile})
+			if err != nil {
+				return err
+			}
+			if closer != nil {
+				// Ensure file is closed on process exit; cobra doesn't give a post-run hook for root easily.
+				// We register a finalizer via command context.
+				cmd.SetContext(context.WithValue(cmd.Context(), struct{ k string }{"logCloser"}, closer))
+			}
+			// Attach per-run fields
+			runID := logger.NewRunID()
+			l = l.With("run_id", runID)
+			// Best effort to derive command path
+			commandPath := cmd.CommandPath()
+			l = l.With("command", commandPath)
+			cmd.SetContext(logger.WithContext(cmd.Context(), l))
+			return nil
+		},
 	}
 
 	cmd.PersistentFlags().StringP("config", "c", "", "Path to configuration file or directory (defaults: dockform.yml, dockform.yaml, Dockform.yml, Dockform.yaml in current directory)")
 	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose error output")
+	// Logging flags
+	cmd.PersistentFlags().String("log-level", "info", "Log level: debug, info, warn, error")
+	cmd.PersistentFlags().String("log-format", "auto", "Log format: auto, pretty, json")
+	cmd.PersistentFlags().String("log-file", "", "Write JSON logs to file (in addition to stderr)")
+	cmd.PersistentFlags().Bool("no-color", false, "Disable color in pretty logs")
 
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newPlanCmd())

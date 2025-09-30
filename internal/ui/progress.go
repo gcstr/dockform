@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"sync"
 
 	bubbleprogress "github.com/charmbracelet/bubbles/progress"
@@ -100,6 +101,12 @@ func (p *Progress) SetAction(text string) {
 }
 
 func (p *Progress) render() {
+	// Suppress when rolling TUI is active
+	if v := os.Getenv("DOCKFORM_TUI_ACTIVE"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil && b {
+			return
+		}
+	}
 	if !p.enabled || p.out == nil || p.total <= 0 {
 		return
 	}

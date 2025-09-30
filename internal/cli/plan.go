@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"context"
+
+	"github.com/gcstr/dockform/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -21,13 +24,32 @@ func newPlanCmd() *cobra.Command {
 				ctx.Planner = ctx.Planner.WithParallel(false)
 			}
 
-			// Build and display the plan
-			plan, err := ctx.BuildPlan()
-			if err != nil {
-				return err
+			// Build plan normally
+			var out string
+			if verbose {
+				plan, err := ctx.BuildPlan()
+				if err != nil {
+					return err
+				}
+				out = plan.String()
+			} else {
+				_, err = ui.RunWithRollingLog(cmd.Context(), func(runCtx context.Context) (string, error) {
+					prev := ctx.Ctx
+					ctx.Ctx = runCtx
+					defer func() { ctx.Ctx = prev }()
+
+					plan, err := ctx.BuildPlan()
+					if err != nil {
+						return "", err
+					}
+					out = plan.String()
+					return "", nil
+				})
+				if err != nil {
+					return err
+				}
 			}
 
-			out := plan.String()
 			ctx.Printer.Plain("%s", out)
 			return nil
 		},
