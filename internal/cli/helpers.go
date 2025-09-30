@@ -248,6 +248,22 @@ func ProgressOperation(pr ui.StdPrinter, message string, operation func(*ui.Prog
 	return err
 }
 
+// RunWithRollingOrDirect executes fn while showing rolling logs when stdout is a TTY and verbose is false.
+// Returns the fn's string result and whether the rolling TUI was used.
+func RunWithRollingOrDirect(cmd *cobra.Command, verbose bool, fn func(runCtx context.Context) (string, error)) (string, bool, error) {
+	// Determine if stdout is a terminal
+	useTUI := false
+	if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+		useTUI = true
+	}
+	if !useTUI || verbose {
+		out, err := fn(cmd.Context())
+		return out, false, err
+	}
+	out, err := ui.RunWithRollingLog(cmd.Context(), fn)
+	return out, true, err
+}
+
 // SetupCLIContext performs the standard CLI setup: load config, create Docker client, validate, and create planner.
 func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}

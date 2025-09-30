@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 
-	"github.com/gcstr/dockform/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -65,8 +64,8 @@ regardless of what's in your current configuration file.`,
 				return nil
 			}
 
-			// Execute the destruction with rolling logs
-			_, err = ui.RunWithRollingLog(cmd.Context(), func(runCtx context.Context) (string, error) {
+			// Execute the destruction with rolling logs (or direct when verbose)
+			_, _, err = RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
 				prev := ctx.Ctx
 				ctx.Ctx = runCtx
 				defer func() { ctx.Ctx = prev }()

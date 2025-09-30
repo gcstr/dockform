@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 
-	"github.com/gcstr/dockform/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -26,14 +25,21 @@ func newApplyCmd() *cobra.Command {
 				ctx.Planner = ctx.Planner.WithParallel(false)
 			}
 
-			// Build and display the plan
-			plan, err := ctx.BuildPlan()
+			// Build and display the plan with rolling logs (or direct when verbose)
+			planOut, _, err := RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
+				prev := ctx.Ctx
+				ctx.Ctx = runCtx
+				defer func() { ctx.Ctx = prev }()
+				plan, err := ctx.BuildPlan()
+				if err != nil {
+					return "", err
+				}
+				return plan.String(), nil
+			})
 			if err != nil {
 				return err
 			}
-
-			out := plan.String()
-			ctx.Printer.Plain("%s", out)
+			ctx.Printer.Plain("%s", planOut)
 
 			// Get confirmation from user
 			confirmed, err := GetConfirmation(cmd, ctx.Printer, ConfirmationOptions{
@@ -47,31 +53,21 @@ func newApplyCmd() *cobra.Command {
 				return nil
 			}
 
-			// Apply + Prune with rolling logs when stdout is a TTY; verbose prints logs normally
-			if verbose {
+			// Apply + Prune with rolling logs (or direct when verbose)
+			_, _, err = RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
+				prev := ctx.Ctx
+				ctx.Ctx = runCtx
+				defer func() { ctx.Ctx = prev }()
 				if err := ctx.ApplyPlan(); err != nil {
-					return err
+					return "", err
 				}
 				if err := ctx.PrunePlan(); err != nil {
-					return err
+					return "", err
 				}
-			} else {
-				_, err = ui.RunWithRollingLog(cmd.Context(), func(runCtx context.Context) (string, error) {
-					prev := ctx.Ctx
-					ctx.Ctx = runCtx
-					defer func() { ctx.Ctx = prev }()
-
-					if err := ctx.ApplyPlan(); err != nil {
-						return "", err
-					}
-					if err := ctx.PrunePlan(); err != nil {
-						return "", err
-					}
-					return "│ Done.", nil
-				})
-				if err != nil {
-					return err
-				}
+				return "│ Done.", nil
+			})
+			if err != nil {
+				return err
 			}
 
 			return nil
