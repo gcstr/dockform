@@ -26,7 +26,24 @@ func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string
 
 	// Signal to other UI helpers to suppress printing while rolling log is active
 	_ = os.Setenv("DOCKFORM_TUI_ACTIVE", "1")
-	defer os.Unsetenv("DOCKFORM_TUI_ACTIVE")
+	// Best-effort: force color for libraries that consult these env vars
+	prevCliColorForce := os.Getenv("CLICOLOR_FORCE")
+	prevForceColor := os.Getenv("FORCE_COLOR")
+	_ = os.Setenv("CLICOLOR_FORCE", "1")
+	_ = os.Setenv("FORCE_COLOR", "1")
+	defer func() {
+		os.Unsetenv("DOCKFORM_TUI_ACTIVE")
+		if prevCliColorForce == "" {
+			os.Unsetenv("CLICOLOR_FORCE")
+		} else {
+			_ = os.Setenv("CLICOLOR_FORCE", prevCliColorForce)
+		}
+		if prevForceColor == "" {
+			os.Unsetenv("FORCE_COLOR")
+		} else {
+			_ = os.Setenv("FORCE_COLOR", prevForceColor)
+		}
+	}()
 
 	// Build Bubble Tea program (no alt screen)
 	m := model{state: stateRunning, width: 80}
@@ -76,6 +93,10 @@ type UILogWriter struct {
 	mu   sync.Mutex
 	buf  bytes.Buffer
 }
+
+// Fd reports a real terminal file descriptor so color libraries treat this
+// writer as a TTY. We reuse stdout's FD because the UI renders to stdout.
+func (w *UILogWriter) Fd() uintptr { return os.Stdout.Fd() }
 
 func (w *UILogWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
@@ -147,7 +168,8 @@ func (m model) View() string {
 	case stateRunning:
 		for _, l := range m.logLines {
 			b.WriteString(styleLog.Render("│ "))
-			b.WriteString(styleLog.Render(truncOneRowANSI(l, m.width)))
+			// Preserve original ANSI colors in the log content
+			b.WriteString(truncOneRowANSI(l, m.width))
 			b.WriteByte('\n')
 		}
 		// spacer line below the rolling block
