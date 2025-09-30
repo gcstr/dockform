@@ -8,11 +8,16 @@ on:
       - '*.svg'
       - '*.png'
   pull_request:
-    branches: ["**"]
+    types: [opened, synchronize, reopened]
     paths-ignore:
       - 'README.md'
       - '*.svg'
       - '*.png'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
