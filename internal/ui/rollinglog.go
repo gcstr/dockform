@@ -32,14 +32,14 @@ func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string
 	_ = os.Setenv("CLICOLOR_FORCE", "1")
 	_ = os.Setenv("FORCE_COLOR", "1")
 	defer func() {
-		os.Unsetenv("DOCKFORM_TUI_ACTIVE")
+		_ = os.Unsetenv("DOCKFORM_TUI_ACTIVE")
 		if prevCliColorForce == "" {
-			os.Unsetenv("CLICOLOR_FORCE")
+			_ = os.Unsetenv("CLICOLOR_FORCE")
 		} else {
 			_ = os.Setenv("CLICOLOR_FORCE", prevCliColorForce)
 		}
 		if prevForceColor == "" {
-			os.Unsetenv("FORCE_COLOR")
+			_ = os.Unsetenv("FORCE_COLOR")
 		} else {
 			_ = os.Setenv("FORCE_COLOR", prevForceColor)
 		}
@@ -58,7 +58,7 @@ func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string
 		return "", err
 	}
 	if uiCloser != nil {
-		defer uiCloser.Close()
+		defer func() { _ = uiCloser.Close() }()
 	}
 
 	// Fan out: base logger + UI sink

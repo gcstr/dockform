@@ -26,7 +26,7 @@ func TestBuildPlan_Logging(t *testing.T) {
 		t.Fatalf("create logger: %v", err)
 	}
 	if closer != nil {
-		defer closer.Close()
+		defer func() { _ = closer.Close() }()
 	}
 
 	// Add run context
