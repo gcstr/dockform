@@ -8,6 +8,7 @@ vars:
   BIN: '{{.ENV.BIN | default "dockform"}}'
   COVER_OUT: '{{.ENV.COVER_OUT | default "cover.out"}}'
   GOLANGCI_LINT_PKG: '{{.ENV.GOLANGCI_LINT_PKG | default "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"}}'
+  GOLANGCI_LINT_VERSION: '{{.ENV.GOLANGCI_LINT_VERSION | default "v2.5.0"}}'
   ARGS: '{{.ENV.ARGS | default ""}}'
   CURRENT_TAG: 
     sh: git describe --abbrev=0 --tags
@@ -59,16 +60,24 @@ tasks:
       - '{{.GO}} vet {{.PKGS}}'
 
   lint:
-    desc: Run golangci-lint via go run
+    desc: Run golangci-lint v2
     cmds:
-      - '{{.GO}} run {{.GOLANGCI_LINT_PKG}} run'
+      - cmd: |
+          set -euo pipefail
+          if ! command -v golangci-lint >/dev/null 2>&1 || ! golangci-lint --version 2>&1 | grep -q "version 2"; then
+            echo "Installing golangci-lint {{.GOLANGCI_LINT_VERSION}} to $(go env GOPATH)/bin"
+            curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- {{.GOLANGCI_LINT_VERSION}} -b $(go env GOPATH)/bin
+          fi
+          PATH=$(go env GOPATH)/bin:$PATH golangci-lint run
 
   lint:refresh:
-    desc: Force update golangci-lint to the latest version by clearing the cache
+    desc: Force (re)install golangci-lint v2 and run
     cmds:
-      - cmd: rm -rf $(go env GOMODCACHE)/cache/download/github.com/golangci/golangci-lint
-        ignore_error: true
-      - '{{.GO}} run {{.GOLANGCI_LINT_PKG}} run'
+      - cmd: |
+          set -euo pipefail
+          echo "Reinstalling golangci-lint {{.GOLANGCI_LINT_VERSION}} to $(go env GOPATH)/bin"
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- {{.GOLANGCI_LINT_VERSION}} -b $(go env GOPATH)/bin
+          PATH=$(go env GOPATH)/bin:$PATH golangci-lint run
 
   deps:
     desc: Download go module dependencies
