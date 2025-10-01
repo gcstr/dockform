@@ -1,0 +1,13 @@
+Dockform Doctor — health scan
+Context: default  •  Host: unix:///var/run/docker.sock
+
+│ ✓ [engine] Docker Engine reachable — v20.0.0
+│ ✓ [context] Active context reachable — "default"
+│ ✓ [compose] Docker Compose plugin — 2.29.0
+│ ✓ [sops] SOPS present — sops 3.10.2
+│ ✓ [helper] Helper image present — alpine:3.22
+│ ✓ [net-perms] Network create/remove — ok
+│ ✓ [vol-perms] Volume create/remove — ok
+
+Summary: 7 checks • 7 PASS, 0 WARN, 0 FAIL
+All good!
