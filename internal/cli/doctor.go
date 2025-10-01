@@ -81,11 +81,11 @@ func newDoctorCmd() *cobra.Command {
 
 			// Render
 			// Top header
-			fmt.Fprintln(cmd.OutOrStdout(), "Dockform Doctor — health scan")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Dockform Doctor — health scan")
 			if host != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "Context: %s  •  Host: %s\n\n", ctxName, host)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Context: %s  •  Host: %s\n\n", ctxName, host)
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Context: %s\n\n", ctxName)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Context: %s\n\n", ctxName)
 			}
 
 			var pass, warn, fail int
@@ -103,7 +103,7 @@ func newDoctorCmd() *cobra.Command {
 					icon = ui.RedText("×")
 				}
 				line = fmt.Sprintf("│ %s %s %s — %s", icon, bracketedID, r.title, r.summary)
-				fmt.Fprintln(cmd.OutOrStdout(), line)
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), line)
 				if r.status == statusWarn && r.note != "" {
 					printIndentedLines(cmd.OutOrStdout(), r.note)
 				}
@@ -134,20 +134,20 @@ func newDoctorCmd() *cobra.Command {
 
 			// Footer
 			total := len(results)
-			fmt.Fprintf(cmd.OutOrStdout(), "\nSummary: %d checks • %d PASS, %d WARN, %d FAIL\n", total, pass, warn, fail)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSummary: %d checks • %d PASS, %d WARN, %d FAIL\n", total, pass, warn, fail)
 			exitCode := 0
 			if fail > 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "Action needed: fix the FAIL items above, then re-run: dockform doctor")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Action needed: fix the FAIL items above, then re-run: dockform doctor")
 				exitCode = 1
 			} else if warn > 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "Completed with warnings. Some features may be degraded.")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Completed with warnings. Some features may be degraded.")
 				exitCode = 2
 			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), "All good!")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "All good!")
 				exitCode = 0
 			}
 			elapsed := time.Since(start).Seconds()
-			fmt.Fprintf(cmd.OutOrStdout(), "Completed in %.1fs • exit code %d\n", elapsed, exitCode)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Completed in %.1fs • exit code %d\n", elapsed, exitCode)
 
 			if exitCode != 0 {
 				// Use cobra error path to set process exit status via Execute
@@ -306,13 +306,13 @@ func printIndentedLines(w io.Writer, text string) {
 			line.WriteString(word)
 		} else {
 			// Flush current line and start new one
-			fmt.Fprintf(w, "%s%s\n", prefix, line.String())
+			_, _ = fmt.Fprintf(w, "%s%s\n", prefix, line.String())
 			line.Reset()
 			line.WriteString(word)
 		}
 		// Flush last line
 		if i == len(words)-1 {
-			fmt.Fprintf(w, "%s%s\n", prefix, line.String())
+			_, _ = fmt.Fprintf(w, "%s%s\n", prefix, line.String())
 		}
 	}
 }

@@ -63,6 +63,13 @@ tasks:
     cmds:
       - '{{.GO}} run {{.GOLANGCI_LINT_PKG}} run'
 
+  lint:refresh:
+    desc: Force update golangci-lint to the latest version by clearing the cache
+    cmds:
+      - cmd: rm -rf $(go env GOMODCACHE)/cache/download/github.com/golangci/golangci-lint
+        ignore_error: true
+      - '{{.GO}} run {{.GOLANGCI_LINT_PKG}} run'
+
   deps:
     desc: Download go module dependencies
     cmds:

@@ -1,0 +1,33 @@
+run:
+  timeout: 5m
+
+issues:
+  # Disable default exclusions to match CI behavior
+  # This ensures local linting catches the same issues as CI
+  exclude-use-default: false
+  
+  # Only exclude auto-generated files
+  exclude-dirs:
+    - vendor
+    - dist
+  
+  # Exclude some linters from test files
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosec
+        - goconst
+
+linters:
+  # Enable all default linters
+  disable-all: false
+  
+  # We can add specific linters here if needed
+  # enable:
+  #   - errcheck
+  #   - gosimple
+  #   - govet
+  #   - ineffassign
+  #   - staticcheck
+  #   - unused
