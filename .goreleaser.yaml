@@ -58,17 +58,20 @@ changelog:
   sort: asc
   abbrev: 7
   groups:
+    - title: Breaking Changes
+      regexp: '^.*!:.+$'
+      order: -1
     - title: Features
-      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      regexp: '^.*?feat(\([[:word:]]+\))?:.+$'
       order: 0
     - title: Bug Fixes
-      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      regexp: '^.*?fix(\([[:word:]]+\))?:.+$'
       order: 1
     - title: Performance
-      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      regexp: '^.*?perf(\([[:word:]]+\))?:.+$'
       order: 2
     - title: Refactoring
-      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      regexp: '^.*?refactor(\([[:word:]]+\))?:.+$'
       order: 3
     - title: Others
       order: 999
