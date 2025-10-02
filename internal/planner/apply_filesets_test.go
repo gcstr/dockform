@@ -8,10 +8,10 @@ import (
 
 func TestFilesetManager_New(t *testing.T) {
 	// Test basic construction without Docker dependencies
-	planner := &Planner{} // Empty planner is fine for constructor test
-	manager := NewFilesetManager(planner)
-	if manager.planner != planner {
-		t.Error("manager planner not set correctly")
+	mockDocker := newMockDocker()
+	manager := NewFilesetManager(mockDocker, nil)
+	if manager.docker != mockDocker {
+		t.Error("manager docker client not set correctly")
 	}
 }
 

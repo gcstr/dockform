@@ -10,17 +10,18 @@ import (
 
 // ProgressEstimator handles estimation of total work items for progress tracking.
 type ProgressEstimator struct {
-	planner *Planner
+	docker   DockerClient
+	progress ProgressReporter
 }
 
 // NewProgressEstimator creates a new progress estimator.
-func NewProgressEstimator(planner *Planner) *ProgressEstimator {
-	return &ProgressEstimator{planner: planner}
+func NewProgressEstimator(docker DockerClient, progress ProgressReporter) *ProgressEstimator {
+	return &ProgressEstimator{docker: docker, progress: progress}
 }
 
 // EstimateAndStartProgress calculates the total number of work items and starts the progress tracker.
 func (pe *ProgressEstimator) EstimateAndStartProgress(ctx context.Context, cfg manifest.Config, identifier string) error {
-	if pe.planner.prog == nil {
+	if pe.progress == nil {
 		return nil // No progress tracking configured
 	}
 
@@ -62,7 +63,7 @@ func (pe *ProgressEstimator) EstimateAndStartProgress(ctx context.Context, cfg m
 	total += restartCount
 
 	if total > 0 {
-		pe.planner.prog.Start(total)
+		pe.progress.Start(total)
 	}
 
 	return nil
@@ -71,9 +72,11 @@ func (pe *ProgressEstimator) EstimateAndStartProgress(ctx context.Context, cfg m
 // countVolumesToCreate counts how many volumes need to be created.
 func (pe *ProgressEstimator) countVolumesToCreate(ctx context.Context, cfg manifest.Config) (int, error) {
 	existingVolumes := map[string]struct{}{}
-	if vols, err := pe.planner.docker.ListVolumes(ctx); err == nil {
-		for _, v := range vols {
-			existingVolumes[v] = struct{}{}
+	if pe.docker != nil {
+		if vols, err := pe.docker.ListVolumes(ctx); err == nil {
+			for _, v := range vols {
+				existingVolumes[v] = struct{}{}
+			}
 		}
 	}
 
@@ -99,9 +102,11 @@ func (pe *ProgressEstimator) countVolumesToCreate(ctx context.Context, cfg manif
 func (pe *ProgressEstimator) countFilesetsToUpdate(ctx context.Context, cfg manifest.Config) (int, error) {
 	// Get existing volumes to avoid creating them during estimation
 	existingVolumes := map[string]struct{}{}
-	if vols, err := pe.planner.docker.ListVolumes(ctx); err == nil {
-		for _, v := range vols {
-			existingVolumes[v] = struct{}{}
+	if pe.docker != nil {
+		if vols, err := pe.docker.ListVolumes(ctx); err == nil {
+			for _, v := range vols {
+				existingVolumes[v] = struct{}{}
+			}
 		}
 	}
 
@@ -119,8 +124,10 @@ func (pe *ProgressEstimator) countFilesetsToUpdate(ctx context.Context, cfg mani
 
 		// Only read remote index when volume exists to avoid implicit creation
 		raw := ""
-		if _, volumeExists := existingVolumes[fileset.TargetVolume]; volumeExists {
-			raw, _ = pe.planner.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
+		if pe.docker != nil {
+			if _, volumeExists := existingVolumes[fileset.TargetVolume]; volumeExists {
+				raw, _ = pe.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
+			}
 		}
 		remote, _ := filesets.ParseIndexJSON(raw)
 
@@ -136,9 +143,11 @@ func (pe *ProgressEstimator) countFilesetsToUpdate(ctx context.Context, cfg mani
 // countNetworksToCreate counts how many networks need to be created.
 func (pe *ProgressEstimator) countNetworksToCreate(ctx context.Context, cfg manifest.Config) (int, error) {
 	existingNetworks := map[string]struct{}{}
-	if nets, err := pe.planner.docker.ListNetworks(ctx); err == nil {
-		for _, n := range nets {
-			existingNetworks[n] = struct{}{}
+	if pe.docker != nil {
+		if nets, err := pe.docker.ListNetworks(ctx); err == nil {
+			for _, n := range nets {
+				existingNetworks[n] = struct{}{}
+			}
 		}
 	}
 
@@ -154,7 +163,10 @@ func (pe *ProgressEstimator) countNetworksToCreate(ctx context.Context, cfg mani
 
 // countApplicationsToUpdate counts how many applications need compose up.
 func (pe *ProgressEstimator) countApplicationsToUpdate(ctx context.Context, cfg manifest.Config, identifier string) (int, error) {
-	detector := NewServiceStateDetector(pe.planner.docker)
+	if pe.docker == nil {
+		return 0, nil
+	}
+	detector := NewServiceStateDetector(pe.docker)
 	count := 0
 
 	for appName, app := range cfg.Applications {
@@ -176,7 +188,7 @@ func (pe *ProgressEstimator) countServiceRestarts(ctx context.Context, cfg manif
 	// Collect unique restart services using resolution semantics
 	restartServices := map[string]struct{}{}
 	for _, fs := range cfg.Filesets {
-		targets, _ := resolveTargetServices(ctx, pe.planner.docker, fs)
+		targets, _ := resolveTargetServices(ctx, pe.docker, fs)
 		for _, svc := range targets {
 			if strings.TrimSpace(svc) != "" {
 				restartServices[svc] = struct{}{}
@@ -189,7 +201,10 @@ func (pe *ProgressEstimator) countServiceRestarts(ctx context.Context, cfg manif
 	}
 
 	// Count how many of these services actually exist
-	items, err := pe.planner.docker.ListComposeContainersAll(ctx)
+	if pe.docker == nil {
+		return 0, nil
+	}
+	items, err := pe.docker.ListComposeContainersAll(ctx)
 	if err != nil {
 		return 0, nil // Skip counting on error
 	}

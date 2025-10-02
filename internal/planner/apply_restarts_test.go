@@ -9,10 +9,10 @@ import (
 
 func TestRestartManager_New(t *testing.T) {
 	// Test basic construction without Docker dependencies
-	planner := &Planner{} // Empty planner is fine for constructor test
-	restartManager := NewRestartManager(planner)
-	if restartManager.planner != planner {
-		t.Error("restart manager planner not set correctly")
+	mockDocker := newMockDocker()
+	restartManager := NewRestartManager(mockDocker, nil, nil)
+	if restartManager.docker != mockDocker {
+		t.Error("restart manager docker client not set correctly")
 	}
 }
 
@@ -131,8 +131,7 @@ func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
 			mockDocker := newMockDocker()
 			mockDocker.containers = tt.availableContainers
 
-			planner := &Planner{docker: mockDocker}
-			restartManager := NewRestartManager(planner)
+			restartManager := NewRestartManager(mockDocker, nil, nil)
 
 			err := restartManager.RestartPendingServices(context.Background(), tt.pendingServices)
 			if err != nil {

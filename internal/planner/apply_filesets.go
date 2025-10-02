@@ -14,18 +14,22 @@ import (
 
 // FilesetManager handles synchronization of filesets into Docker volumes.
 type FilesetManager struct {
-	planner *Planner
+	docker   DockerClient
+	progress ProgressReporter
 }
 
 // NewFilesetManager creates a new fileset manager.
-func NewFilesetManager(planner *Planner) *FilesetManager {
-	return &FilesetManager{planner: planner}
+func NewFilesetManager(docker DockerClient, progress ProgressReporter) *FilesetManager {
+	return &FilesetManager{docker: docker, progress: progress}
 }
 
 // SyncFilesets synchronizes all filesets into their target volumes and returns services that need restart.
 func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config, existingVolumes map[string]struct{}) (map[string]struct{}, error) {
 	log := logger.FromContext(ctx).With("component", "fileset")
 	restartPending := map[string]struct{}{}
+	if fm.docker == nil {
+		return nil, apperr.New("filesetmanager.SyncFilesets", apperr.Precondition, "docker client not configured")
+	}
 
 	if len(cfg.Filesets) == 0 {
 		return restartPending, nil
@@ -54,7 +58,7 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 		// Only read from volume if it exists to avoid implicit creation
 		raw := ""
 		if _, volumeExists := existingVolumes[fileset.TargetVolume]; volumeExists {
-			raw, _ = fm.planner.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
+			raw, _ = fm.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
 		}
 		remote, _ := filesets.ParseIndexJSON(raw)
 
@@ -71,16 +75,16 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 		isCold := fileset.ApplyMode == "cold"
 
 		// Compute target services to restart/stop based on restart_services semantics
-		targetServices, _ := resolveTargetServices(ctx, fm.planner.docker, fileset)
+		targetServices, _ := resolveTargetServices(ctx, fm.docker, fileset)
 
 		// For cold mode, stop targets (if any) before syncing
 		var stoppedContainers []string
 		if isCold && len(targetServices) > 0 {
-			if fm.planner.prog != nil {
-				fm.planner.prog.SetAction("stopping services for fileset " + name)
+			if fm.progress != nil {
+				fm.progress.SetAction("stopping services for fileset " + name)
 			}
 			// Get all containers and find ones matching the target services
-			if items, err := fm.planner.docker.ListComposeContainersAll(ctx); err == nil {
+			if items, err := fm.docker.ListComposeContainersAll(ctx); err == nil {
 				var containersToStop []string
 				for _, svc := range targetServices {
 					if svc == "" {
@@ -95,7 +99,7 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 					}
 				}
 				if len(containersToStop) > 0 {
-					_ = fm.planner.docker.StopContainers(ctx, containersToStop)
+					_ = fm.docker.StopContainers(ctx, containersToStop)
 				}
 			}
 		}
@@ -125,16 +129,16 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 
 		// For cold mode, start previously stopped containers again
 		if isCold && len(stoppedContainers) > 0 {
-			if fm.planner.prog != nil {
-				fm.planner.prog.SetAction("starting services for fileset " + name)
+			if fm.progress != nil {
+				fm.progress.SetAction("starting services for fileset " + name)
 			}
-			_ = fm.planner.docker.StartContainers(ctx, stoppedContainers)
+			_ = fm.docker.StartContainers(ctx, stoppedContainers)
 		}
 
 		st.OK(true) // Fileset was successfully synced
 
-		if fm.planner.prog != nil {
-			fm.planner.prog.Increment()
+		if fm.progress != nil {
+			fm.progress.Increment()
 		}
 
 		// Queue services for restart only for hot mode
@@ -168,8 +172,8 @@ func (fm *FilesetManager) syncFilesetFiles(ctx context.Context, name string, fil
 	// Deterministic order for tar emission
 	sort.Strings(paths)
 
-	if fm.planner.prog != nil {
-		fm.planner.prog.SetAction("syncing fileset " + name)
+	if fm.progress != nil {
+		fm.progress.SetAction("syncing fileset " + name)
 	}
 
 	var buf bytes.Buffer
@@ -177,7 +181,7 @@ func (fm *FilesetManager) syncFilesetFiles(ctx context.Context, name string, fil
 		return apperr.Wrap("filesetmanager.syncFilesetFiles", apperr.Internal, err, "build tar for fileset %s", name)
 	}
 
-	if err := fm.planner.docker.ExtractTarToVolume(ctx, fileset.TargetVolume, fileset.TargetPath, &buf); err != nil {
+	if err := fm.docker.ExtractTarToVolume(ctx, fileset.TargetVolume, fileset.TargetPath, &buf); err != nil {
 		return apperr.Wrap("filesetmanager.syncFilesetFiles", apperr.External, err, "extract tar for fileset %s", name)
 	}
 
@@ -190,11 +194,11 @@ func (fm *FilesetManager) deleteFilesetFiles(ctx context.Context, name string, f
 		return nil
 	}
 
-	if fm.planner.prog != nil {
-		fm.planner.prog.SetAction("deleting files from fileset " + name)
+	if fm.progress != nil {
+		fm.progress.SetAction("deleting files from fileset " + name)
 	}
 
-	if err := fm.planner.docker.RemovePathsFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, diff.ToDelete); err != nil {
+	if err := fm.docker.RemovePathsFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, diff.ToDelete); err != nil {
 		return apperr.Wrap("filesetmanager.deleteFilesetFiles", apperr.External, err, "delete files for fileset %s", name)
 	}
 
@@ -203,8 +207,8 @@ func (fm *FilesetManager) deleteFilesetFiles(ctx context.Context, name string, f
 
 // writeFilesetIndex writes the updated index file to the volume.
 func (fm *FilesetManager) writeFilesetIndex(ctx context.Context, name string, fileset manifest.FilesetSpec, index filesets.Index) error {
-	if fm.planner.prog != nil {
-		fm.planner.prog.SetAction("writing index for fileset " + name)
+	if fm.progress != nil {
+		fm.progress.SetAction("writing index for fileset " + name)
 	}
 
 	jsonStr, err := index.ToJSON()
@@ -212,7 +216,7 @@ func (fm *FilesetManager) writeFilesetIndex(ctx context.Context, name string, fi
 		return apperr.Wrap("filesetmanager.writeFilesetIndex", apperr.Internal, err, "encode index for %s", name)
 	}
 
-	if err := fm.planner.docker.WriteFileToVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName, jsonStr); err != nil {
+	if err := fm.docker.WriteFileToVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName, jsonStr); err != nil {
 		return apperr.Wrap("filesetmanager.writeFilesetIndex", apperr.External, err, "write index for fileset %s", name)
 	}
 

@@ -74,8 +74,7 @@ func TestResourceManager_EnsureVolumesExist(t *testing.T) {
 			mockDocker := newMockDocker()
 			mockDocker.volumes = tt.existingVolumes
 
-			planner := &Planner{docker: mockDocker}
-			resourceManager := NewResourceManager(planner)
+			resourceManager := NewResourceManager(mockDocker, nil)
 
 			cfg := manifest.Config{
 				Filesets: tt.filesets,
@@ -168,8 +167,7 @@ func TestResourceManager_EnsureNetworksExist(t *testing.T) {
 			mockDocker := newMockDocker()
 			mockDocker.networks = tt.existingNetworks
 
-			planner := &Planner{docker: mockDocker}
-			resourceManager := NewResourceManager(planner)
+			resourceManager := NewResourceManager(mockDocker, nil)
 
 			cfg := manifest.Config{Networks: tt.networks}
 			labels := map[string]string{"test": "label"}

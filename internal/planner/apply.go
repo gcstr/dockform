@@ -30,13 +30,14 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	}
 
 	// Initialize progress tracking
-	progressEstimator := NewProgressEstimator(p)
+	progress := newProgressReporter(p.prog)
+	progressEstimator := NewProgressEstimator(p.docker, progress)
 	if err := progressEstimator.EstimateAndStartProgress(ctx, cfg, identifier); err != nil {
 		return st.Fail(err)
 	}
 
 	// Create missing volumes and networks
-	resourceManager := NewResourceManager(p)
+	resourceManager := NewResourceManager(p.docker, progress)
 	existingVolumes, err := resourceManager.EnsureVolumesExist(ctx, cfg, labels)
 	if err != nil {
 		return st.Fail(err)
@@ -47,19 +48,19 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	}
 
 	// Synchronize filesets
-	filesetManager := NewFilesetManager(p)
+	filesetManager := NewFilesetManager(p.docker, progress)
 	restartPending, err := filesetManager.SyncFilesets(ctx, cfg, existingVolumes)
 	if err != nil {
 		return st.Fail(err)
 	}
 
 	// Apply application changes
-	if err := p.applyApplicationChanges(ctx, cfg, identifier, restartPending); err != nil {
+	if err := p.applyApplicationChanges(ctx, cfg, identifier, restartPending, progress); err != nil {
 		return st.Fail(err)
 	}
 
 	// Restart services that need it
-	restartManager := NewRestartManager(p)
+	restartManager := NewRestartManager(p.docker, p.pr, progress)
 	if err := restartManager.RestartPendingServices(ctx, restartPending); err != nil {
 		return st.Fail(err)
 	}
@@ -69,7 +70,7 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 }
 
 // applyApplicationChanges processes applications and performs compose up for those that need updates.
-func (p *Planner) applyApplicationChanges(ctx context.Context, cfg manifest.Config, identifier string, restartPending map[string]struct{}) error {
+func (p *Planner) applyApplicationChanges(ctx context.Context, cfg manifest.Config, identifier string, restartPending map[string]struct{}, progress ProgressReporter) error {
 	detector := NewServiceStateDetector(p.docker)
 
 	// Process applications in sorted order for deterministic behavior
@@ -107,14 +108,14 @@ func (p *Planner) applyApplicationChanges(ctx context.Context, cfg manifest.Conf
 		}
 
 		// Perform compose up
-		if p.prog != nil {
-			p.prog.SetAction("docker compose up for " + appName)
+		if progress != nil {
+			progress.SetAction("docker compose up for " + appName)
 		}
 		if _, err := p.docker.ComposeUp(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err != nil {
 			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s", appName)
 		}
-		if p.prog != nil {
-			p.prog.Increment()
+		if progress != nil {
+			progress.Increment()
 		}
 
 		// Best-effort: ensure identifier label is present on containers

@@ -10,12 +10,14 @@ import (
 
 // RestartManager handles restarting services after fileset updates.
 type RestartManager struct {
-	planner *Planner
+	docker   DockerClient
+	printer  ui.Printer
+	progress ProgressReporter
 }
 
 // NewRestartManager creates a new restart manager.
-func NewRestartManager(planner *Planner) *RestartManager {
-	return &RestartManager{planner: planner}
+func NewRestartManager(docker DockerClient, printer ui.Printer, progress ProgressReporter) *RestartManager {
+	return &RestartManager{docker: docker, printer: printer, progress: progress}
 }
 
 // RestartPendingServices restarts all services queued for restart after fileset updates.
@@ -27,10 +29,13 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 	log := logger.FromContext(ctx).With("component", "restart")
 
 	// Get all containers
-	items, _ := rm.planner.docker.ListComposeContainersAll(ctx)
+	if rm.docker == nil {
+		return apperr.New("restartmanager.RestartPendingServices", apperr.Precondition, "docker client not configured")
+	}
+	items, _ := rm.docker.ListComposeContainersAll(ctx)
 
 	// Choose printer (Noop if none provided)
-	pr := rm.planner.pr
+	pr := rm.printer
 	if pr == nil {
 		pr = ui.NoopPrinter{}
 	}
@@ -44,17 +49,17 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 				st := logger.StartStep(log, "service_restart", svc, "resource_kind", "service", "container", it.Name)
 				pr.Info("restarting service %s...", svc)
 
-				if rm.planner.prog != nil {
-					rm.planner.prog.SetAction("restarting service " + svc)
+				if rm.progress != nil {
+					rm.progress.SetAction("restarting service " + svc)
 				}
 
-				if err := rm.planner.docker.RestartContainer(ctx, it.Name); err != nil {
+				if err := rm.docker.RestartContainer(ctx, it.Name); err != nil {
 					return st.Fail(apperr.Wrap("restartmanager.RestartPendingServices", apperr.External, err, "restart service %s", svc))
 				}
 
 				st.OK(true)
-				if rm.planner.prog != nil {
-					rm.planner.prog.Increment()
+				if rm.progress != nil {
+					rm.progress.Increment()
 				}
 				break
 			}

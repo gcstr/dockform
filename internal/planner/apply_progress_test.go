@@ -10,13 +10,16 @@ import (
 
 func TestProgressEstimator_New(t *testing.T) {
 	prog := &ui.Progress{}
-	planner := &Planner{prog: prog}
-	estimator := NewProgressEstimator(planner)
-	if estimator.planner != planner {
-		t.Error("estimator planner not set correctly")
+	estimator := NewProgressEstimator(nil, newProgressReporter(prog))
+	if estimator.docker != nil {
+		t.Error("expected estimator docker client to be nil")
 	}
-	if estimator.planner.prog != prog {
-		t.Error("estimator planner progress not set correctly")
+	pa, ok := estimator.progress.(*progressAdapter)
+	if !ok {
+		t.Fatal("expected progress adapter")
+	}
+	if pa.inner != prog {
+		t.Error("estimator progress adapter not wrapping provided progress")
 	}
 }
 func TestProgressEstimator_EstimateProgress_BasicLogic(t *testing.T) {
@@ -106,8 +109,7 @@ func TestProgressEstimator_CountVolumesToCreate(t *testing.T) {
 			mockDocker := newMockDocker()
 			mockDocker.volumes = tt.existingVolumes
 
-			planner := &Planner{docker: mockDocker}
-			estimator := NewProgressEstimator(planner)
+			estimator := NewProgressEstimator(mockDocker, nil)
 
 			cfg := manifest.Config{
 				Filesets: tt.filesets,
@@ -163,8 +165,7 @@ func TestProgressEstimator_CountNetworksToCreate(t *testing.T) {
 			mockDocker := newMockDocker()
 			mockDocker.networks = tt.existingNetworks
 
-			planner := &Planner{docker: mockDocker}
-			estimator := NewProgressEstimator(planner)
+			estimator := NewProgressEstimator(mockDocker, nil)
 
 			cfg := manifest.Config{Networks: tt.networks}
 
