@@ -37,4 +37,3 @@ func TestJSONConsistency(t *testing.T) {
 		}
 	}
 }
-

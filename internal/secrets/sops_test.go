@@ -20,11 +20,11 @@ func TestDecryptAndParse_Dotenv_Success(t *testing.T) {
 	if err := os.WriteFile(plainPath, []byte("FOO=bar\nBAZ='qux'\n"), 0o600); err != nil {
 		t.Fatalf("write plaintext: %v", err)
 	}
-    if err := EncryptDotenvFileWithSops(context.Background(), plainPath, []string{recip}, keyPath, nil, "", false, "", ""); err != nil {
+	if err := EncryptDotenvFileWithSops(context.Background(), plainPath, []string{recip}, keyPath, nil, "", false, "", ""); err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
 	// Now decrypt via DecryptAndParse
-    pairs, err := DecryptAndParse(context.Background(), plainPath, SopsOptions{AgeKeyFile: keyPath})
+	pairs, err := DecryptAndParse(context.Background(), plainPath, SopsOptions{AgeKeyFile: keyPath})
 	if err != nil {
 		t.Fatalf("DecryptAndParse: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestDecryptAndParse_MissingFile_Error(t *testing.T) {
 	requireSops(t)
 	dir := t.TempDir()
 	keyPath, _ := writeTempAgeKey(t, dir, true)
-    if _, err := DecryptAndParse(context.Background(), filepath.Join(dir, "missing.env"), SopsOptions{AgeKeyFile: keyPath}); err == nil {
+	if _, err := DecryptAndParse(context.Background(), filepath.Join(dir, "missing.env"), SopsOptions{AgeKeyFile: keyPath}); err == nil {
 		t.Fatalf("expected decrypt error for missing file")
 	}
 }
@@ -50,7 +50,7 @@ func TestDecryptAndParse_PlaintextWhenEmptyKeyFile(t *testing.T) {
 		t.Fatalf("write plaintext: %v", err)
 	}
 	// Call DecryptAndParse with empty ageKeyFile
-    pairs, err := DecryptAndParse(context.Background(), plainPath, SopsOptions{})
+	pairs, err := DecryptAndParse(context.Background(), plainPath, SopsOptions{})
 	if err != nil {
 		t.Fatalf("DecryptAndParse with empty key file: %v", err)
 	}

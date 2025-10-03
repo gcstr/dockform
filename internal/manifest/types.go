@@ -49,24 +49,24 @@ type Environment struct {
 
 // SopsConfig configures SOPS provider(s)
 type SopsConfig struct {
-    Age        *SopsAgeConfig `yaml:"age"`
-    // Recipients is deprecated; kept for migration error messaging
-    Recipients []string       `yaml:"recipients"`
-    Pgp        *SopsPgpConfig `yaml:"pgp"`
+	Age *SopsAgeConfig `yaml:"age"`
+	// Recipients is deprecated; kept for migration error messaging
+	Recipients []string       `yaml:"recipients"`
+	Pgp        *SopsPgpConfig `yaml:"pgp"`
 }
 
 type SopsAgeConfig struct {
-    KeyFile    string   `yaml:"key_file"`
-    Recipients []string `yaml:"recipients"`
+	KeyFile    string   `yaml:"key_file"`
+	Recipients []string `yaml:"recipients"`
 }
 
 // SopsPgpConfig configures PGP (GnuPG) backend for SOPS
 type SopsPgpConfig struct {
-    KeyringDir   string   `yaml:"keyring_dir"`
-    UseAgent     bool     `yaml:"use_agent"`
-    PinentryMode string   `yaml:"pinentry_mode"`
-    Recipients   []string `yaml:"recipients"`
-    Passphrase   string   `yaml:"passphrase"`
+	KeyringDir   string   `yaml:"keyring_dir"`
+	UseAgent     bool     `yaml:"use_agent"`
+	PinentryMode string   `yaml:"pinentry_mode"`
+	Recipients   []string `yaml:"recipients"`
+	Passphrase   string   `yaml:"passphrase"`
 }
 
 // Secrets holds secret sources

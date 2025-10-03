@@ -19,26 +19,26 @@ func (p *Planner) Prune(ctx context.Context, cfg manifest.Config) error {
 	desiredServices := map[string]struct{}{}
 	for _, app := range cfg.Applications {
 		inline := append([]string(nil), app.EnvInline...)
-        ageKeyFile := ""
-        pgpDir := ""
-        pgpAgent := false
-        pgpMode := ""
-        pgpPass := ""
-        if cfg.Sops != nil && cfg.Sops.Age != nil {
-            ageKeyFile = cfg.Sops.Age.KeyFile
-        }
-        if cfg.Sops != nil && cfg.Sops.Pgp != nil {
-            pgpDir = cfg.Sops.Pgp.KeyringDir
-            pgpAgent = cfg.Sops.Pgp.UseAgent
-            pgpMode = cfg.Sops.Pgp.PinentryMode
-            pgpPass = cfg.Sops.Pgp.Passphrase
-        }
-        for _, pth0 := range app.SopsSecrets {
+		ageKeyFile := ""
+		pgpDir := ""
+		pgpAgent := false
+		pgpMode := ""
+		pgpPass := ""
+		if cfg.Sops != nil && cfg.Sops.Age != nil {
+			ageKeyFile = cfg.Sops.Age.KeyFile
+		}
+		if cfg.Sops != nil && cfg.Sops.Pgp != nil {
+			pgpDir = cfg.Sops.Pgp.KeyringDir
+			pgpAgent = cfg.Sops.Pgp.UseAgent
+			pgpMode = cfg.Sops.Pgp.PinentryMode
+			pgpPass = cfg.Sops.Pgp.Passphrase
+		}
+		for _, pth0 := range app.SopsSecrets {
 			pth := pth0
 			if pth != "" && !filepath.IsAbs(pth) {
 				pth = filepath.Join(app.Root, pth)
 			}
-            if pairs, err := secrets.DecryptAndParse(ctx, pth, secrets.SopsOptions{AgeKeyFile: ageKeyFile, PgpKeyringDir: pgpDir, PgpUseAgent: pgpAgent, PgpPinentryMode: pgpMode, PgpPassphrase: pgpPass}); err == nil {
+			if pairs, err := secrets.DecryptAndParse(ctx, pth, secrets.SopsOptions{AgeKeyFile: ageKeyFile, PgpKeyringDir: pgpDir, PgpUseAgent: pgpAgent, PgpPinentryMode: pgpMode, PgpPassphrase: pgpPass}); err == nil {
 				inline = append(inline, pairs...)
 			}
 		}

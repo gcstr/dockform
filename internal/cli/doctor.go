@@ -67,10 +67,10 @@ func newDoctorCmd() *cobra.Command {
 			// [compose]
 			results = append(results, checkCompose(ctx, docker))
 
-            // [sops]
-            results = append(results, checkSops())
-            // [gpg]
-            results = append(results, checkGpg())
+			// [sops]
+			results = append(results, checkSops())
+			// [gpg]
+			results = append(results, checkGpg())
 
 			// [helper]
 			results = append(results, checkHelperImage(ctx, docker))
@@ -246,39 +246,39 @@ func checkSops() checkResult {
 }
 
 func checkGpg() checkResult {
-    if _, err := exec.LookPath("gpg"); err != nil {
-        // Not fatal; only warn if gpg not present
-        return checkResult{id: "gpg", title: "GnuPG", status: statusWarn, summary: "gpg not found", note: "Tip: Install GnuPG if using PGP with SOPS."}
-    }
-    // Version and loopback support
-    out, _ := exec.Command("gpg", "--version").CombinedOutput()
-    lines := strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n")
-    var ver string
-    if len(lines) > 0 {
-        ver = strings.TrimSpace(lines[0])
-    }
-    sub := []string{}
-    // Agent socket dir (best effort)
-    if _, err := exec.LookPath("gpgconf"); err == nil {
-        if b, err := exec.Command("gpgconf", "--list-dirs", "agent-socket").CombinedOutput(); err == nil {
-            socket := strings.TrimSpace(string(b))
-            if socket != "" {
-                sub = append(sub, "agent socket: "+socket)
-            }
-        }
-    }
-    // Check loopback support by looking for pinentry-mode mention in help
-    helpOut, _ := exec.Command("gpg", "--help").CombinedOutput()
-    loopbackSupported := strings.Contains(string(helpOut), "pinentry-mode")
-    if loopbackSupported {
-        sub = append(sub, "loopback: supported")
-    } else {
-        sub = append(sub, "loopback: unknown (try gpg>=2.1)")
-    }
-    if ver == "" {
-        ver = "installed"
-    }
-    return checkResult{id: "gpg", title: "GnuPG present", status: statusPass, summary: ver, sub: sub}
+	if _, err := exec.LookPath("gpg"); err != nil {
+		// Not fatal; only warn if gpg not present
+		return checkResult{id: "gpg", title: "GnuPG", status: statusWarn, summary: "gpg not found", note: "Tip: Install GnuPG if using PGP with SOPS."}
+	}
+	// Version and loopback support
+	out, _ := exec.Command("gpg", "--version").CombinedOutput()
+	lines := strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n")
+	var ver string
+	if len(lines) > 0 {
+		ver = strings.TrimSpace(lines[0])
+	}
+	sub := []string{}
+	// Agent socket dir (best effort)
+	if _, err := exec.LookPath("gpgconf"); err == nil {
+		if b, err := exec.Command("gpgconf", "--list-dirs", "agent-socket").CombinedOutput(); err == nil {
+			socket := strings.TrimSpace(string(b))
+			if socket != "" {
+				sub = append(sub, "agent socket: "+socket)
+			}
+		}
+	}
+	// Check loopback support by looking for pinentry-mode mention in help
+	helpOut, _ := exec.Command("gpg", "--help").CombinedOutput()
+	loopbackSupported := strings.Contains(string(helpOut), "pinentry-mode")
+	if loopbackSupported {
+		sub = append(sub, "loopback: supported")
+	} else {
+		sub = append(sub, "loopback: unknown (try gpg>=2.1)")
+	}
+	if ver == "" {
+		ver = "installed"
+	}
+	return checkResult{id: "gpg", title: "GnuPG present", status: statusPass, summary: ver, sub: sub}
 }
 
 func checkHelperImage(ctx context.Context, docker *dockercli.Client) checkResult {
