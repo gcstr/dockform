@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	age "filippo.io/age"
@@ -185,5 +186,28 @@ func TestSecret_Rekey_DecryptError(t *testing.T) {
 	root.SetArgs([]string{"secrets", "rekey", "-c", cfgPath})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected decrypt error for missing file, got nil")
+	}
+}
+
+func TestSecret_Rekey_NoSecretsConfigured(t *testing.T) {
+	dir := t.TempDir()
+	keyPath, recipient := writeTempAgeKey(t, dir)
+	cfgPath := filepath.Join(dir, "cfg.yml")
+	// Config with sops setup but no secrets.sops entries
+	cfg := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\n"
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write cfg: %v", err)
+	}
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"secrets", "rekey", "-c", cfgPath})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("expected no error when no secrets configured, got: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "No secret files found in manifest") {
+		t.Fatalf("expected helpful message about no secrets; got: %q", got)
 	}
 }
