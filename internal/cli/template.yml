@@ -13,7 +13,13 @@ environment:
 sops:
   age:
     key_file: ""
-  recipients: []
+    recipients: []
+  pgp:
+    keyring_dir: ""
+    use_agent: true
+    pinentry_mode: "default"
+    recipients: []
+    passphrase: ""
 
 secrets:
   sops: []

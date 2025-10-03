@@ -8,8 +8,8 @@ docker:
 sops:
   age:
     key_file: ${AGE_KEY_FILE}
-  recipients: 
-    - age1vmn3nv333mprv02cn8qyafxaz94zg368lnk5gsclmme9ryludysswn5rgr
+    recipients: 
+      - age1vmn3nv333mprv02cn8qyafxaz94zg368lnk5gsclmme9ryludysswn5rgr
 
 secrets:
   sops:

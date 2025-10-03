@@ -126,7 +126,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 	t.Setenv("SOPS_AGE_KEY_FILE", keyPath)
 	// First, create an encrypted secret using create
 	cfgCreatePath := filepath.Join(dir, "create.yml")
-	cfgCreate := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n  recipients:\n    - " + recipient + "\n"
+	cfgCreate := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\n"
 	if err := os.WriteFile(cfgCreatePath, []byte(cfgCreate), 0o644); err != nil {
 		t.Fatalf("write create config: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 
 	// Now, run rekey pointing to the created secret path via config
 	cfgRekeyPath := filepath.Join(dir, "rekey.yml")
-	cfgRekey := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n  recipients:\n    - " + recipient + "\nsecrets:\n  sops:\n    - secrets.env\n"
+	cfgRekey := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\nsecrets:\n  sops:\n    - secrets.env\n"
 	if err := os.WriteFile(cfgRekeyPath, []byte(cfgRekey), 0o644); err != nil {
 		t.Fatalf("write rekey config: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestSecret_Rekey_DecryptError(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, recipient := writeTempAgeKey(t, dir)
 	cfgPath := filepath.Join(dir, "cfg.yml")
-	cfg := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n  recipients:\n    - " + recipient + "\nsecrets:\n  sops:\n    - missing.env\n"
+	cfg := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\nsecrets:\n  sops:\n    - missing.env\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write cfg: %v", err)
 	}

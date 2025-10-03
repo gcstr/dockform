@@ -32,8 +32,8 @@ func TestDoctorCmd_AllHealthy(t *testing.T) {
 		t.Errorf("missing context info, got: %q", output)
 	}
 
-	// Check all 7 checks are present
-	requiredChecks := []string{"[engine]", "[context]", "[compose]", "[sops]", "[helper]", "[net-perms]", "[vol-perms]"}
+	// Check all expected checks are present
+	requiredChecks := []string{"[engine]", "[context]", "[compose]", "[sops]", "[gpg]", "[helper]", "[net-perms]", "[vol-perms]"}
 	for _, check := range requiredChecks {
 		if !strings.Contains(output, check) {
 			t.Errorf("missing check %q in output: %q", check, output)
@@ -41,10 +41,10 @@ func TestDoctorCmd_AllHealthy(t *testing.T) {
 	}
 
 	// Check summary
-	if !strings.Contains(output, "Summary: 7 checks") {
+	if !strings.Contains(output, "Summary: 8 checks") {
 		t.Errorf("missing summary line, got: %q", output)
 	}
-	if !strings.Contains(output, "7 PASS, 0 WARN, 0 FAIL") {
+	if !strings.Contains(output, "8 PASS, 0 WARN, 0 FAIL") {
 		t.Errorf("expected all pass, got: %q", output)
 	}
 	if !strings.Contains(output, "All good!") {
