@@ -62,11 +62,13 @@ func AgeRecipientsFromKeyFile(ageKeyFile string) ([]string, error) {
 	return recips, nil
 }
 
-// EncryptDotenvFileWithSops encrypts a plaintext dotenv file in-place using the system SOPS binary with provided age recipients.
-func EncryptDotenvFileWithSops(ctx context.Context, path string, recipients []string, ageKeyFile string) error {
-	if len(recipients) == 0 {
-		return apperr.New("secrets.EncryptDotenvFileWithSops", apperr.InvalidInput, "no recipients provided")
-	}
+// EncryptDotenvFileWithSops encrypts a plaintext dotenv file in-place using the system SOPS binary with provided recipients.
+// Age recipients are passed with --age, PGP recipients are passed with --pgp
+func EncryptDotenvFileWithSops(ctx context.Context, path string, ageRecipients []string, ageKeyFile string, pgpRecipients []string, pgpKeyringDir string, pgpUseAgent bool, pgpPinentryMode string, pgpPassphrase string) error {
+    totalRecips := len(ageRecipients) + len(pgpRecipients)
+    if totalRecips == 0 {
+        return apperr.New("secrets.EncryptDotenvFileWithSops", apperr.InvalidInput, "no recipients provided")
+    }
 	// Ensure file exists
 	if _, err := os.Stat(path); err != nil {
 		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.NotFound, err, "read plaintext")
@@ -75,8 +77,8 @@ func EncryptDotenvFileWithSops(ctx context.Context, path string, recipients []st
 	if _, err := exec.LookPath("sops"); err != nil {
 		return apperr.New("secrets.EncryptDotenvFileWithSops", apperr.NotFound, "sops binary not found on PATH; please install sops")
 	}
-	// Ensure SOPS_AGE_KEY_FILE set for decrypt compatibility and environments that need it
-	if ageKeyFile != "" {
+    // Ensure SOPS_AGE_KEY_FILE set for decrypt compatibility and environments that need it
+    if ageKeyFile != "" {
 		key := ageKeyFile
 		if strings.HasPrefix(key, "~/") {
 			if home, err := os.UserHomeDir(); err == nil {
@@ -85,10 +87,23 @@ func EncryptDotenvFileWithSops(ctx context.Context, path string, recipients []st
 		}
 		_ = os.Setenv("SOPS_AGE_KEY_FILE", key)
 	}
+    // Prepare GnuPG settings if provided
+    if strings.TrimSpace(pgpKeyringDir) != "" {
+        dir := pgpKeyringDir
+        if strings.HasPrefix(dir, "~/") {
+            if home, err := os.UserHomeDir(); err == nil {
+                dir = filepath.Join(home, dir[2:])
+            }
+        }
+        _ = os.Setenv("GNUPGHOME", dir)
+        if strings.ToLower(strings.TrimSpace(pgpPinentryMode)) == "loopback" && !pgpUseAgent {
+            _ = os.Setenv("SOPS_GPG_EXEC", "gpg --pinentry-mode loopback")
+        }
+    }
 
 	// Build args with a single --age flag carrying a comma-separated list
-	validRecipients := make([]string, 0, len(recipients))
-	for _, r := range recipients {
+    validAgeRecipients := make([]string, 0, len(ageRecipients))
+    for _, r := range ageRecipients {
 		r = strings.TrimSpace(r)
 		if r == "" {
 			continue
@@ -97,17 +112,21 @@ func EncryptDotenvFileWithSops(ctx context.Context, path string, recipients []st
 		if !strings.HasPrefix(r, "age1") {
 			return apperr.New("secrets.EncryptDotenvFileWithSops", apperr.InvalidInput, "age recipient: invalid format")
 		}
-		validRecipients = append(validRecipients, r)
+        validAgeRecipients = append(validAgeRecipients, r)
 	}
 
-	args := []string{"--encrypt", "--input-type", "dotenv", "--output-type", "dotenv", "--in-place"}
-	if len(validRecipients) > 0 {
-		args = append(args, "--age", strings.Join(validRecipients, ","))
+    args := []string{"--encrypt", "--input-type", "dotenv", "--output-type", "dotenv", "--in-place"}
+    if len(validAgeRecipients) > 0 {
+        args = append(args, "--age", strings.Join(validAgeRecipients, ","))
 	}
+    if len(pgpRecipients) > 0 {
+        // pass pgp recipients directly; validation is deferred to gpg
+        args = append(args, "--pgp", strings.Join(pgpRecipients, ","))
+    }
 	args = append(args, path)
-	cmd := exec.CommandContext(ctx, "sops", args...)
-	cmd.Env = os.Environ()
-	if out, err := cmd.CombinedOutput(); err != nil {
+    cmd := exec.CommandContext(ctx, "sops", args...)
+    cmd.Env = os.Environ()
+    if out, err := cmd.CombinedOutput(); err != nil {
 		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.External, errors.New(string(out)), "sops encrypt %s", path)
 	}
 	return nil

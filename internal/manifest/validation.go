@@ -188,6 +188,40 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		}
 	}
 
+    // Validate SOPS config (global). Applications inherit usage only; config is global
+    if c.Sops != nil {
+        // Migration error: top-level recipients deprecated
+        if len(c.Sops.Recipients) > 0 {
+            return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "sops.recipients is no longer supported; move entries under sops.age.recipients or sops.pgp.recipients")
+        }
+        // Validate age
+        if c.Sops.Age != nil {
+            // key_file optional; if set, leave as-is (resolved at runtime for ~)
+            // recipients format: if provided, must start with age1
+            for _, r := range c.Sops.Age.Recipients {
+                v := strings.TrimSpace(r)
+                if v == "" {
+                    continue
+                }
+                if !strings.HasPrefix(v, "age1") {
+                    return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "sops.age.recipients: invalid age recipient format: %s", r)
+                }
+            }
+        }
+        // Validate pgp
+        if c.Sops.Pgp != nil {
+            mode := strings.TrimSpace(strings.ToLower(c.Sops.Pgp.PinentryMode))
+            if mode == "" {
+                mode = "default"
+            }
+            if mode != "default" && mode != "loopback" {
+                return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "sops.pgp.pinentry_mode must be 'default' or 'loopback'")
+            }
+            c.Sops.Pgp.PinentryMode = mode
+            // No strict validation for recipients (fingerprint/email)
+        }
+    }
+
 	// Filesets validation and normalization
 	for filesetName, a := range c.Filesets {
 		if !appKeyRegex.MatchString(filesetName) {

@@ -89,17 +89,27 @@ func (d *ServiceStateDetector) GetPlannedServices(ctx context.Context, app manif
 func (d *ServiceStateDetector) BuildInlineEnv(ctx context.Context, app manifest.Application, sopsConfig *manifest.SopsConfig) []string {
 	inline := append([]string(nil), app.EnvInline...)
 
-	ageKeyFile := ""
+    ageKeyFile := ""
+    pgpDir := ""
+    pgpAgent := false
+    pgpMode := ""
+    pgpPass := ""
 	if sopsConfig != nil && sopsConfig.Age != nil {
 		ageKeyFile = sopsConfig.Age.KeyFile
 	}
+    if sopsConfig != nil && sopsConfig.Pgp != nil {
+        pgpDir = sopsConfig.Pgp.KeyringDir
+        pgpAgent = sopsConfig.Pgp.UseAgent
+        pgpMode = sopsConfig.Pgp.PinentryMode
+        pgpPass = sopsConfig.Pgp.Passphrase
+    }
 
 	for _, pth0 := range app.SopsSecrets {
 		pth := pth0
 		if pth != "" && !filepath.IsAbs(pth) {
 			pth = filepath.Join(app.Root, pth)
 		}
-		if pairs, err := secrets.DecryptAndParse(ctx, pth, ageKeyFile); err == nil {
+        if pairs, err := secrets.DecryptAndParse(ctx, pth, secrets.SopsOptions{AgeKeyFile: ageKeyFile, PgpKeyringDir: pgpDir, PgpUseAgent: pgpAgent, PgpPinentryMode: pgpMode, PgpPassphrase: pgpPass}); err == nil {
 			inline = append(inline, pairs...)
 		}
 	}

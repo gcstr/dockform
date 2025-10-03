@@ -6,9 +6,11 @@ Context: default  •  Host: unix:///var/run/docker.sock
 │ ✓ [compose] Docker Compose plugin — 2.29.0
 │ ! [sops] SOPS — not found
 │     Tip: Install SOPS to decrypt secrets: https://github.com/getsops/sops
+│ ! [gpg] GnuPG — gpg not found
+│     Tip: Install GnuPG if using PGP with SOPS.
 │ ✓ [helper] Helper image present — alpine:3.22
 │ ✓ [net-perms] Network create/remove — ok
 │ ✓ [vol-perms] Volume create/remove — ok
 
-Summary: 7 checks • 6 PASS, 1 WARN, 0 FAIL
+Summary: 8 checks • 6 PASS, 2 WARN, 0 FAIL
 Completed with warnings. Some features may be degraded.

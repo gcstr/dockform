@@ -5,9 +5,10 @@ Context: default  •  Host: unix:///var/run/docker.sock
 │ ✓ [context] Active context reachable — "default"
 │ ✓ [compose] Docker Compose plugin — 2.29.0
 │ ✓ [sops] SOPS present — sops 3.10.2
+│ ✓ [gpg] GnuPG present — installed
 │ ✓ [helper] Helper image present — alpine:3.22
 │ ✓ [net-perms] Network create/remove — ok
 │ ✓ [vol-perms] Volume create/remove — ok
 
-Summary: 7 checks • 7 PASS, 0 WARN, 0 FAIL
+Summary: 8 checks • 8 PASS, 0 WARN, 0 FAIL
 All good!
