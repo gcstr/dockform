@@ -134,6 +134,45 @@ exit 0
 		t.Fatalf("write sops stub: %v", err)
 	}
 
+	// Provide minimal gpg stub so doctor reports pass by default
+	gpgStub := `#!/bin/sh
+case "$1" in
+  --version)
+    echo "gpg (GnuPG) 2.4.3"
+    exit 0
+    ;;
+  --help)
+    echo "Usage: gpg [options]"
+    echo "  --pinentry-mode"
+    exit 0
+    ;;
+esac
+exit 0
+`
+	gpgPath := filepath.Join(dir, "gpg")
+	if runtime.GOOS == "windows" {
+		gpgPath += ".cmd"
+	}
+	if err := os.WriteFile(gpgPath, []byte(gpgStub), 0o755); err != nil {
+		t.Fatalf("write gpg stub: %v", err)
+	}
+
+	// Provide gpgconf stub for agent socket info
+	gpgConfStub := `#!/bin/sh
+if [ "$1" = "--list-dirs" ] && [ "$2" = "agent-socket" ]; then
+  echo "/tmp/gpg-agent.sock"
+  exit 0
+fi
+exit 0
+`
+	gpgConfPath := filepath.Join(dir, "gpgconf")
+	if runtime.GOOS == "windows" {
+		gpgConfPath += ".cmd"
+	}
+	if err := os.WriteFile(gpgConfPath, []byte(gpgConfStub), 0o755); err != nil {
+		t.Fatalf("write gpgconf stub: %v", err)
+	}
+
 	oldPath := os.Getenv("PATH")
 	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
 		t.Fatalf("set PATH: %v", err)

@@ -8,9 +8,12 @@ Context: default
 │ × [compose] Docker Compose (v2) — not found
 │     Remedy: Install docker compose plugin (v2+).
 │ ✓ [sops] SOPS present — sops 3.10.2
+│ ✓ [gpg] GnuPG present — gpg (GnuPG) 2.4.3
+│     agent socket: /tmp/gpg-agent.sock
+│     loopback: supported
 │ ✓ [helper] Helper image present — alpine:3.22
 │ ✓ [net-perms] Network create/remove — ok
 │ ✓ [vol-perms] Volume create/remove — ok
 
-Summary: 7 checks • 5 PASS, 0 WARN, 2 FAIL
+Summary: 8 checks • 6 PASS, 0 WARN, 2 FAIL
 Action needed: fix the FAIL items above, then re-run: dockform doctor
