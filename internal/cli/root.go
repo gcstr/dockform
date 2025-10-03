@@ -102,6 +102,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newComposeCmd())
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newVolumeCmd())
+	cmd.AddCommand(newDoctorCmd())
 
 	// Register optional developer-only commands
 	registerDocsCmd(cmd)

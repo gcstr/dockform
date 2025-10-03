@@ -378,6 +378,15 @@ func RedText(s string) string {
 	return styleRemove.Render(s)
 }
 
+// GreenText renders the provided text in green.
+func GreenText(s string) string { return styleAdd.Render(s) }
+
+// YellowText renders the provided text in yellow.
+func YellowText(s string) string { return styleChange.Render(s) }
+
+// BlueText renders the provided text in blue.
+func BlueText(s string) string { return styleInfo.Render(s) }
+
 // ConfirmToken renders a confirmation token (like "yes" or an identifier) in green, bold, italic.
 func ConfirmToken(s string) string {
 	return styleAdd.Bold(true).Italic(true).Render(s)
