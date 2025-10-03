@@ -68,7 +68,7 @@ func TestEncryptDotenvFileWithSops_Success_AndDecryptable(t *testing.T) {
 	if err := os.WriteFile(path, []byte(plain), 0o600); err != nil {
 		t.Fatalf("write plaintext: %v", err)
 	}
-	if err := EncryptDotenvFileWithSops(context.Background(), path, []string{recip}, keyPath); err != nil {
+    if err := EncryptDotenvFileWithSops(context.Background(), path, []string{recip}, keyPath, nil, "", false, "", ""); err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
 	// file should not contain plaintext
@@ -93,7 +93,7 @@ func TestEncryptDotenvFileWithSops_NoRecipients_Error(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "x.env")
 	_ = os.WriteFile(path, []byte("K=V\n"), 0o600)
-	if err := EncryptDotenvFileWithSops(context.Background(), path, nil, ""); err == nil {
+    if err := EncryptDotenvFileWithSops(context.Background(), path, nil, "", nil, "", false, "", ""); err == nil {
 		t.Fatalf("expected error for no recipients, got nil")
 	}
 }
@@ -102,7 +102,7 @@ func TestEncryptDotenvFileWithSops_BadRecipient_Error(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "x.env")
 	_ = os.WriteFile(path, []byte("K=V\n"), 0o600)
-	if err := EncryptDotenvFileWithSops(context.Background(), path, []string{"not-a-valid-recipient"}, ""); err == nil || !strings.Contains(err.Error(), "age recipient") {
+    if err := EncryptDotenvFileWithSops(context.Background(), path, []string{"not-a-valid-recipient"}, "", nil, "", false, "", ""); err == nil || !strings.Contains(err.Error(), "age recipient") {
 		t.Fatalf("expected age recipient error, got %v", err)
 	}
 }
