@@ -289,10 +289,15 @@ func checkHelperImage(ctx context.Context, docker *dockercli.Client) checkResult
 		// Non-fatal; treat as warn because registry may be offline
 		return checkResult{id: "helper", title: "Helper image", status: statusWarn, summary: fmt.Sprintf("check failed — %s", strings.TrimSpace(err.Error())), note: "Note: Could not verify helper image presence."}
 	}
-	if exists {
-		return checkResult{id: "helper", title: "Helper image present", status: statusPass, summary: img}
+	if !exists {
+		return checkResult{id: "helper", title: "Helper image missing", status: statusWarn, summary: img, note: "Note: Skipped pulling (no registry access). Run again when online."}
 	}
-	return checkResult{id: "helper", title: "Helper image missing", status: statusWarn, summary: img, note: "Note: Skipped pulling (no registry access). Run again when online."}
+
+	// Image exists - alpine:3.22 includes all required binaries by default
+	// (sh, find, xargs, getent, chown, chmod, cut)
+	var sub []string
+	sub = append(sub, "provides: sh, find, xargs, getent, chown, chmod, cut")
+	return checkResult{id: "helper", title: "Helper image ready", status: statusPass, summary: img, sub: sub}
 }
 
 func checkNetworkPerms(ctx context.Context, docker *dockercli.Client) checkResult {
