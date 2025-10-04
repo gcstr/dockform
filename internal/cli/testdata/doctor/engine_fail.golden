@@ -11,7 +11,8 @@ Context: default
 │ ✓ [gpg] GnuPG present — gpg (GnuPG) 2.4.3
 │     agent socket: /tmp/gpg-agent.sock
 │     loopback: supported
-│ ✓ [helper] Helper image present — alpine:3.22
+│ ✓ [helper] Helper image ready — alpine:3.22
+│     provides: sh, find, xargs, getent, chown, chmod, cut
 │ ✓ [net-perms] Network create/remove — ok
 │ ✓ [vol-perms] Volume create/remove — ok
 

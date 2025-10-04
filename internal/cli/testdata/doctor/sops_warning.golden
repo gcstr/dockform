@@ -8,7 +8,8 @@ Context: default  •  Host: unix:///var/run/docker.sock
 │     Tip: Install SOPS to decrypt secrets: https://github.com/getsops/sops
 │ ! [gpg] GnuPG — gpg not found
 │     Tip: Install GnuPG if using PGP with SOPS.
-│ ✓ [helper] Helper image present — alpine:3.22
+│ ✓ [helper] Helper image ready — alpine:3.22
+│     provides: sh, find, xargs, getent, chown, chmod, cut
 │ ✓ [net-perms] Network create/remove — ok
 │ ✓ [vol-perms] Volume create/remove — ok
 

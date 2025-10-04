@@ -1,6 +1,9 @@
 package util
 
-import "strings"
+import (
+	"path/filepath"
+	"strings"
+)
 
 func SplitNonEmptyLines(s string) []string {
 	var out []string
@@ -18,4 +21,16 @@ func Truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+// DirPath returns the directory portion of a path (similar to filepath.Dir but handles slash-separated paths).
+func DirPath(p string) string {
+	if p == "" || p == "." || p == "/" {
+		return ""
+	}
+	dir := filepath.Dir(p)
+	if dir == "." {
+		return ""
+	}
+	return dir
 }

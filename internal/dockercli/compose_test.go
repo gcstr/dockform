@@ -48,6 +48,10 @@ func (f *fakeExec) RunWithStdout(ctx context.Context, stdout io.Writer, args ...
 	f.lastArgs = args
 	return nil
 }
+func (f *fakeExec) RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error) {
+	out, err := f.dispatch(args)
+	return Result{Stdout: out, Stderr: "", ExitCode: 0}, err
+}
 func (f *fakeExec) dispatch(args []string) (string, error) {
 	if hasSuffix(args, []string{"config", "--services"}) {
 		return f.outServices, f.errServices

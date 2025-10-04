@@ -3,6 +3,8 @@ package manifest
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
@@ -249,6 +251,11 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		}
 		a.ApplyMode = mode
 
+		// Validate and normalize ownership if provided
+		if err := validateOwnership(filesetName, &a); err != nil {
+			return err
+		}
+
 		// Resolve source relative to baseDir
 		srcAbs := a.Source
 		if !filepath.IsAbs(srcAbs) {
@@ -275,4 +282,124 @@ func rebaseRootEnvToApp(baseDir, resolvedRoot string, files []string) []string {
 		}
 	}
 	return out
+}
+
+// Regex patterns for validation
+var (
+	numericIDRegex = regexp.MustCompile(`^\d+$`)
+	posixNameRegex = regexp.MustCompile(`^[a-z_][a-z0-9_-]*\$?$`)
+)
+
+// validateOwnership validates and normalizes ownership settings for a fileset.
+// It trims whitespace from all string fields and persists the normalized values.
+func validateOwnership(filesetName string, fs *FilesetSpec) error {
+	if fs == nil || fs.Ownership == nil {
+		return nil
+	}
+
+	o := fs.Ownership
+
+	// Validate and normalize user if provided
+	if o.User != "" {
+		trimmed := strings.TrimSpace(o.User)
+		if trimmed == "" {
+			return apperr.New("manifest.validateOwnership", apperr.InvalidInput, "fileset %s: user cannot be empty or whitespace only", filesetName)
+		}
+		_, err := validateUserOrGroup(trimmed)
+		if err != nil {
+			return apperr.Wrap("manifest.validateOwnership", apperr.InvalidInput, err, "fileset %s: invalid user", filesetName)
+		}
+		o.User = trimmed // Persist trimmed value
+		// Note: non-numeric IDs are allowed but may not be portable across helper images
+	}
+
+	// Validate and normalize group if provided
+	if o.Group != "" {
+		trimmed := strings.TrimSpace(o.Group)
+		if trimmed == "" {
+			return apperr.New("manifest.validateOwnership", apperr.InvalidInput, "fileset %s: group cannot be empty or whitespace only", filesetName)
+		}
+		_, err := validateUserOrGroup(trimmed)
+		if err != nil {
+			return apperr.Wrap("manifest.validateOwnership", apperr.InvalidInput, err, "fileset %s: invalid group", filesetName)
+		}
+		o.Group = trimmed // Persist trimmed value
+		// Note: non-numeric IDs are allowed but may not be portable across helper images
+	}
+
+	// Validate and normalize file_mode if provided
+	if o.FileMode != "" {
+		trimmed := strings.TrimSpace(o.FileMode)
+		if trimmed == "" {
+			return apperr.New("manifest.validateOwnership", apperr.InvalidInput, "fileset %s: file_mode cannot be empty or whitespace only", filesetName)
+		}
+		if _, err := parseOctalMode(trimmed); err != nil {
+			return apperr.Wrap("manifest.validateOwnership", apperr.InvalidInput, err, "fileset %s: invalid file_mode", filesetName)
+		}
+		o.FileMode = trimmed // Persist trimmed value
+	}
+
+	// Validate and normalize dir_mode if provided
+	if o.DirMode != "" {
+		trimmed := strings.TrimSpace(o.DirMode)
+		if trimmed == "" {
+			return apperr.New("manifest.validateOwnership", apperr.InvalidInput, "fileset %s: dir_mode cannot be empty or whitespace only", filesetName)
+		}
+		if _, err := parseOctalMode(trimmed); err != nil {
+			return apperr.Wrap("manifest.validateOwnership", apperr.InvalidInput, err, "fileset %s: invalid dir_mode", filesetName)
+		}
+		o.DirMode = trimmed // Persist trimmed value
+	}
+
+	return nil
+}
+
+// validateUserOrGroup validates a user or group identifier.
+// Returns (isNumeric, error).
+func validateUserOrGroup(s string) (bool, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false, apperr.New("manifest.validateUserOrGroup", apperr.InvalidInput, "user or group cannot be empty")
+	}
+
+	// Check if numeric
+	if numericIDRegex.MatchString(s) {
+		return true, nil
+	}
+
+	// Check if valid POSIX name (case-insensitive)
+	if posixNameRegex.MatchString(strings.ToLower(s)) {
+		return false, nil
+	}
+
+	return false, apperr.New("manifest.validateUserOrGroup", apperr.InvalidInput, "must be numeric or valid POSIX name: %s", s)
+}
+
+// parseOctalMode parses an octal mode string (e.g., "0644" or "644") and returns the numeric value.
+func parseOctalMode(s string) (uint32, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, apperr.New("manifest.parseOctalMode", apperr.InvalidInput, "mode cannot be empty")
+	}
+
+	// Check original length: must be 3 or 4 characters (e.g., "644", "0644", "755", "4755")
+	if len(s) < 3 || len(s) > 4 {
+		return 0, apperr.New("manifest.parseOctalMode", apperr.InvalidInput, "mode must be 3-4 octal digits: %s", s)
+	}
+
+	// Validate all characters are octal digits
+	for _, c := range s {
+		if c < '0' || c > '7' {
+			return 0, apperr.New("manifest.parseOctalMode", apperr.InvalidInput, "mode must contain only octal digits (0-7): %s", s)
+		}
+	}
+
+	// Parse as octal (strip leading 0 for parsing)
+	normalized := strings.TrimPrefix(s, "0")
+	val, err := strconv.ParseUint(normalized, 8, 32)
+	if err != nil {
+		return 0, apperr.Wrap("manifest.parseOctalMode", apperr.InvalidInput, err, "invalid octal mode: %s", s)
+	}
+
+	return uint32(val), nil
 }

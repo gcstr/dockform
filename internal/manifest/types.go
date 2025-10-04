@@ -90,6 +90,15 @@ type NetworkSpec struct {
 	AuxAddresses map[string]string `yaml:"aux_addresses"`
 }
 
+// Ownership defines optional ownership and permission settings for fileset files.
+type Ownership struct {
+	User             string `yaml:"user"`              // numeric UID string preferred; allow names
+	Group            string `yaml:"group"`             // numeric GID string preferred; allow names
+	FileMode         string `yaml:"file_mode"`         // octal string "0644" or "644"
+	DirMode          string `yaml:"dir_mode"`          // octal string "0755" or "755"
+	PreserveExisting bool   `yaml:"preserve_existing"` // if true, only apply to new/updated paths
+}
+
 // FilesetSpec defines a local directory to sync into a docker volume at a target path.
 type FilesetSpec struct {
 	Source          string         `yaml:"source"`
@@ -98,6 +107,7 @@ type FilesetSpec struct {
 	RestartServices RestartTargets `yaml:"restart_services"`
 	ApplyMode       string         `yaml:"apply_mode"`
 	Exclude         []string       `yaml:"exclude"`
+	Ownership       *Ownership     `yaml:"ownership"`
 	SourceAbs       string         `yaml:"-"`
 }
 

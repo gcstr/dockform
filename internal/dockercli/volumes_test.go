@@ -32,6 +32,10 @@ func (v *volExecStub) RunWithStdout(ctx context.Context, stdout io.Writer, args 
 	v.lastArgs = args
 	return nil
 }
+func (v *volExecStub) RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error) {
+	out, err := v.Run(ctx, args...)
+	return Result{Stdout: out, Stderr: "", ExitCode: 0}, err
+}
 
 // ---- Extended tests merged from volumes_more_test.go ----
 
@@ -84,6 +88,10 @@ func (s *scriptExec) RunWithStdout(ctx context.Context, stdout io.Writer, args .
 		return s.onRunWithStdout(args, stdout)
 	}
 	return nil
+}
+func (s *scriptExec) RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error) {
+	out, err := s.Run(ctx, args...)
+	return Result{Stdout: out, Stderr: "", ExitCode: 0}, err
 }
 
 func TestInspectVolume_ParsesJSON(t *testing.T) {
