@@ -96,6 +96,11 @@ func (m *mockDockerClient) ReadFileFromVolume(ctx context.Context, volumeName, t
 	return content, nil
 }
 
+func (m *mockDockerClient) RunVolumeScript(ctx context.Context, volumeName, targetPath, script string, env []string) (dockercli.VolumeScriptResult, error) {
+	// Mock implementation - just return success
+	return dockercli.VolumeScriptResult{Stdout: "Ownership applied successfully\n"}, nil
+}
+
 func (m *mockDockerClient) WriteFileToVolume(ctx context.Context, volumeName, targetPath, relFile, content string) error {
 	if m.writtenFiles == nil {
 		m.writtenFiles = make(map[string]string)
