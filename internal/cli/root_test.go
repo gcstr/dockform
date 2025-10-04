@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -124,13 +125,13 @@ func TestExecute_ReturnCodes_ByErrorKind(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
 	os.Args = []string{"dockform", "validate", "-c", badFile.Name()}
-	if code := Execute(); code != 2 {
+	if code := Execute(context.Background()); code != 2 {
 		t.Fatalf("expected exit code 2 for invalid input, got %d", code)
 	}
 
 	// NotFound default mapping -> 1
 	os.Args = []string{"dockform", "validate", "-c", "/path/does/not/exist.yml"}
-	if code := Execute(); code != 1 {
+	if code := Execute(context.Background()); code != 1 {
 		t.Fatalf("expected exit code 1 for not found, got %d", code)
 	}
 
@@ -138,7 +139,7 @@ func TestExecute_ReturnCodes_ByErrorKind(t *testing.T) {
 	defer withFailingDockerRoot(t)()
 	cfg := basicConfigPath(t)
 	os.Args = []string{"dockform", "validate", "-c", cfg}
-	if code := Execute(); code != 69 {
+	if code := Execute(context.Background()); code != 69 {
 		t.Fatalf("expected exit code 69 for unavailable, got %d", code)
 	}
 }

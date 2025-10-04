@@ -19,6 +19,10 @@ import (
 func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) error {
 	// 1) Docker daemon liveness
 	if err := d.CheckDaemon(ctx); err != nil {
+		// Check if this is a context cancellation - if so, return it directly
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 
@@ -97,6 +101,10 @@ func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) err
 
 		// Validate compose file syntax by attempting to parse it with Docker
 		if _, err := d.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, []string{}, []string{}); err != nil {
+			// Check if this is a context cancellation error - if so, return it directly
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			if len(app.Files) == 1 {
 				return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file %s for application %s", app.Files[0], appName)
 			} else if len(app.Files) > 1 {

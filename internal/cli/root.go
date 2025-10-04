@@ -26,9 +26,15 @@ var (
 )
 
 // Execute runs the root command and handles error formatting and exit codes.
-func Execute() int {
+// It accepts a context that should be cancelled on interrupt signals.
+func Execute(ctx context.Context) int {
 	cmd := newRootCmd()
-	if err := cmd.ExecuteContext(context.Background()); err != nil {
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		// Check if the error is a context cancellation (user interrupted)
+		// If so, don't print the error and exit with code 130 (128 + SIGINT)
+		if errors.Is(err, context.Canceled) {
+			return 130
+		}
 		printUserFriendly(err)
 		switch {
 		case apperr.IsKind(err, apperr.InvalidInput):
@@ -40,6 +46,9 @@ func Execute() int {
 		default:
 			return 1
 		}
+	}
+	if ctx != nil && errors.Is(ctx.Err(), context.Canceled) {
+		return 130
 	}
 	return 0
 }
