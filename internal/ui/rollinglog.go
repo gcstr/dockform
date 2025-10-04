@@ -45,8 +45,15 @@ func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string
 		}
 	}()
 
+	// Create a cancellable context so we can stop the work when Ctrl+C is pressed
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Channel to signal when user presses Ctrl+C in the UI
+	cancelCh := make(chan struct{})
+
 	// Build Bubble Tea program (no alt screen)
-	m := model{state: stateRunning, width: 80}
+	m := model{state: stateRunning, width: 80, cancelCh: cancelCh}
 	p := tea.NewProgram(m, tea.WithOutput(os.Stdout))
 
 	// Create UILogWriter that forwards each fully formatted line to the UI.
@@ -74,8 +81,29 @@ func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string
 		close(doneCh)
 	}()
 
+	// Monitor for UI cancellation (Ctrl+C in Bubble Tea) and parent context cancellation
+	go func() {
+		select {
+		case <-cancelCh:
+			// User pressed Ctrl+C in the UI
+			cancel()
+			p.Send(interrupted{})
+		case <-ctx.Done():
+			// Parent context was cancelled (e.g., signal from OS)
+			p.Send(interrupted{})
+		}
+	}()
+
 	// Execute the job while UI is running
 	finalReport, err := fn(ctx)
+
+	// Check if context was cancelled - if so, don't send the report
+	if ctx.Err() != nil {
+		// Context was cancelled, wait for UI to finish showing interrupt message
+		<-doneCh
+		return "", ctx.Err()
+	}
+
 	// Notify UI to render final report and exit
 	p.Send(done{report: finalReport})
 	<-doneCh
@@ -133,18 +161,34 @@ const (
 
 type appendLog struct{ line string }
 type done struct{ report string }
+type interrupted struct{}
 
 type model struct {
 	state       state
 	width       int
 	logLines    []string // newest last, max 5
 	finalReport string
+	cancelCh    chan struct{} // Signal channel for Ctrl+C
 }
 
 func (m model) Init() tea.Cmd { return nil }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		// Handle Ctrl+C keyboard interrupt
+		if msg.Type == tea.KeyCtrlC {
+			// Signal cancellation to stop the background work
+			if m.cancelCh != nil {
+				select {
+				case m.cancelCh <- struct{}{}:
+				default:
+					// Already signaled, ignore
+				}
+			}
+			// Don't quit immediately; wait for interrupted message after context cancels
+			return m, nil
+		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	case appendLog:
@@ -154,6 +198,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case done:
 		m.finalReport = msg.report
+		m.state = stateFinal
+		return m, tea.Quit
+	case interrupted:
+		// Handle interrupt signal by quitting immediately
+		m.finalReport = "\n│ Interrupted by user (Ctrl+C)\n"
 		m.state = stateFinal
 		return m, tea.Quit
 	}

@@ -25,32 +25,42 @@ func newPlanCmd() *cobra.Command {
 			}
 
 			// Build plan normally
-			var out string
 			if verbose {
 				plan, err := ctx.BuildPlan()
 				if err != nil {
 					return err
 				}
-				out = plan.String()
+				ctx.Printer.Plain("%s", plan.String())
 			} else {
+				var out string
 				_, err = ui.RunWithRollingLog(cmd.Context(), func(runCtx context.Context) (string, error) {
 					prev := ctx.Ctx
 					ctx.Ctx = runCtx
 					defer func() { ctx.Ctx = prev }()
 
+					// Check if context is already cancelled before starting
+					if runCtx.Err() != nil {
+						return "", runCtx.Err()
+					}
+
 					plan, err := ctx.BuildPlan()
 					if err != nil {
 						return "", err
 					}
+
+					// Check again after BuildPlan in case it was cancelled during execution
+					if runCtx.Err() != nil {
+						return "", runCtx.Err()
+					}
+
 					out = plan.String()
 					return "", nil
 				})
 				if err != nil {
 					return err
 				}
+				ctx.Printer.Plain("%s", out)
 			}
-
-			ctx.Printer.Plain("%s", out)
 			return nil
 		},
 	}
