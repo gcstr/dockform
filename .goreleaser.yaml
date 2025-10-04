@@ -57,35 +57,37 @@ changelog:
   use: git
   sort: asc
   abbrev: 7
+  # Trim conventional-commit prefix (with optional scope and breaking "!")
+  # Use .Subject to avoid including the body
+  format: '{{ regexReplaceAll "^(feat|fix|perf|refactor|build|ci|docs|style|test|chore)(\\([^)]*\\))?!?:\\s*" .Subject "" }}'
   groups:
     - title: Breaking Changes
-      regexp: '^.*!:.+$'
+      regexp: '^.+!:.+$'
       order: -1
-    - title: Features
-      regexp: '^.*?feat(\([[:word:]]+\))?:.+$'
+    - title: New Features
+      regexp: '^feat(\([^)]+\))?:'
       order: 0
     - title: Bug Fixes
-      regexp: '^.*?fix(\([[:word:]]+\))?:.+$'
+      regexp: '^fix(\([^)]+\))?:'
       order: 1
     - title: Performance
-      regexp: '^.*?perf(\([[:word:]]+\))?:.+$'
+      regexp: '^perf(\([^)]+\))?:'
       order: 2
     - title: Refactoring
-      regexp: '^.*?refactor(\([[:word:]]+\))?:.+$'
+      regexp: '^refactor(\([^)]+\))?:'
       order: 3
     - title: Others
       order: 999
   filters:
     exclude:
-      - '^docs?:'
-      - '^test:|tests?:'
-      - '^chore:'
-      - '^ci:'
+      - '^docs(\([^)]+\))?:'
+      - '^test(s)?(\([^)]+\))?:'
+      - '^chore(\([^)]+\))?:'
+      - '^ci(\([^)]+\))?:'
       - '^Merge pull request'
       - '^Merge branch'
 
-# Using 'brews' (Formulas) instead of 'homebrew_casks' because dockform is a CLI tool,
-# not a GUI application. The deprecation warning can be safely ignored.
+# Homebrew Formula (CLI)
 brews:
   - name: dockform
     repository:
@@ -97,7 +99,8 @@ brews:
     homepage: "https://dockform.io"
     description: "Manage Docker Compose projects declaratively"
     license: "MIT"
-    skip_upload: false
+    # Auto-skip publishing to the tap on prerelease tags (e.g., -rc.1, -beta.2)
+    skip_upload: auto
     install: |
       bin.install "dockform"
     test: |
@@ -106,4 +109,5 @@ brews:
 release:
   draft: false
   prerelease: auto
-
+  # Avoid making prereleases the GitHub “Latest”
+  make_latest: false
