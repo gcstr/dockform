@@ -296,3 +296,59 @@ func (c *Client) RemovePathsFromVolume(ctx context.Context, volumeName, targetPa
 	_, err := c.exec.RunWithStdin(ctx, strings.NewReader(printfArgs.String()), cmd...)
 	return err
 }
+
+// VolumeScriptResult contains the output from a volume script execution.
+type VolumeScriptResult struct {
+	Stdout string
+	Stderr string
+}
+
+// RunVolumeScript executes a shell script inside a helper container with the specified volume mounted.
+// The volume is mounted at targetPath (e.g., /app), matching where files were synced.
+func (c *Client) RunVolumeScript(ctx context.Context, volumeName, targetPath, script string, env []string) (VolumeScriptResult, error) {
+	if volumeName == "" {
+		return VolumeScriptResult{}, apperr.New("dockercli.RunVolumeScript", apperr.InvalidInput, "volume name required")
+	}
+	if !strings.HasPrefix(targetPath, "/") {
+		return VolumeScriptResult{}, apperr.New("dockercli.RunVolumeScript", apperr.InvalidInput, "target path must be absolute")
+	}
+	if strings.TrimSpace(script) == "" {
+		return VolumeScriptResult{}, apperr.New("dockercli.RunVolumeScript", apperr.InvalidInput, "script cannot be empty")
+	}
+
+	// Build docker run command
+	cmd := []string{"run", "--rm"}
+
+	// Add environment variables
+	for _, e := range env {
+		if strings.TrimSpace(e) != "" {
+			cmd = append(cmd, "-e", e)
+		}
+	}
+
+	// Mount volume at targetPath (same as ExtractTarToVolume does)
+	cmd = append(cmd, "-v", fmt.Sprintf("%s:%s", volumeName, targetPath))
+
+	// Use helper image and run script with sh
+	cmd = append(cmd, HelperImage, "sh", "-c", script)
+
+	// Execute command using RunDetailed to capture both stdout and stderr
+	res, err := c.exec.RunDetailed(ctx, Options{}, cmd...)
+	if err != nil {
+		return VolumeScriptResult{Stdout: res.Stdout, Stderr: res.Stderr}, err
+	}
+
+	return VolumeScriptResult{Stdout: res.Stdout, Stderr: res.Stderr}, nil
+}
+
+// RunInHelperImage executes a command in the helper image without mounting volumes.
+// Useful for checking if binaries are available.
+func (c *Client) RunInHelperImage(ctx context.Context, script string) (string, error) {
+	if strings.TrimSpace(script) == "" {
+		return "", apperr.New("dockercli.RunInHelperImage", apperr.InvalidInput, "script cannot be empty")
+	}
+
+	cmd := []string{"run", "--rm", HelperImage, "sh", "-c", script}
+	out, err := c.exec.Run(ctx, cmd...)
+	return out, err
+}
