@@ -119,6 +119,8 @@ func (p *Planner) applyApplicationChanges(ctx context.Context, cfg manifest.Conf
 		}
 
 		// Best-effort: ensure identifier label is present on containers
+		// Note: ComposeUp already uses labeled overlay when identifier is set, so this is typically
+		// a no-op defensive check. Only updates if label is missing or mismatched.
 		if identifier != "" {
 			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
 				for _, it := range items {
