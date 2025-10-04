@@ -183,6 +183,24 @@ func TestComposeConfigHash_ParsesLastField(t *testing.T) {
 	}
 }
 
+func TestComposeConfigHashes_ReusesOverlayAndParses(t *testing.T) {
+	// Simulate overlay build (config yaml) once, then two hash calls
+	f := &fakeExec{outConfigYAML: "services:\n  web:\n    image: nginx\n  api:\n    image: busybox\n", outHash: "web deadbeef\n"}
+	c := &Client{exec: f, identifier: "demo"}
+	dir := t.TempDir()
+	hashes, err := c.ComposeConfigHashes(context.Background(), dir, []string{"compose.yml"}, nil, nil, "proj", []string{"web", "api"}, "demo", nil)
+	if err != nil {
+		t.Fatalf("multihash: %v", err)
+	}
+	if hashes["web"] != "deadbeef" {
+		t.Fatalf("expected web hash deadbeef, got %#v", hashes)
+	}
+	// Ensure the last command was a hash invocation (not another config yaml render)
+	if !contains(f.lastArgs, "--hash") {
+		t.Fatalf("expected last args to be hash invocation, got %#v", f.lastArgs)
+	}
+}
+
 func TestBuildLabeledProjectTemp_AddsIdentifierLabel(t *testing.T) {
 	yam := "services:\n  web:\n    image: nginx\n  api:\n    image: busybox\n"
 	f := &fakeExec{outConfigYAML: yam}
