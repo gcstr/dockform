@@ -145,6 +145,13 @@ tasks:
   release:tag:
     desc: Intefactively create a new tag and push it to the remote repository
     cmds:
+      - cmd: |
+          CURRENT_BRANCH=$(git branch --show-current)
+          if [ "$CURRENT_BRANCH" != "main" ]; then
+            echo "Error: must be on main branch to create a release tag (currently on $CURRENT_BRANCH)"
+            exit 1
+          fi
+        silent: true
       - cmd: gum style --border normal --margin "1" --padding "1 2" --border-foreground 212 "Current tag -> $(gum style --foreground 212 '{{.CURRENT_TAG}}')"
         silent: true
       - cmd: |
