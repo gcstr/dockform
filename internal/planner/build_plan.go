@@ -327,14 +327,14 @@ func (p *Planner) collectDesiredServices(ctx context.Context, cfg manifest.Confi
 
 	detector := NewServiceStateDetector(p.docker)
 
-	for appName, app := range cfg.Applications {
-		services, err := detector.DetectAllServicesState(ctx, appName, app, cfg.Docker.Identifier, cfg.Sops)
+	for _, app := range cfg.Applications {
+		inline := detector.BuildInlineEnv(ctx, app, cfg.Sops)
+		names, err := detector.GetPlannedServices(ctx, app, inline)
 		if err != nil {
-			continue // Skip this app if we can't detect its services
+			continue // Skip this app if we can't list planned services
 		}
-
-		for _, service := range services {
-			desiredServices[service.Name] = struct{}{}
+		for _, name := range names {
+			desiredServices[name] = struct{}{}
 		}
 	}
 

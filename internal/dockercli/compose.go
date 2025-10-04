@@ -181,6 +181,47 @@ func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files
 	return fields[len(fields)-1], nil
 }
 
+// ComposeConfigHashes returns compose config hashes for multiple services, reusing a single
+// labeled overlay compose file when identifier is provided to avoid repeated `compose config`.
+func (c *Client) ComposeConfigHashes(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, services []string, identifier string, inlineEnv []string) (map[string]string, error) {
+	// Choose compose files (overlay or user files)
+	chosenFiles := files
+	if identifier != "" {
+		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, identifier, inlineEnv); err == nil && pth != "" {
+			defer func() { _ = os.Remove(pth) }()
+			chosenFiles = []string{pth}
+		} else if err != nil {
+			return nil, err
+		}
+	}
+	base := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
+	out := make(map[string]string, len(services))
+	for _, svc := range services {
+		args := append(append([]string{}, base...), "config", "--hash", svc)
+		var txt string
+		var err error
+		if len(inlineEnv) > 0 {
+			txt, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
+		} else {
+			txt, err = c.exec.RunInDir(ctx, workingDir, args...)
+		}
+		if err != nil {
+			return nil, err
+		}
+		trimmed := strings.TrimSpace(txt)
+		firstLine := trimmed
+		if idx := strings.IndexAny(trimmed, "\r\n"); idx >= 0 {
+			firstLine = trimmed[:idx]
+		}
+		fields := strings.Fields(firstLine)
+		if len(fields) == 0 {
+			return nil, apperr.New("dockercli.ComposeConfigHashes", apperr.External, "unexpected compose hash output: %s", util.Truncate(trimmed, 200))
+		}
+		out[svc] = fields[len(fields)-1]
+	}
+	return out, nil
+}
+
 // buildLabeledProjectTemp loads the effective compose yaml via `docker compose config`,
 // injects io.dockform.identifier=<identifier> label into all services, writes to a temp file, and returns its path.
 func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, identifier string, inlineEnv []string) (string, error) {
