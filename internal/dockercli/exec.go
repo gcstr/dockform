@@ -23,6 +23,8 @@ type Exec interface {
 	// RunWithStdout streams the stdout of the docker command to the provided writer without buffering it in memory.
 	// Stderr is still captured and included in any returned error for debuggability.
 	RunWithStdout(ctx context.Context, stdout io.Writer, args ...string) error
+	// RunDetailed runs a command and returns structured Result with stdout, stderr, and exit code.
+	RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error)
 }
 
 // SystemExec is a real implementation that shells out to the docker CLI.
