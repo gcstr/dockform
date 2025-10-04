@@ -1,4 +1,4 @@
-Dockform Doctor — health scan
+Dockform (v0.1.0-dev) Doctor — health scan
 Context: default  •  Host: unix:///var/run/docker.sock
 
 │ ✓ [engine] Docker Engine reachable — v20.0.0

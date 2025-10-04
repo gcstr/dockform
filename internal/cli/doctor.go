@@ -83,7 +83,7 @@ func newDoctorCmd() *cobra.Command {
 
 			// Render
 			// Top header
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Dockform Doctor — health scan")
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Dockform (v%s) Doctor — health scan\n", version)
 			if host != "" {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Context: %s  •  Host: %s\n\n", ctxName, host)
 			} else {
