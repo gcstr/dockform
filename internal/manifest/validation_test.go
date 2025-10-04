@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/apperr"
@@ -376,4 +377,296 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 			t.Fatalf("expected %s, got %s", ymlFile, app.Files[0])
 		}
 	})
+}
+
+func TestValidateUserOrGroup(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantNumeric bool
+		wantErr     bool
+	}{
+		{"numeric_uid", "1000", true, false},
+		{"numeric_zero", "0", true, false},
+		{"valid_name_lowercase", "www-data", false, false},
+		{"valid_name_underscore", "app_user", false, false},
+		{"valid_name_dollar", "user$", false, false},
+		{"valid_name_mixed", "apache2", false, false},
+		{"empty_string", "", false, true},
+		{"spaces_only", "   ", false, true},
+		{"invalid_chars", "user@host", false, true},
+		{"starts_with_digit", "1user", false, true},
+		{"uppercase_name", "NGINX", false, false}, // case-insensitive check
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isNumeric, err := validateUserOrGroup(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateUserOrGroup(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if err == nil && isNumeric != tt.wantNumeric {
+				t.Errorf("validateUserOrGroup(%q) isNumeric = %v, want %v", tt.input, isNumeric, tt.wantNumeric)
+			}
+		})
+	}
+}
+
+func TestParseOctalMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    uint32
+		wantErr bool
+	}{
+		{"mode_644", "644", 0644, false},
+		{"mode_0644", "0644", 0644, false},
+		{"mode_755", "755", 0755, false},
+		{"mode_0755", "0755", 0755, false},
+		{"mode_4755", "4755", 04755, false}, // setuid bit
+		{"mode_0777", "0777", 0777, false},
+		{"empty_string", "", 0, true},
+		{"spaces", "   ", 0, true},
+		{"too_short", "64", 0, true},
+		{"too_long", "07777", 0, true},
+		{"invalid_octal", "999", 0, true},
+		{"non_numeric", "rw-", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseOctalMode(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseOctalMode(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if err == nil && got != tt.want {
+				t.Errorf("parseOctalMode(%q) = 0%o, want 0%o", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateOwnership(t *testing.T) {
+	tests := []struct {
+		name      string
+		ownership *Ownership
+		wantErr   bool
+	}{
+		{
+			name:      "nil_ownership",
+			ownership: nil,
+			wantErr:   false,
+		},
+		{
+			name: "valid_numeric_user_group",
+			ownership: &Ownership{
+				User:     "1000",
+				Group:    "1000",
+				FileMode: "0644",
+				DirMode:  "0755",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid_named_user_group",
+			ownership: &Ownership{
+				User:     "www-data",
+				Group:    "www-data",
+				FileMode: "644",
+				DirMode:  "755",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid_only_user",
+			ownership: &Ownership{
+				User: "1000",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid_only_group",
+			ownership: &Ownership{
+				Group: "1000",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid_only_modes",
+			ownership: &Ownership{
+				FileMode: "0644",
+				DirMode:  "0755",
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid_user",
+			ownership: &Ownership{
+				User: "bad@user",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid_group",
+			ownership: &Ownership{
+				Group: "bad@group",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid_file_mode",
+			ownership: &Ownership{
+				FileMode: "999",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid_dir_mode",
+			ownership: &Ownership{
+				DirMode: "abc",
+			},
+			wantErr: true,
+		},
+		{
+			name: "preserve_existing_flag",
+			ownership: &Ownership{
+				User:             "1000",
+				PreserveExisting: true,
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := &FilesetSpec{Ownership: tt.ownership}
+			err := validateOwnership("test-fileset", fs)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateOwnership() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			// Verify trimming occurred for valid cases with trimmed ownership
+			if err == nil && tt.ownership != nil {
+				if tt.ownership.User != "" {
+					if strings.TrimSpace(tt.ownership.User) != tt.ownership.User {
+						t.Errorf("User should have been trimmed but wasn't")
+					}
+				}
+				if tt.ownership.Group != "" {
+					if strings.TrimSpace(tt.ownership.Group) != tt.ownership.Group {
+						t.Errorf("Group should have been trimmed but wasn't")
+					}
+				}
+				if tt.ownership.FileMode != "" {
+					if strings.TrimSpace(tt.ownership.FileMode) != tt.ownership.FileMode {
+						t.Errorf("FileMode should have been trimmed but wasn't")
+					}
+				}
+				if tt.ownership.DirMode != "" {
+					if strings.TrimSpace(tt.ownership.DirMode) != tt.ownership.DirMode {
+						t.Errorf("DirMode should have been trimmed but wasn't")
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestValidateOwnership_Trimming(t *testing.T) {
+	fs := &FilesetSpec{
+		Source:       "src",
+		TargetVolume: "vol",
+		TargetPath:   "/app",
+		Ownership: &Ownership{
+			User:     " 1000 ",
+			Group:    " 1000 ",
+			FileMode: " 0644 ",
+			DirMode:  " 0755 ",
+		},
+	}
+
+	err := validateOwnership("test-fileset", fs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify values were trimmed
+	if fs.Ownership.User != "1000" {
+		t.Errorf("User not trimmed: got %q, want %q", fs.Ownership.User, "1000")
+	}
+	if fs.Ownership.Group != "1000" {
+		t.Errorf("Group not trimmed: got %q, want %q", fs.Ownership.Group, "1000")
+	}
+	if fs.Ownership.FileMode != "0644" {
+		t.Errorf("FileMode not trimmed: got %q, want %q", fs.Ownership.FileMode, "0644")
+	}
+	if fs.Ownership.DirMode != "0755" {
+		t.Errorf("DirMode not trimmed: got %q, want %q", fs.Ownership.DirMode, "0755")
+	}
+}
+
+func TestFilesets_OwnershipValidation(t *testing.T) {
+	base := t.TempDir()
+
+	// Valid ownership
+	cfgValid := Config{
+		Docker: DockerConfig{Identifier: "id"},
+		Filesets: map[string]FilesetSpec{
+			"code": {
+				Source:       "src",
+				TargetVolume: "data",
+				TargetPath:   "/app",
+				Ownership: &Ownership{
+					User:     "1000",
+					Group:    "1000",
+					FileMode: "0644",
+					DirMode:  "0755",
+				},
+			},
+		},
+	}
+	if err := cfgValid.normalizeAndValidate(base); err != nil {
+		t.Fatalf("unexpected error for valid ownership: %v", err)
+	}
+
+	// Invalid user in ownership
+	cfgInvalidUser := Config{
+		Docker: DockerConfig{Identifier: "id"},
+		Filesets: map[string]FilesetSpec{
+			"code": {
+				Source:       "src",
+				TargetVolume: "data",
+				TargetPath:   "/app",
+				Ownership: &Ownership{
+					User: "bad@user",
+				},
+			},
+		},
+	}
+	if err := cfgInvalidUser.normalizeAndValidate(base); err == nil {
+		t.Fatalf("expected error for invalid user in ownership")
+	} else if !apperr.IsKind(err, apperr.InvalidInput) {
+		t.Fatalf("expected InvalidInput, got %v", err)
+	}
+
+	// Invalid file mode
+	cfgInvalidMode := Config{
+		Docker: DockerConfig{Identifier: "id"},
+		Filesets: map[string]FilesetSpec{
+			"code": {
+				Source:       "src",
+				TargetVolume: "data",
+				TargetPath:   "/app",
+				Ownership: &Ownership{
+					FileMode: "999",
+				},
+			},
+		},
+	}
+	if err := cfgInvalidMode.normalizeAndValidate(base); err == nil {
+		t.Fatalf("expected error for invalid file mode")
+	} else if !apperr.IsKind(err, apperr.InvalidInput) {
+		t.Fatalf("expected InvalidInput, got %v", err)
+	}
 }
