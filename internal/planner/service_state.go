@@ -59,30 +59,24 @@ func (d *ServiceStateDetector) GetPlannedServices(ctx context.Context, app manif
 		return nil, nil
 	}
 
-	// First try to get services from compose config
-	doc, err := d.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
-	if err != nil {
-		return nil, err
+	// Prefer cheap service listing first
+	services, err := d.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
+	if err == nil && len(services) > 0 {
+		sort.Strings(services)
+		return services, nil
 	}
 
-	services := make([]string, 0, len(doc.Services))
+	// Fallback to full config parse if needed
+	doc, err2 := d.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
+	if err2 != nil {
+		return nil, err2
+	}
+	out := make([]string, 0, len(doc.Services))
 	for name := range doc.Services {
-		services = append(services, name)
+		out = append(out, name)
 	}
-	sort.Strings(services)
-
-	// If no services found, try the services command as fallback
-	if len(services) == 0 {
-		services, err = d.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
-		if err != nil {
-			return nil, err
-		}
-		if len(services) > 0 {
-			sort.Strings(services)
-		}
-	}
-
-	return services, nil
+	sort.Strings(out)
+	return out, nil
 }
 
 // BuildInlineEnv constructs the inline environment variables for an application, including SOPS secrets.
@@ -145,52 +139,70 @@ func (d *ServiceStateDetector) GetRunningServices(ctx context.Context, app manif
 
 // DetectServiceState determines the state of a single service.
 func (d *ServiceStateDetector) DetectServiceState(ctx context.Context, serviceName, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem) (ServiceInfo, error) {
+	return d.detectServiceStateFast(ctx, serviceName, appName, app, identifier, inline, running, nil, nil)
+}
+
+// detectServiceStateFast determines the state of a single service using precomputed data where available.
+// If desiredHashes or labelsByContainer are nil or missing entries, it falls back to computing them.
+func (d *ServiceStateDetector) detectServiceStateFast(ctx context.Context, serviceName, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem, desiredHashes map[string]string, labelsByContainer map[string]map[string]string) (ServiceInfo, error) {
 	info := ServiceInfo{
 		Name:    serviceName,
 		AppName: appName,
 		State:   ServiceMissing,
 	}
 
-	// Check if service is running first, regardless of docker client availability
+	// Check running first
 	container, isRunning := running[serviceName]
 	if isRunning {
 		info.Container = &container
-		info.State = ServiceRunning // Assume running until we find issues
+		info.State = ServiceRunning
 	}
 
 	if d.docker == nil {
-		return info, nil // Can't do deeper inspection without docker client
+		return info, nil
 	}
 
-	// Get the project name
+	// Project name
 	proj := ""
 	if app.Project != nil {
 		proj = app.Project.Name
 	}
 
-	// Compute desired hash
-	desiredHash, hashErr := d.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, serviceName, identifier, inline)
+	// Desired hash from precomputed map or compute on demand
+	var desiredHash string
+	if desiredHashes != nil {
+		desiredHash = desiredHashes[serviceName]
+	}
+	if desiredHash == "" {
+		if dh, err := d.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, serviceName, identifier, inline); err == nil {
+			desiredHash = dh
+		}
+	}
 	info.DesiredHash = desiredHash
 
-	// If service is not running, we already set that up above
 	if !isRunning {
 		return info, nil
 	}
 
-	// Check labels to determine actual state
+	// Labels: prefer batch result
+	var labels map[string]string
+	var err error
 	keys := []string{"com.docker.compose.config-hash"}
 	if identifier != "" {
 		keys = append(keys, "io.dockform.identifier")
 	}
-
-	labels, err := d.docker.InspectContainerLabels(ctx, info.Container.Name, keys)
-	if err != nil {
-		// If we can't inspect labels, assume it needs to be reconciled
-		info.State = ServiceDrifted
-		return info, nil
+	if labelsByContainer != nil && info.Container != nil {
+		labels = labelsByContainer[info.Container.Name]
+	}
+	if labels == nil {
+		labels, err = d.docker.InspectContainerLabels(ctx, info.Container.Name, keys)
+		if err != nil {
+			info.State = ServiceDrifted
+			return info, nil
+		}
 	}
 
-	// Check identifier mismatch first (higher priority)
+	// Identifier check
 	if identifier != "" {
 		if v, ok := labels["io.dockform.identifier"]; !ok || v != identifier {
 			info.State = ServiceIdentifierMismatch
@@ -198,8 +210,8 @@ func (d *ServiceStateDetector) DetectServiceState(ctx context.Context, serviceNa
 		}
 	}
 
-	// Check hash drift if we have a desired hash
-	if hashErr == nil && desiredHash != "" {
+	// Hash drift check if desired hash available
+	if desiredHash != "" {
 		runningHash := labels["com.docker.compose.config-hash"]
 		info.RunningHash = runningHash
 		if runningHash == "" || runningHash != desiredHash {
@@ -232,19 +244,47 @@ func (d *ServiceStateDetector) DetectAllServicesState(ctx context.Context, appNa
 		return nil, apperr.Wrap("servicestate.DetectAllServicesState", apperr.External, err, "failed to get running services for application %s", appName)
 	}
 
+	// Precompute desired hashes for all planned services (reuse overlay once)
+	desiredHashes := map[string]string{}
+	if d.docker != nil && len(plannedServices) > 0 {
+		proj := ""
+		if app.Project != nil {
+			proj = app.Project.Name
+		}
+		if hashes, err := d.docker.ComposeConfigHashes(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, plannedServices, identifier, inline); err == nil {
+			desiredHashes = hashes
+		}
+	}
+
+	// Batch container label inspection for running containers
+	labelsByContainer := map[string]map[string]string{}
+	if d.docker != nil && len(running) > 0 {
+		names := make([]string, 0, len(running))
+		for _, it := range running {
+			names = append(names, it.Name)
+		}
+		keys := []string{"com.docker.compose.config-hash"}
+		if identifier != "" {
+			keys = append(keys, "io.dockform.identifier")
+		}
+		if got, err := d.docker.InspectMultipleContainerLabels(ctx, names, keys); err == nil && got != nil {
+			labelsByContainer = got
+		}
+	}
+
 	// Choose parallel or sequential processing based on configuration
 	if d.parallel {
-		return d.detectAllServicesStateParallel(ctx, appName, app, identifier, inline, running, plannedServices)
+		return d.detectAllServicesStateParallel(ctx, appName, app, identifier, inline, running, plannedServices, desiredHashes, labelsByContainer)
 	}
-	return d.detectAllServicesStateSequential(ctx, appName, app, identifier, inline, running, plannedServices)
+	return d.detectAllServicesStateSequential(ctx, appName, app, identifier, inline, running, plannedServices, desiredHashes, labelsByContainer)
 }
 
 // detectAllServicesStateSequential processes services one by one (original implementation)
-func (d *ServiceStateDetector) detectAllServicesStateSequential(ctx context.Context, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem, plannedServices []string) ([]ServiceInfo, error) {
+func (d *ServiceStateDetector) detectAllServicesStateSequential(ctx context.Context, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem, plannedServices []string, desiredHashes map[string]string, labelsByContainer map[string]map[string]string) ([]ServiceInfo, error) {
 	// Analyze each planned service
 	var results []ServiceInfo
 	for _, serviceName := range plannedServices {
-		info, err := d.DetectServiceState(ctx, serviceName, appName, app, identifier, inline, running)
+		info, err := d.detectServiceStateFast(ctx, serviceName, appName, app, identifier, inline, running, desiredHashes, labelsByContainer)
 		if err != nil {
 			return nil, apperr.Wrap("servicestate.DetectAllServicesStateSequential", apperr.External, err, "failed to detect state for service %s/%s", appName, serviceName)
 		}
@@ -255,7 +295,7 @@ func (d *ServiceStateDetector) detectAllServicesStateSequential(ctx context.Cont
 }
 
 // detectAllServicesStateParallel processes services concurrently for faster detection
-func (d *ServiceStateDetector) detectAllServicesStateParallel(ctx context.Context, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem, plannedServices []string) ([]ServiceInfo, error) {
+func (d *ServiceStateDetector) detectAllServicesStateParallel(ctx context.Context, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem, plannedServices []string, desiredHashes map[string]string, labelsByContainer map[string]map[string]string) ([]ServiceInfo, error) {
 	type serviceResult struct {
 		info  ServiceInfo
 		err   error
@@ -271,7 +311,7 @@ func (d *ServiceStateDetector) detectAllServicesStateParallel(ctx context.Contex
 		go func(serviceName string, order int) {
 			defer wg.Done()
 
-			info, err := d.DetectServiceState(ctx, serviceName, appName, app, identifier, inline, running)
+			info, err := d.detectServiceStateFast(ctx, serviceName, appName, app, identifier, inline, running, desiredHashes, labelsByContainer)
 			resultsChan <- serviceResult{info: info, err: err, order: order}
 		}(serviceName, i)
 	}

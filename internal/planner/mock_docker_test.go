@@ -268,6 +268,22 @@ func (m *mockDockerClient) InspectContainerLabelsBatch(ctx context.Context, cont
 	return result, nil
 }
 
+func (m *mockDockerClient) InspectMultipleContainerLabels(ctx context.Context, containerNames []string, keys []string) (map[string]map[string]string, error) {
+	result := make(map[string]map[string]string)
+	for _, name := range containerNames {
+		if labels, ok := m.containerLabels[name]; ok {
+			filtered := make(map[string]string)
+			for _, k := range keys {
+				if v, has := labels[k]; has {
+					filtered[k] = v
+				}
+			}
+			result[name] = filtered
+		}
+	}
+	return result, nil
+}
+
 // Directory sync operations
 func (m *mockDockerClient) SyncDirToVolume(ctx context.Context, volumeName, targetPath, localDir string) error {
 	return nil
@@ -276,4 +292,12 @@ func (m *mockDockerClient) SyncDirToVolume(ctx context.Context, volumeName, targ
 // Daemon check
 func (m *mockDockerClient) CheckDaemon(ctx context.Context) error {
 	return nil
+}
+
+func (m *mockDockerClient) ComposeConfigHashes(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, services []string, identifier string, inline []string) (map[string]string, error) {
+	out := make(map[string]string)
+	for _, s := range services {
+		out[s] = "mock-hash"
+	}
+	return out, nil
 }

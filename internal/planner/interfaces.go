@@ -37,11 +37,13 @@ type DockerClient interface {
 	RemoveContainer(ctx context.Context, name string, force bool) error
 	UpdateContainerLabels(ctx context.Context, containerName string, labels map[string]string) error
 	InspectContainerLabels(ctx context.Context, containerName string, keys []string) (map[string]string, error)
+	InspectMultipleContainerLabels(ctx context.Context, containerNames []string, keys []string) (map[string]map[string]string, error)
 
 	// Compose operations
 	ComposeConfigFull(ctx context.Context, root string, files []string, profiles []string, envFiles []string, inline []string) (dockercli.ComposeConfigDoc, error)
 	ComposeConfigServices(ctx context.Context, root string, files []string, profiles []string, envFiles []string, inline []string) ([]string, error)
 	ComposeConfigHash(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project, serviceName, identifier string, inline []string) (string, error)
+	ComposeConfigHashes(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, services []string, identifier string, inline []string) (map[string]string, error)
 	ComposePs(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string) ([]dockercli.ComposePsItem, error)
 	ComposeUp(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string) (string, error)
 }
