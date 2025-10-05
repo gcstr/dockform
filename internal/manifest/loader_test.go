@@ -94,7 +94,7 @@ func TestResolveConfigPath_EmptyPathUsesCWD(t *testing.T) {
 func TestLoadWithWarnings_SetsBaseDirAndReportsMissing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dockform.yml")
-	content := "docker:\n  identifier: myapp\n  context: ${CTX}\napplications:\n  web:\n    root: website\n"
+	content := "docker:\n  identifier: myapp\n  context: ${CTX}\nstacks:\n  web:\n    root: website\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
@@ -108,10 +108,10 @@ func TestLoadWithWarnings_SetsBaseDirAndReportsMissing(t *testing.T) {
 	if cfg.Docker.Context != "default" {
 		t.Fatalf("expected default docker.context, got %q", cfg.Docker.Context)
 	}
-	app := cfg.Applications["web"]
+	stack := cfg.Stacks["web"]
 	expectedRoot := filepath.Clean(filepath.Join(dir, "website"))
-	if app.Root != expectedRoot {
-		t.Fatalf("app root not resolved; want %q got %q", expectedRoot, app.Root)
+	if stack.Root != expectedRoot {
+		t.Fatalf("stack root not resolved; want %q got %q", expectedRoot, stack.Root)
 	}
 	if len(missing) != 1 || missing[0] != "CTX" {
 		t.Fatalf("expected missing [CTX], got %#v", missing)

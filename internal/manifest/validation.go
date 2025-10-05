@@ -32,8 +32,8 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 	if strings.TrimSpace(c.Docker.Identifier) == "" {
 		return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "docker.identifier is required")
 	}
-	if c.Applications == nil {
-		c.Applications = map[string]Application{}
+	if c.Stacks == nil {
+		c.Stacks = map[string]Stack{}
 	}
 	if c.Networks == nil {
 		c.Networks = map[string]NetworkSpec{}
@@ -59,25 +59,25 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		}
 	}
 
-	// Validate application keys and fill defaults
-	for appName, app := range c.Applications {
-		if !appKeyRegex.MatchString(appName) {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid application key %q: must match ^[a-z0-9_.-]+$", appName)
+	// Validate stack keys and fill defaults
+	for stackName, stack := range c.Stacks {
+		if !appKeyRegex.MatchString(stackName) {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid stack key %q: must match ^[a-z0-9_.-]+$", stackName)
 		}
 		// Resolve root relative to config file directory
-		resolvedRoot := filepath.Clean(filepath.Join(baseDir, app.Root))
+		resolvedRoot := filepath.Clean(filepath.Join(baseDir, stack.Root))
 
 		// Merge environment files with correct base paths
 		// Root-level files are converted from baseDir-relative to resolvedRoot-relative
 		var mergedEnv []string
 		if c.Environment != nil && len(c.Environment.Files) > 0 {
-			mergedEnv = append(mergedEnv, rebaseRootEnvToApp(baseDir, resolvedRoot, c.Environment.Files)...)
+			mergedEnv = append(mergedEnv, rebaseRootEnvToStack(baseDir, resolvedRoot, c.Environment.Files)...)
 		}
-		if app.Environment != nil && len(app.Environment.Files) > 0 {
-			mergedEnv = append(mergedEnv, app.Environment.Files...)
+		if stack.Environment != nil && len(stack.Environment.Files) > 0 {
+			mergedEnv = append(mergedEnv, stack.Environment.Files...)
 		}
-		if len(app.EnvFile) > 0 {
-			mergedEnv = append(mergedEnv, app.EnvFile...)
+		if len(stack.EnvFile) > 0 {
+			mergedEnv = append(mergedEnv, stack.EnvFile...)
 		}
 		// De-duplicate env files while preserving order
 		if len(mergedEnv) > 1 {
@@ -93,13 +93,13 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 			mergedEnv = uniq
 		}
 
-		// Merge inline env vars (root first, then app). Last value for a key wins.
+		// Merge inline env vars (root first, then stack). Last value for a key wins.
 		var mergedInline []string
 		if c.Environment != nil && len(c.Environment.Inline) > 0 {
 			mergedInline = append(mergedInline, c.Environment.Inline...)
 		}
-		if app.Environment != nil && len(app.Environment.Inline) > 0 {
-			mergedInline = append(mergedInline, app.Environment.Inline...)
+		if stack.Environment != nil && len(stack.Environment.Inline) > 0 {
+			mergedInline = append(mergedInline, stack.Environment.Inline...)
 		}
 		if len(mergedInline) > 1 {
 			// Deduplicate by key with last-wins while preserving order of last occurrences
@@ -127,7 +127,7 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 			}
 		}
 
-		// Merge SOPS secrets: root-level rebased to app root, then app-level
+		// Merge SOPS secrets: root-level rebased to stack root, then stack-level
 		var mergedSops []string
 		if c.Secrets != nil && len(c.Secrets.Sops) > 0 {
 			for _, sp := range c.Secrets.Sops {
@@ -146,49 +146,49 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 				}
 			}
 		}
-		if app.Secrets != nil && len(app.Secrets.Sops) > 0 {
-			for _, sp := range app.Secrets.Sops {
+		if stack.Secrets != nil && len(stack.Secrets.Sops) > 0 {
+			for _, sp := range stack.Secrets.Sops {
 				p := strings.TrimSpace(sp)
 				if p == "" {
 					continue
 				}
 				if !strings.HasSuffix(strings.ToLower(p), ".env") {
-					return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "application %s secrets.sops: %s must have .env extension", appName, sp)
+					return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "stack %s secrets.sops: %s must have .env extension", stackName, sp)
 				}
 				mergedSops = append(mergedSops, p)
 			}
 		}
 
-		if len(app.Files) == 0 {
+		if len(stack.Files) == 0 {
 			defaultComposeFile := findDefaultComposeFile(resolvedRoot)
-			c.Applications[appName] = Application{
+			c.Stacks[stackName] = Stack{
 				Root:        resolvedRoot,
 				Files:       []string{defaultComposeFile},
-				Profiles:    app.Profiles,
+				Profiles:    stack.Profiles,
 				EnvFile:     mergedEnv,
-				Environment: app.Environment,
-				Secrets:     app.Secrets,
+				Environment: stack.Environment,
+				Secrets:     stack.Secrets,
 				EnvInline:   mergedInline,
 				SopsSecrets: mergedSops,
-				Project:     app.Project,
+				Project:     stack.Project,
 			}
 		} else {
 			// Keep provided file paths (interpreted relative to Root by compose), but store resolved Root
-			c.Applications[appName] = Application{
+			c.Stacks[stackName] = Stack{
 				Root:        resolvedRoot,
-				Files:       app.Files,
-				Profiles:    app.Profiles,
+				Files:       stack.Files,
+				Profiles:    stack.Profiles,
 				EnvFile:     mergedEnv,
-				Environment: app.Environment,
-				Secrets:     app.Secrets,
+				Environment: stack.Environment,
+				Secrets:     stack.Secrets,
 				EnvInline:   mergedInline,
 				SopsSecrets: mergedSops,
-				Project:     app.Project,
+				Project:     stack.Project,
 			}
 		}
 	}
 
-	// Validate SOPS config (global). Applications inherit usage only; config is global
+	// Validate SOPS config (global). Stacks inherit usage only; config is global
 	if c.Sops != nil {
 		// Migration error: top-level recipients deprecated
 		if len(c.Sops.Recipients) > 0 {
@@ -261,7 +261,7 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 	return nil
 }
 
-func rebaseRootEnvToApp(baseDir, resolvedRoot string, files []string) []string {
+func rebaseRootEnvToStack(baseDir, resolvedRoot string, files []string) []string {
 	out := make([]string, 0, len(files))
 	for _, f := range files {
 		if f == "" {

@@ -102,10 +102,10 @@ func TestPlanner_BuildPlan_AddRemoveStart(t *testing.T) {
 	defer withPlannerStub(t, "basic", log)()
 	appRoot := t.TempDir()
 	cfg := manifest.Config{
-		Docker:       manifest.DockerConfig{Identifier: "demo"},
-		Applications: map[string]manifest.Application{"app": {Root: appRoot, Files: []string{"compose.yml"}}},
-		Filesets:     map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app"}},
-		Networks:     map[string]manifest.NetworkSpec{"n1": {}},
+		Docker:   manifest.DockerConfig{Identifier: "demo"},
+		Stacks:   map[string]manifest.Stack{"app": {Root: appRoot, Files: []string{"compose.yml"}}},
+		Filesets: map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app"}},
+		Networks: map[string]manifest.NetworkSpec{"n1": {}},
 	}
 	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
@@ -128,7 +128,7 @@ func TestPlanner_BuildPlan_IdentifierMismatch(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "mismatch", log)()
 	appRoot := t.TempDir()
-	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Applications: map[string]manifest.Application{"app": {Root: appRoot, Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Stacks: map[string]manifest.Stack{"app": {Root: appRoot, Files: []string{"compose.yml"}}}}
 	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
@@ -146,7 +146,7 @@ func TestPlanner_BuildPlan_ConfigDriftAndMatch(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "drift", log)()
 	appRoot := t.TempDir()
-	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Applications: map[string]manifest.Application{"app": {Root: appRoot, Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Stacks: map[string]manifest.Stack{"app": {Root: appRoot, Files: []string{"compose.yml"}}}}
 	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
@@ -175,7 +175,7 @@ func TestPlanner_Prune_RemovesUnmanaged(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "basic", log)()
 	appRoot := t.TempDir()
-	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Applications: map[string]manifest.Application{"app": {Root: appRoot, Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Stacks: map[string]manifest.Stack{"app": {Root: appRoot, Files: []string{"compose.yml"}}}}
 	d := dockercli.New("").WithIdentifier("demo")
 	if err := NewWithDocker(d).Prune(context.Background(), cfg); err != nil {
 		t.Fatalf("prune: %v", err)

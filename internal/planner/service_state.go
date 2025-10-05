@@ -53,21 +53,21 @@ func (d *ServiceStateDetector) WithParallel(enabled bool) *ServiceStateDetector 
 	return d
 }
 
-// GetPlannedServices returns the list of services defined in the application's compose files.
-func (d *ServiceStateDetector) GetPlannedServices(ctx context.Context, app manifest.Application, inline []string) ([]string, error) {
+// GetPlannedServices returns the list of services defined in the stack's compose files.
+func (d *ServiceStateDetector) GetPlannedServices(ctx context.Context, stack manifest.Stack, inline []string) ([]string, error) {
 	if d.docker == nil {
 		return nil, nil
 	}
 
 	// Prefer cheap service listing first
-	services, err := d.docker.ComposeConfigServices(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
+	services, err := d.docker.ComposeConfigServices(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, inline)
 	if err == nil && len(services) > 0 {
 		sort.Strings(services)
 		return services, nil
 	}
 
 	// Fallback to full config parse if needed
-	doc, err2 := d.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline)
+	doc, err2 := d.docker.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, inline)
 	if err2 != nil {
 		return nil, err2
 	}
@@ -79,9 +79,9 @@ func (d *ServiceStateDetector) GetPlannedServices(ctx context.Context, app manif
 	return out, nil
 }
 
-// BuildInlineEnv constructs the inline environment variables for an application, including SOPS secrets.
-func (d *ServiceStateDetector) BuildInlineEnv(ctx context.Context, app manifest.Application, sopsConfig *manifest.SopsConfig) []string {
-	inline := append([]string(nil), app.EnvInline...)
+// BuildInlineEnv constructs the inline environment variables for a stack, including SOPS secrets.
+func (d *ServiceStateDetector) BuildInlineEnv(ctx context.Context, stack manifest.Stack, sopsConfig *manifest.SopsConfig) []string {
+	inline := append([]string(nil), stack.EnvInline...)
 
 	ageKeyFile := ""
 	pgpDir := ""
@@ -98,10 +98,10 @@ func (d *ServiceStateDetector) BuildInlineEnv(ctx context.Context, app manifest.
 		pgpPass = sopsConfig.Pgp.Passphrase
 	}
 
-	for _, pth0 := range app.SopsSecrets {
+	for _, pth0 := range stack.SopsSecrets {
 		pth := pth0
 		if pth != "" && !filepath.IsAbs(pth) {
-			pth = filepath.Join(app.Root, pth)
+			pth = filepath.Join(stack.Root, pth)
 		}
 		if pairs, err := secrets.DecryptAndParse(ctx, pth, secrets.SopsOptions{AgeKeyFile: ageKeyFile, PgpKeyringDir: pgpDir, PgpUseAgent: pgpAgent, PgpPinentryMode: pgpMode, PgpPassphrase: pgpPass}); err == nil {
 			inline = append(inline, pairs...)
@@ -111,8 +111,8 @@ func (d *ServiceStateDetector) BuildInlineEnv(ctx context.Context, app manifest.
 	return inline
 }
 
-// GetRunningServices returns a map of currently running services for the application.
-func (d *ServiceStateDetector) GetRunningServices(ctx context.Context, app manifest.Application, inline []string) (map[string]dockercli.ComposePsItem, error) {
+// GetRunningServices returns a map of currently running services for the stack.
+func (d *ServiceStateDetector) GetRunningServices(ctx context.Context, stack manifest.Stack, inline []string) (map[string]dockercli.ComposePsItem, error) {
 	running := map[string]dockercli.ComposePsItem{}
 
 	if d.docker == nil {
@@ -120,11 +120,11 @@ func (d *ServiceStateDetector) GetRunningServices(ctx context.Context, app manif
 	}
 
 	proj := ""
-	if app.Project != nil {
-		proj = app.Project.Name
+	if stack.Project != nil {
+		proj = stack.Project.Name
 	}
 
-	items, err := d.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline)
+	items, err := d.docker.ComposePs(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline)
 	if err != nil {
 		// Treat compose ps errors as "no running services" rather than hard error
 		return running, nil
@@ -138,16 +138,16 @@ func (d *ServiceStateDetector) GetRunningServices(ctx context.Context, app manif
 }
 
 // DetectServiceState determines the state of a single service.
-func (d *ServiceStateDetector) DetectServiceState(ctx context.Context, serviceName, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem) (ServiceInfo, error) {
-	return d.detectServiceStateFast(ctx, serviceName, appName, app, identifier, inline, running, nil, nil)
+func (d *ServiceStateDetector) DetectServiceState(ctx context.Context, serviceName, stackName string, stack manifest.Stack, identifier string, inline []string, running map[string]dockercli.ComposePsItem) (ServiceInfo, error) {
+	return d.detectServiceStateFast(ctx, serviceName, stackName, stack, identifier, inline, running, nil, nil)
 }
 
 // detectServiceStateFast determines the state of a single service using precomputed data where available.
 // If desiredHashes or labelsByContainer are nil or missing entries, it falls back to computing them.
-func (d *ServiceStateDetector) detectServiceStateFast(ctx context.Context, serviceName, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem, desiredHashes map[string]string, labelsByContainer map[string]map[string]string) (ServiceInfo, error) {
+func (d *ServiceStateDetector) detectServiceStateFast(ctx context.Context, serviceName, stackName string, stack manifest.Stack, identifier string, inline []string, running map[string]dockercli.ComposePsItem, desiredHashes map[string]string, labelsByContainer map[string]map[string]string) (ServiceInfo, error) {
 	info := ServiceInfo{
 		Name:    serviceName,
-		AppName: appName,
+		AppName: stackName,
 		State:   ServiceMissing,
 	}
 
@@ -164,8 +164,8 @@ func (d *ServiceStateDetector) detectServiceStateFast(ctx context.Context, servi
 
 	// Project name
 	proj := ""
-	if app.Project != nil {
-		proj = app.Project.Name
+	if stack.Project != nil {
+		proj = stack.Project.Name
 	}
 
 	// Desired hash from precomputed map or compute on demand
@@ -174,7 +174,7 @@ func (d *ServiceStateDetector) detectServiceStateFast(ctx context.Context, servi
 		desiredHash = desiredHashes[serviceName]
 	}
 	if desiredHash == "" {
-		if dh, err := d.docker.ComposeConfigHash(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, serviceName, identifier, inline); err == nil {
+		if dh, err := d.docker.ComposeConfigHash(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, serviceName, identifier, inline); err == nil {
 			desiredHash = dh
 		}
 	}
@@ -223,15 +223,15 @@ func (d *ServiceStateDetector) detectServiceStateFast(ctx context.Context, servi
 	return info, nil
 }
 
-// DetectAllServicesState analyzes the state of all services in an application.
-func (d *ServiceStateDetector) DetectAllServicesState(ctx context.Context, appName string, app manifest.Application, identifier string, sopsConfig *manifest.SopsConfig) ([]ServiceInfo, error) {
+// DetectAllServicesState analyzes the state of all services in a stack.
+func (d *ServiceStateDetector) DetectAllServicesState(ctx context.Context, stackName string, stack manifest.Stack, identifier string, sopsConfig *manifest.SopsConfig) ([]ServiceInfo, error) {
 	// Build inline environment
-	inline := d.BuildInlineEnv(ctx, app, sopsConfig)
+	inline := d.BuildInlineEnv(ctx, stack, sopsConfig)
 
 	// Get planned services
-	plannedServices, err := d.GetPlannedServices(ctx, app, inline)
+	plannedServices, err := d.GetPlannedServices(ctx, stack, inline)
 	if err != nil {
-		return nil, apperr.Wrap("servicestate.DetectAllServicesState", apperr.External, err, "failed to get planned services for application %s", appName)
+		return nil, apperr.Wrap("servicestate.DetectAllServicesState", apperr.External, err, "failed to get planned services for stack %s", stackName)
 	}
 
 	if len(plannedServices) == 0 {
@@ -239,19 +239,19 @@ func (d *ServiceStateDetector) DetectAllServicesState(ctx context.Context, appNa
 	}
 
 	// Get running services
-	running, err := d.GetRunningServices(ctx, app, inline)
+	running, err := d.GetRunningServices(ctx, stack, inline)
 	if err != nil {
-		return nil, apperr.Wrap("servicestate.DetectAllServicesState", apperr.External, err, "failed to get running services for application %s", appName)
+		return nil, apperr.Wrap("servicestate.DetectAllServicesState", apperr.External, err, "failed to get running services for stack %s", stackName)
 	}
 
 	// Precompute desired hashes for all planned services (reuse overlay once)
 	desiredHashes := map[string]string{}
 	if d.docker != nil && len(plannedServices) > 0 {
 		proj := ""
-		if app.Project != nil {
-			proj = app.Project.Name
+		if stack.Project != nil {
+			proj = stack.Project.Name
 		}
-		if hashes, err := d.docker.ComposeConfigHashes(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, plannedServices, identifier, inline); err == nil {
+		if hashes, err := d.docker.ComposeConfigHashes(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, plannedServices, identifier, inline); err == nil {
 			desiredHashes = hashes
 		}
 	}
@@ -274,19 +274,19 @@ func (d *ServiceStateDetector) DetectAllServicesState(ctx context.Context, appNa
 
 	// Choose parallel or sequential processing based on configuration
 	if d.parallel {
-		return d.detectAllServicesStateParallel(ctx, appName, app, identifier, inline, running, plannedServices, desiredHashes, labelsByContainer)
+		return d.detectAllServicesStateParallel(ctx, stackName, stack, identifier, inline, running, plannedServices, desiredHashes, labelsByContainer)
 	}
-	return d.detectAllServicesStateSequential(ctx, appName, app, identifier, inline, running, plannedServices, desiredHashes, labelsByContainer)
+	return d.detectAllServicesStateSequential(ctx, stackName, stack, identifier, inline, running, plannedServices, desiredHashes, labelsByContainer)
 }
 
 // detectAllServicesStateSequential processes services one by one (original implementation)
-func (d *ServiceStateDetector) detectAllServicesStateSequential(ctx context.Context, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem, plannedServices []string, desiredHashes map[string]string, labelsByContainer map[string]map[string]string) ([]ServiceInfo, error) {
+func (d *ServiceStateDetector) detectAllServicesStateSequential(ctx context.Context, stackName string, stack manifest.Stack, identifier string, inline []string, running map[string]dockercli.ComposePsItem, plannedServices []string, desiredHashes map[string]string, labelsByContainer map[string]map[string]string) ([]ServiceInfo, error) {
 	// Analyze each planned service
 	var results []ServiceInfo
 	for _, serviceName := range plannedServices {
-		info, err := d.detectServiceStateFast(ctx, serviceName, appName, app, identifier, inline, running, desiredHashes, labelsByContainer)
+		info, err := d.detectServiceStateFast(ctx, serviceName, stackName, stack, identifier, inline, running, desiredHashes, labelsByContainer)
 		if err != nil {
-			return nil, apperr.Wrap("servicestate.DetectAllServicesStateSequential", apperr.External, err, "failed to detect state for service %s/%s", appName, serviceName)
+			return nil, apperr.Wrap("servicestate.DetectAllServicesStateSequential", apperr.External, err, "failed to detect state for service %s/%s", stackName, serviceName)
 		}
 		results = append(results, info)
 	}
@@ -295,7 +295,7 @@ func (d *ServiceStateDetector) detectAllServicesStateSequential(ctx context.Cont
 }
 
 // detectAllServicesStateParallel processes services concurrently for faster detection
-func (d *ServiceStateDetector) detectAllServicesStateParallel(ctx context.Context, appName string, app manifest.Application, identifier string, inline []string, running map[string]dockercli.ComposePsItem, plannedServices []string, desiredHashes map[string]string, labelsByContainer map[string]map[string]string) ([]ServiceInfo, error) {
+func (d *ServiceStateDetector) detectAllServicesStateParallel(ctx context.Context, stackName string, stack manifest.Stack, identifier string, inline []string, running map[string]dockercli.ComposePsItem, plannedServices []string, desiredHashes map[string]string, labelsByContainer map[string]map[string]string) ([]ServiceInfo, error) {
 	type serviceResult struct {
 		info  ServiceInfo
 		err   error
@@ -311,7 +311,7 @@ func (d *ServiceStateDetector) detectAllServicesStateParallel(ctx context.Contex
 		go func(serviceName string, order int) {
 			defer wg.Done()
 
-			info, err := d.detectServiceStateFast(ctx, serviceName, appName, app, identifier, inline, running, desiredHashes, labelsByContainer)
+			info, err := d.detectServiceStateFast(ctx, serviceName, stackName, stack, identifier, inline, running, desiredHashes, labelsByContainer)
 			resultsChan <- serviceResult{info: info, err: err, order: order}
 		}(serviceName, i)
 	}
@@ -332,7 +332,7 @@ func (d *ServiceStateDetector) detectAllServicesStateParallel(ctx context.Contex
 	var finalResults []ServiceInfo
 	for i, result := range results {
 		if result.err != nil {
-			return nil, apperr.Wrap("servicestate.DetectAllServicesStateParallel", apperr.External, result.err, "failed to detect state for service %s/%s", appName, plannedServices[i])
+			return nil, apperr.Wrap("servicestate.DetectAllServicesStateParallel", apperr.External, result.err, "failed to detect state for service %s/%s", stackName, plannedServices[i])
 		}
 		finalResults = append(finalResults, result.info)
 	}

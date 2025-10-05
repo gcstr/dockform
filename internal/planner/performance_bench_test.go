@@ -33,7 +33,7 @@ func benchmarkBuildPlan(b *testing.B, parallel bool) {
 			Context:    "default",
 			Identifier: "benchmark-test",
 		},
-		Applications: map[string]manifest.Application{
+		Stacks: map[string]manifest.Stack{
 			"app1": {
 				Root:  "/tmp/app1",
 				Files: []string{"docker-compose.yml"},
@@ -124,14 +124,14 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 	planner := NewWithDocker(docker).WithParallel(parallel)
 
 	// Create a large configuration with many applications and filesets
-	applications := make(map[string]manifest.Application)
+	applications := make(map[string]manifest.Stack)
 	filesets := make(map[string]manifest.FilesetSpec)
 	volumes := make(map[string]manifest.TopLevelResourceSpec)
 	networks := make(map[string]manifest.NetworkSpec)
 
 	// Add 10 applications
 	for i := 0; i < 10; i++ {
-		applications[fmt.Sprintf("app%d", i)] = manifest.Application{
+		applications[fmt.Sprintf("app%d", i)] = manifest.Stack{
 			Root:  fmt.Sprintf("/tmp/app%d", i),
 			Files: []string{"docker-compose.yml"},
 			Environment: &manifest.Environment{
@@ -166,10 +166,10 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 			Context:    "default",
 			Identifier: "benchmark-large",
 		},
-		Applications: applications,
-		Volumes:      volumes,
-		Networks:     networks,
-		Filesets:     filesets,
+		Stacks:   applications,
+		Volumes:  volumes,
+		Networks: networks,
+		Filesets: filesets,
 	}
 
 	ctx := context.Background()

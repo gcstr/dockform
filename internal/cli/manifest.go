@@ -73,11 +73,11 @@ func newComposeRenderCmd() *cobra.Command {
 	var maskStr string
 
 	cmd := &cobra.Command{
-		Use:   "render [application]",
-		Short: "Render an application's docker compose config fully resolved",
+		Use:   "render [stack]",
+		Short: "Render a stack's docker compose config fully resolved",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			appName := args[0]
+			stackName := args[0]
 			file, _ := cmd.Flags().GetString("config")
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 
@@ -90,35 +90,35 @@ func newComposeRenderCmd() *cobra.Command {
 				pr.Warn("environment variable %s is not set; replacing with empty string", name)
 			}
 
-			app, ok := cfg.Applications[appName]
+			stack, ok := cfg.Stacks[stackName]
 			if !ok {
-				return apperr.New("cli.compose.render", apperr.InvalidInput, "unknown application %q", appName)
+				return apperr.New("cli.compose.render", apperr.InvalidInput, "unknown stack %q", stackName)
 			}
 
 			// Build inline env including SOPS secrets
 			detector := planner.NewServiceStateDetector(nil)
-			inline := detector.BuildInlineEnv(cmd.Context(), app, cfg.Sops)
+			inline := detector.BuildInlineEnv(cmd.Context(), stack, cfg.Sops)
 
 			// Compose raw config
 			docker := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
-			raw, err := docker.ComposeConfigRaw(cmd.Context(), app.Root, app.Files, app.Profiles, app.EnvFile, inline)
+			raw, err := docker.ComposeConfigRaw(cmd.Context(), stack.Root, stack.Files, stack.Profiles, stack.EnvFile, inline)
 			if err != nil {
 				return err
 			}
 
 			// Optionally mask secrets from manifest environment/secrets
 			if !showSecrets {
-				raw = maskSecretsSimple(raw, app, maskStrategy(maskStr))
+				raw = maskSecretsSimple(raw, stack, maskStrategy(maskStr))
 			}
 
 			// Build a clean display title: relative path from CWD to the first compose file
 			// Handle absolute/relative file entries consistently to avoid duplicated prefixes
 			var title string
-			if len(app.Files) > 0 {
-				first := app.Files[0]
+			if len(stack.Files) > 0 {
+				first := stack.Files[0]
 				abs := first
 				if !filepath.IsAbs(first) {
-					abs = filepath.Join(app.Root, first)
+					abs = filepath.Join(stack.Root, first)
 				}
 				if cwd, err := os.Getwd(); err == nil {
 					if rel, err := filepath.Rel(cwd, abs); err == nil {
@@ -129,8 +129,8 @@ func newComposeRenderCmd() *cobra.Command {
 				} else {
 					title = filepath.Clean(abs)
 				}
-				if len(app.Files) > 1 {
-					title = title + " (+" + strconv.Itoa(len(app.Files)-1) + ")"
+				if len(stack.Files) > 1 {
+					title = title + " (+" + strconv.Itoa(len(stack.Files)-1) + ")"
 				}
 			} else {
 				title = "compose.yaml"
@@ -148,7 +148,7 @@ func newComposeRenderCmd() *cobra.Command {
 func newComposeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "compose",
-		Short: "Work with docker compose files for applications",
+		Short: "Work with docker compose files for stacks",
 	}
 	cmd.AddCommand(newComposeRenderCmd())
 	return cmd

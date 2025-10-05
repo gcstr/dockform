@@ -22,7 +22,7 @@ environment:
     - GFOO=bar
     - GBAZ=qux
 
-applications:
+stacks:
   website:
     root: website
     files:

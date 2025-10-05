@@ -19,14 +19,14 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		"volumes_desired", len(cfg.Volumes),
 		"networks_desired", len(cfg.Networks),
 		"filesets_desired", len(cfg.Filesets),
-		"applications_desired", len(cfg.Applications))
+		"stacks_desired", len(cfg.Stacks))
 
 	resourcePlan := &ResourcePlan{
-		Volumes:      []Resource{},
-		Networks:     []Resource{},
-		Applications: make(map[string][]Resource),
-		Filesets:     make(map[string][]Resource),
-		Containers:   []Resource{},
+		Volumes:    []Resource{},
+		Networks:   []Resource{},
+		Stacks:     make(map[string][]Resource),
+		Filesets:   make(map[string][]Resource),
+		Containers: []Resource{},
 	}
 
 	// Accumulate existing sets when docker client is available
@@ -92,16 +92,16 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		}
 	}
 
-	// Applications: compose planned vs running diff
-	if err := p.buildApplicationResources(ctx, cfg, resourcePlan); err != nil {
+	// Stacks: compose planned vs running diff
+	if err := p.buildStackResources(ctx, cfg, resourcePlan); err != nil {
 		return nil, err
 	}
 
-	// Track services that should be removed (group under Applications by project)
+	// Track services that should be removed (group under Stacks by project)
 	if p.docker != nil {
 		desiredServices := p.collectDesiredServices(ctx, cfg)
 		// Check for orphaned containers even if no desired services exist
-		// This handles the case where the entire applications: map is removed
+		// This handles the case where the entire stacks: map is removed
 		if all, err := p.docker.ListComposeContainersAll(ctx); err == nil {
 			toDelete := map[string]map[string]struct{}{}
 			for _, it := range all {
@@ -112,10 +112,10 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 					toDelete[it.Project][it.Service] = struct{}{}
 				}
 			}
-			// Add deletions under Applications section
-			for appName, services := range toDelete {
+			// Add deletions under Stacks section
+			for stackName, services := range toDelete {
 				for svc := range services {
-					resourcePlan.Applications[appName] = append(resourcePlan.Applications[appName],
+					resourcePlan.Stacks[stackName] = append(resourcePlan.Stacks[stackName],
 						NewResource(ResourceService, svc, ActionDelete, ""))
 				}
 			}
@@ -129,7 +129,7 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 
 	// Check if we have any resources
 	hasResources := len(resourcePlan.Volumes) > 0 || len(resourcePlan.Networks) > 0 ||
-		len(resourcePlan.Applications) > 0 || len(resourcePlan.Filesets) > 0 ||
+		len(resourcePlan.Stacks) > 0 || len(resourcePlan.Filesets) > 0 ||
 		len(resourcePlan.Containers) > 0
 
 	if !hasResources {
@@ -154,17 +154,17 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 	return &Plan{Resources: resourcePlan}, nil
 }
 
-// buildApplicationResources analyzes applications and adds service resources to the plan.
-func (p *Planner) buildApplicationResources(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
-	if len(cfg.Applications) == 0 {
-		// No applications to process
+// buildStackResources analyzes stacks and adds service resources to the plan.
+func (p *Planner) buildStackResources(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
+	if len(cfg.Stacks) == 0 {
+		// No stacks to process
 		return nil
 	}
 
 	if p.docker == nil {
-		// Without Docker client, we can only show planned applications
-		for appName := range cfg.Applications {
-			plan.Applications[appName] = []Resource{
+		// Without Docker client, we can only show planned stacks
+		for stackName := range cfg.Stacks {
+			plan.Stacks[stackName] = []Resource{
 				NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"),
 			}
 		}
@@ -173,97 +173,97 @@ func (p *Planner) buildApplicationResources(ctx context.Context, cfg manifest.Co
 
 	// Choose parallel or sequential processing based on configuration
 	if p.parallel {
-		return p.buildApplicationResourcesParallel(ctx, cfg, plan)
+		return p.buildStackResourcesParallel(ctx, cfg, plan)
 	}
-	return p.buildApplicationResourcesSequential(ctx, cfg, plan)
+	return p.buildStackResourcesSequential(ctx, cfg, plan)
 }
 
-// buildApplicationResourcesSequential processes applications one by one
-func (p *Planner) buildApplicationResourcesSequential(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
+// buildStackResourcesSequential processes stacks one by one
+func (p *Planner) buildStackResourcesSequential(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
 	detector := NewServiceStateDetector(p.docker)
 
-	// Process applications in sorted order for deterministic output
-	appNames := make([]string, 0, len(cfg.Applications))
-	for name := range cfg.Applications {
-		appNames = append(appNames, name)
+	// Process stacks in sorted order for deterministic output
+	stackNames := make([]string, 0, len(cfg.Stacks))
+	for name := range cfg.Stacks {
+		stackNames = append(stackNames, name)
 	}
-	sort.Strings(appNames)
+	sort.Strings(stackNames)
 
-	for _, appName := range appNames {
-		app := cfg.Applications[appName]
-		services, err := detector.DetectAllServicesState(ctx, appName, app, cfg.Docker.Identifier, cfg.Sops)
+	for _, stackName := range stackNames {
+		stack := cfg.Stacks[stackName]
+		services, err := detector.DetectAllServicesState(ctx, stackName, stack, cfg.Docker.Identifier, cfg.Sops)
 		if err != nil {
 			// Fallback to "TBD" for any errors during planning
-			plan.Applications[appName] = []Resource{
+			plan.Stacks[stackName] = []Resource{
 				NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"),
 			}
 			continue
 		}
 
 		if len(services) == 0 {
-			plan.Applications[appName] = []Resource{
+			plan.Stacks[stackName] = []Resource{
 				NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"),
 			}
 			continue
 		}
 
 		// Convert service states to resources
-		var appResources []Resource
+		var stackResources []Resource
 		for _, service := range services {
 			switch service.State {
 			case ServiceMissing:
-				appResources = append(appResources,
+				stackResources = append(stackResources,
 					NewResource(ResourceService, service.Name, ActionCreate, ""))
 			case ServiceIdentifierMismatch:
-				appResources = append(appResources,
+				stackResources = append(stackResources,
 					NewResource(ResourceService, service.Name, ActionReconcile, "identifier mismatch"))
 			case ServiceDrifted:
-				appResources = append(appResources,
+				stackResources = append(stackResources,
 					NewResource(ResourceService, service.Name, ActionUpdate, "config drift"))
 			case ServiceRunning:
 				if service.DesiredHash != "" {
-					appResources = append(appResources,
+					stackResources = append(stackResources,
 						NewResource(ResourceService, service.Name, ActionNoop, "up-to-date"))
 				} else {
 					// Fallback when hash is unavailable
-					appResources = append(appResources,
+					stackResources = append(stackResources,
 						NewResource(ResourceService, service.Name, ActionNoop, "running"))
 				}
 			}
 		}
-		plan.Applications[appName] = appResources
+		plan.Stacks[stackName] = stackResources
 	}
 
 	return nil
 }
 
-// buildApplicationResourcesParallel processes applications concurrently for faster planning
-func (p *Planner) buildApplicationResourcesParallel(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
+// buildStackResourcesParallel processes stacks concurrently for faster planning
+func (p *Planner) buildStackResourcesParallel(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
 	detector := NewServiceStateDetector(p.docker).WithParallel(true)
 
-	// Sort app names for deterministic processing
-	appNames := make([]string, 0, len(cfg.Applications))
-	for name := range cfg.Applications {
-		appNames = append(appNames, name)
+	// Sort stack names for deterministic processing
+	stackNames := make([]string, 0, len(cfg.Stacks))
+	for name := range cfg.Stacks {
+		stackNames = append(stackNames, name)
 	}
-	sort.Strings(appNames)
+	sort.Strings(stackNames)
 
-	type appResult struct {
-		appName   string
+	type stackResult struct {
+		stackName string
 		resources []Resource
 	}
 
-	resultsChan := make(chan appResult, len(appNames))
+	resultsChan := make(chan stackResult, len(stackNames))
 	var wg sync.WaitGroup
 
-	// Process each application concurrently
-	for _, appName := range appNames {
+	// Process each stack concurrently
+	for _, stackName := range stackNames {
 		wg.Add(1)
-		go func(appName string) {
+		go func(stackName string) {
 			defer wg.Done()
 
-			app := cfg.Applications[appName]
-			services, err := detector.DetectAllServicesState(ctx, appName, app, cfg.Docker.Identifier, cfg.Sops)
+			stack := cfg.Stacks[stackName]
+			services, err := detector.DetectAllServicesState(ctx, stackName, stack, cfg.Docker.Identifier, cfg.Sops)
 
 			var resources []Resource
 			if err != nil {
@@ -299,11 +299,11 @@ func (p *Planner) buildApplicationResourcesParallel(ctx context.Context, cfg man
 				}
 			}
 
-			resultsChan <- appResult{appName: appName, resources: resources}
-		}(appName)
+			resultsChan <- stackResult{stackName: stackName, resources: resources}
+		}(stackName)
 	}
 
-	// Wait for all applications to complete
+	// Wait for all stacks to complete
 	go func() {
 		wg.Wait()
 		close(resultsChan)
@@ -311,7 +311,7 @@ func (p *Planner) buildApplicationResourcesParallel(ctx context.Context, cfg man
 
 	// Collect results and add to plan
 	for result := range resultsChan {
-		plan.Applications[result.appName] = result.resources
+		plan.Stacks[result.stackName] = result.resources
 	}
 
 	return nil
@@ -327,9 +327,9 @@ func (p *Planner) collectDesiredServices(ctx context.Context, cfg manifest.Confi
 
 	detector := NewServiceStateDetector(p.docker)
 
-	for _, app := range cfg.Applications {
-		inline := detector.BuildInlineEnv(ctx, app, cfg.Sops)
-		names, err := detector.GetPlannedServices(ctx, app, inline)
+	for _, stack := range cfg.Stacks {
+		inline := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+		names, err := detector.GetPlannedServices(ctx, stack, inline)
 		if err != nil {
 			continue // Skip this app if we can't list planned services
 		}

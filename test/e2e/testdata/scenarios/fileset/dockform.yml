@@ -2,7 +2,7 @@ docker:
   context: ""
   identifier: ${DOCKFORM_RUN_ID}
 
-applications:
+stacks:
   app:
     root: .
     files:

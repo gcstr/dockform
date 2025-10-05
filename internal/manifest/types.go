@@ -9,15 +9,15 @@ import (
 
 // Config is the root desired-state structure parsed from YAML.
 type Config struct {
-	Docker       DockerConfig                    `yaml:"docker"`
-	Sops         *SopsConfig                     `yaml:"sops"`
-	Secrets      *Secrets                        `yaml:"secrets"`
-	Environment  *Environment                    `yaml:"environment"`
-	Applications map[string]Application          `yaml:"applications" validate:"dive"`
-	Networks     map[string]NetworkSpec          `yaml:"networks"`
-	Volumes      map[string]TopLevelResourceSpec `yaml:"volumes"`
-	Filesets     map[string]FilesetSpec          `yaml:"filesets"`
-	BaseDir      string                          `yaml:"-"`
+	Docker      DockerConfig                    `yaml:"docker"`
+	Sops        *SopsConfig                     `yaml:"sops"`
+	Secrets     *Secrets                        `yaml:"secrets"`
+	Environment *Environment                    `yaml:"environment"`
+	Stacks      map[string]Stack                `yaml:"stacks" validate:"dive"`
+	Networks    map[string]NetworkSpec          `yaml:"networks"`
+	Volumes     map[string]TopLevelResourceSpec `yaml:"volumes"`
+	Filesets    map[string]FilesetSpec          `yaml:"filesets"`
+	BaseDir     string                          `yaml:"-"`
 }
 
 type DockerConfig struct {
@@ -25,7 +25,7 @@ type DockerConfig struct {
 	Identifier string `yaml:"identifier"`
 }
 
-type Application struct {
+type Stack struct {
 	Root        string       `yaml:"root" validate:"required"`
 	Files       []string     `yaml:"files"`
 	Profiles    []string     `yaml:"profiles"`

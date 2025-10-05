@@ -42,9 +42,9 @@ exit 0
 	got := out.String()
 
 	// Should show plan with resources in the standard plan format
-	// The output should show Applications, Networks, and Volumes sections
-	if !strings.Contains(got, "Applications") || !strings.Contains(got, "test-project") {
-		t.Fatalf("expected Applications section with project; got: %s", got)
+	// The output should show Stacks, Networks, and Volumes sections
+	if !strings.Contains(got, "Stacks") || !strings.Contains(got, "test-project") {
+		t.Fatalf("expected Stacks section with project; got: %s", got)
 	}
 	if !strings.Contains(got, "web") && !strings.Contains(got, "will be destroyed") {
 		t.Fatalf("expected service 'web' to be listed for destruction; got: %s", got)

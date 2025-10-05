@@ -181,10 +181,10 @@ func CreatePlanner(docker *dockercli.Client, pr ui.Printer) *planner.Planner {
 	return planner.NewWithDocker(docker).WithPrinter(pr)
 }
 
-// maskSecretsSimple redacts secret-like values from a YAML string based on application config.
-// This is a pragmatic heuristic: it masks occurrences of values provided via app/environment
+// maskSecretsSimple redacts secret-like values from a YAML string based on stack config.
+// This is a pragmatic heuristic: it masks occurrences of values provided via stack/environment
 // inline env and sops secrets (after decryption via BuildInlineEnv), as well as common sensitive keys.
-func maskSecretsSimple(yaml string, app manifest.Application, strategy maskStrategy) string {
+func maskSecretsSimple(yaml string, stack manifest.Stack, strategy maskStrategy) string {
 	// Determine mask replacement based on strategy
 	mask := func(s string) string {
 		switch strategy {

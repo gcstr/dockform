@@ -42,11 +42,11 @@ type Resource struct {
 
 // ResourcePlan represents a structured plan with resources organized by type
 type ResourcePlan struct {
-	Volumes      []Resource
-	Networks     []Resource
-	Applications map[string][]Resource // Application name -> services
-	Filesets     map[string][]Resource // Fileset name -> file changes
-	Containers   []Resource            // Orphaned containers to remove
+	Volumes    []Resource
+	Networks   []Resource
+	Stacks     map[string][]Resource // Stack name -> services
+	Filesets   map[string][]Resource // Fileset name -> file changes
+	Containers []Resource            // Orphaned containers to remove
 }
 
 // NewResource creates a new resource with the appropriate change type
@@ -135,37 +135,37 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 		sections = append(sections, ui.NestedSection{Title: "Networks", Items: items})
 	}
 
-	// Applications section with nested services
-	if len(rp.Applications) > 0 {
-		var appSections []ui.NestedSection
+	// Stacks section with nested services
+	if len(rp.Stacks) > 0 {
+		var stackSections []ui.NestedSection
 
-		// Sort application names for consistent output
-		appNames := make([]string, 0, len(rp.Applications))
-		for name := range rp.Applications {
-			appNames = append(appNames, name)
+		// Sort stack names for consistent output
+		stackNames := make([]string, 0, len(rp.Stacks))
+		for name := range rp.Stacks {
+			stackNames = append(stackNames, name)
 		}
-		sort.Strings(appNames)
+		sort.Strings(stackNames)
 
-		for _, appName := range appNames {
-			services := rp.Applications[appName]
+		for _, stackName := range stackNames {
+			services := rp.Stacks[stackName]
 			var items []ui.DiffLine
 
 			for _, res := range services {
-				// For services, we don't repeat the app name since it's in the section title
+				// For services, we don't repeat the stack name since it's in the section title
 				name := ui.Italic(res.Name)
 				msg := fmt.Sprintf("%s %s", name, res.FormatAction())
 				items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
 			}
 
 			if len(items) > 0 {
-				appSections = append(appSections, ui.NestedSection{Title: appName, Items: items})
+				stackSections = append(stackSections, ui.NestedSection{Title: stackName, Items: items})
 			}
 		}
 
-		if len(appSections) > 0 {
+		if len(stackSections) > 0 {
 			sections = append(sections, ui.NestedSection{
-				Title:    "Applications",
-				Sections: appSections,
+				Title:    "Stacks",
+				Sections: stackSections,
 			})
 		}
 	}
@@ -263,7 +263,7 @@ func (rp *ResourcePlan) CountActions() (create, update, delete int) {
 	for _, res := range rp.Networks {
 		countResource(res)
 	}
-	for _, services := range rp.Applications {
+	for _, services := range rp.Stacks {
 		for _, res := range services {
 			countResource(res)
 		}
@@ -294,7 +294,7 @@ func (rp *ResourcePlan) AllResources() []Resource {
 	all = append(all, rp.Volumes...)
 	all = append(all, rp.Networks...)
 
-	for _, services := range rp.Applications {
+	for _, services := range rp.Stacks {
 		all = append(all, services...)
 	}
 

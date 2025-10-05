@@ -2,7 +2,7 @@ docker:
   context: default
   identifier: traefik-rp
 
-applications:
+stacks:
   traefik:
     root: traefik
     project: 

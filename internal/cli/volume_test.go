@@ -35,7 +35,7 @@ volumes:
 		"docker:",
 		"  context: default",
 		"  identifier: demo",
-		"applications:",
+		"stacks:",
 		"  website:",
 		"    root: website",
 		"    files:",

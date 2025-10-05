@@ -52,7 +52,7 @@ func TestBuildPlan_Logging(t *testing.T) {
 			"new-net":       {},
 			"existing-net1": {}, // This one exists
 		},
-		Applications: map[string]manifest.Application{
+		Stacks: map[string]manifest.Stack{
 			"app1": {
 				Root:  "/tmp/app1",
 				Files: []string{"docker-compose.yml"},
@@ -98,19 +98,19 @@ func TestBuildPlan_Logging(t *testing.T) {
 
 	// Verify start log fields
 	expectedStartFields := map[string]interface{}{
-		"level":                "info",
-		"msg":                  "plan_build",
-		"action":               "plan_build",
-		"component":            "planner",
-		"resource":             "test-app",
-		"resource_kind":        "plan",
-		"volumes_desired":      float64(2),
-		"networks_desired":     float64(2),
-		"filesets_desired":     float64(1),
-		"applications_desired": float64(2),
-		"status":               "started",
-		"run_id":               "test123",
-		"command":              "dockform plan",
+		"level":            "info",
+		"msg":              "plan_build",
+		"action":           "plan_build",
+		"component":        "planner",
+		"resource":         "test-app",
+		"resource_kind":    "plan",
+		"volumes_desired":  float64(2),
+		"networks_desired": float64(2),
+		"filesets_desired": float64(1),
+		"stacks_desired":   float64(2),
+		"status":           "started",
+		"run_id":           "test123",
+		"command":          "dockform plan",
 	}
 
 	for key, expected := range expectedStartFields {

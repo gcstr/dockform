@@ -17,7 +17,7 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 		"volumes", len(cfg.Volumes),
 		"networks", len(cfg.Networks),
 		"filesets", len(cfg.Filesets),
-		"applications", len(cfg.Applications))
+		"stacks", len(cfg.Stacks))
 
 	if p.docker == nil {
 		return st.Fail(apperr.New("planner.Apply", apperr.Precondition, "docker client not configured"))
@@ -54,8 +54,8 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 		return st.Fail(err)
 	}
 
-	// Apply application changes
-	if err := p.applyApplicationChanges(ctx, cfg, identifier, restartPending, progress); err != nil {
+	// Apply stack changes
+	if err := p.applyStackChanges(ctx, cfg, identifier, restartPending, progress); err != nil {
 		return st.Fail(err)
 	}
 
@@ -69,24 +69,24 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	return nil
 }
 
-// applyApplicationChanges processes applications and performs compose up for those that need updates.
-func (p *Planner) applyApplicationChanges(ctx context.Context, cfg manifest.Config, identifier string, restartPending map[string]struct{}, progress ProgressReporter) error {
+// applyStackChanges processes stacks and performs compose up for those that need updates.
+func (p *Planner) applyStackChanges(ctx context.Context, cfg manifest.Config, identifier string, restartPending map[string]struct{}, progress ProgressReporter) error {
 	detector := NewServiceStateDetector(p.docker)
 
-	// Process applications in sorted order for deterministic behavior
-	appNames := make([]string, 0, len(cfg.Applications))
-	for name := range cfg.Applications {
-		appNames = append(appNames, name)
+	// Process stacks in sorted order for deterministic behavior
+	stackNames := make([]string, 0, len(cfg.Stacks))
+	for name := range cfg.Stacks {
+		stackNames = append(stackNames, name)
 	}
-	sort.Strings(appNames)
+	sort.Strings(stackNames)
 
-	for _, appName := range appNames {
-		app := cfg.Applications[appName]
+	for _, stackName := range stackNames {
+		stack := cfg.Stacks[stackName]
 
 		// Use ServiceStateDetector to analyze service states
-		services, err := detector.DetectAllServicesState(ctx, appName, app, identifier, cfg.Sops)
+		services, err := detector.DetectAllServicesState(ctx, stackName, stack, identifier, cfg.Sops)
 		if err != nil {
-			return apperr.Wrap("planner.Apply", apperr.External, err, "failed to detect service states for application %s", appName)
+			return apperr.Wrap("planner.Apply", apperr.External, err, "failed to detect service states for stack %s", stackName)
 		}
 
 		if len(services) == 0 {
@@ -99,20 +99,20 @@ func (p *Planner) applyApplicationChanges(ctx context.Context, cfg manifest.Conf
 		}
 
 		// Build inline env for compose operations
-		inline := detector.BuildInlineEnv(ctx, app, cfg.Sops)
+		inline := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
 
 		// Get project name
 		proj := ""
-		if app.Project != nil {
-			proj = app.Project.Name
+		if stack.Project != nil {
+			proj = stack.Project.Name
 		}
 
 		// Perform compose up
 		if progress != nil {
-			progress.SetAction("docker compose up for " + appName)
+			progress.SetAction("docker compose up for " + stackName)
 		}
-		if _, err := p.docker.ComposeUp(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err != nil {
-			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s", appName)
+		if _, err := p.docker.ComposeUp(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline); err != nil {
+			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s", stackName)
 		}
 		if progress != nil {
 			progress.Increment()
@@ -122,7 +122,7 @@ func (p *Planner) applyApplicationChanges(ctx context.Context, cfg manifest.Conf
 		// Note: ComposeUp already uses labeled overlay when identifier is set, so this is typically
 		// a no-op defensive check. Only updates if label is missing or mismatched.
 		if identifier != "" {
-			if items, err := p.docker.ComposePs(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, proj, inline); err == nil {
+			if items, err := p.docker.ComposePs(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline); err == nil {
 				for _, it := range items {
 					labels, _ := p.docker.InspectContainerLabels(ctx, it.Name, []string{"io.dockform.identifier"})
 					if v, ok := labels["io.dockform.identifier"]; !ok || v != identifier {

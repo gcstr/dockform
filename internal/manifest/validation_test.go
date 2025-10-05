@@ -14,7 +14,7 @@ func TestNormalize_DefaultsEnvMergingAndFiles(t *testing.T) {
 	cfg := Config{
 		Docker:      DockerConfig{Identifier: "id"},
 		Environment: &Environment{Files: []string{"global.env", "root/vars.env", "global.env"}},
-		Applications: map[string]Application{
+		Stacks: map[string]Stack{
 			"web": {
 				Root:        "app", // relative, should resolve
 				Environment: &Environment{Files: []string{"app.env"}},
@@ -28,7 +28,7 @@ func TestNormalize_DefaultsEnvMergingAndFiles(t *testing.T) {
 	if cfg.Docker.Context != "default" {
 		t.Fatalf("expected default docker.context, got %q", cfg.Docker.Context)
 	}
-	app := cfg.Applications["web"]
+	app := cfg.Stacks["web"]
 	wantRoot := filepath.Clean(filepath.Join(base, "app"))
 	if app.Root != wantRoot {
 		t.Fatalf("root not resolved: want %q got %q", wantRoot, app.Root)
@@ -91,8 +91,8 @@ func TestNormalize_NetworkKeyValidation(t *testing.T) {
 
 func TestNormalize_InvalidApplicationKey(t *testing.T) {
 	cfg := Config{
-		Docker:       DockerConfig{Identifier: "x"},
-		Applications: map[string]Application{"Bad Name": {Root: "/tmp"}},
+		Docker: DockerConfig{Identifier: "x"},
+		Stacks: map[string]Stack{"Bad Name": {Root: "/tmp"}},
 	}
 	if err := cfg.normalizeAndValidate("/base"); err == nil {
 		t.Fatalf("expected error for invalid app key")
@@ -102,7 +102,7 @@ func TestNormalize_InvalidApplicationKey(t *testing.T) {
 }
 
 func TestNormalize_MissingIdentifier(t *testing.T) {
-	cfg := Config{Docker: DockerConfig{}, Applications: map[string]Application{"ok": {Root: "/tmp"}}}
+	cfg := Config{Docker: DockerConfig{}, Stacks: map[string]Stack{"ok": {Root: "/tmp"}}}
 	if err := cfg.normalizeAndValidate("/base"); err == nil {
 		t.Fatalf("expected error for missing identifier")
 	} else if !apperr.IsKind(err, apperr.InvalidInput) {
@@ -115,14 +115,14 @@ func TestNormalize_InlineEnvLastWins(t *testing.T) {
 	cfg := Config{
 		Docker:      DockerConfig{Identifier: "id"},
 		Environment: &Environment{Inline: []string{"FOO=A", "BAR=1", "BAR=1"}},
-		Applications: map[string]Application{
+		Stacks: map[string]Stack{
 			"web": {Root: "app", Environment: &Environment{Inline: []string{"BAR=2", "BAZ=3"}}},
 		},
 	}
 	if err := cfg.normalizeAndValidate(base); err != nil {
 		t.Fatalf("normalizeAndValidate: %v", err)
 	}
-	got := cfg.Applications["web"].EnvInline
+	got := cfg.Stacks["web"].EnvInline
 	want := []string{"FOO=A", "BAR=2", "BAZ=3"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("inline env mismatch:\nwant: %#v\n got: %#v", want, got)
@@ -135,14 +135,14 @@ func TestNormalize_SopsMergingAndValidation(t *testing.T) {
 	cfg := Config{
 		Docker:  DockerConfig{Identifier: "id"},
 		Secrets: &Secrets{Sops: []string{"secrets/root.env", "  ", "secrets/another.env"}},
-		Applications: map[string]Application{
+		Stacks: map[string]Stack{
 			"web": {Root: "app", Secrets: &Secrets{Sops: []string{"app.env"}}},
 		},
 	}
 	if err := cfg.normalizeAndValidate(base); err != nil {
 		t.Fatalf("normalizeAndValidate: %v", err)
 	}
-	sops := cfg.Applications["web"].SopsSecrets
+	sops := cfg.Stacks["web"].SopsSecrets
 	want := []string{"../secrets/root.env", "../secrets/another.env", "app.env"}
 	if !reflect.DeepEqual(sops, want) {
 		t.Fatalf("sops merged mismatch:\nwant: %#v\n got: %#v", want, sops)
@@ -152,7 +152,7 @@ func TestNormalize_SopsMergingAndValidation(t *testing.T) {
 	cfg2 := Config{
 		Docker:  DockerConfig{Identifier: "id"},
 		Secrets: &Secrets{Sops: []string{"secrets/root.txt"}},
-		Applications: map[string]Application{
+		Stacks: map[string]Stack{
 			"web": {Root: "app"},
 		},
 	}
@@ -165,7 +165,7 @@ func TestNormalize_SopsMergingAndValidation(t *testing.T) {
 	// invalid app-level extension
 	cfg3 := Config{
 		Docker: DockerConfig{Identifier: "id"},
-		Applications: map[string]Application{
+		Stacks: map[string]Stack{
 			"web": {Root: "app", Secrets: &Secrets{Sops: []string{"bad.txt"}}},
 		},
 	}
@@ -324,7 +324,7 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 
 		cfg := Config{
 			Docker: DockerConfig{Identifier: "id"},
-			Applications: map[string]Application{
+			Stacks: map[string]Stack{
 				"web": {Root: "app"}, // No Files specified, should auto-detect
 			},
 		}
@@ -333,7 +333,7 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 			t.Fatalf("normalizeAndValidate: %v", err)
 		}
 
-		app := cfg.Applications["web"]
+		app := cfg.Stacks["web"]
 		if len(app.Files) != 1 {
 			t.Fatalf("expected 1 file, got %d", len(app.Files))
 		}
@@ -358,7 +358,7 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 
 		cfg := Config{
 			Docker: DockerConfig{Identifier: "id"},
-			Applications: map[string]Application{
+			Stacks: map[string]Stack{
 				"web": {Root: "app"}, // No Files specified, should auto-detect
 			},
 		}
@@ -367,7 +367,7 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 			t.Fatalf("normalizeAndValidate: %v", err)
 		}
 
-		app := cfg.Applications["web"]
+		app := cfg.Stacks["web"]
 		if len(app.Files) != 1 {
 			t.Fatalf("expected 1 file, got %d", len(app.Files))
 		}

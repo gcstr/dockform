@@ -113,7 +113,7 @@ secrets:
 environment:
   files:
     - global.env
-applications:
+stacks:
   website:
     root: website
     files:
@@ -154,7 +154,7 @@ func TestValidate_Fails_WhenRootEnvMissing(t *testing.T) {
 	yml := []byte(`docker:
   context: default
   identifier: test-id
-applications:
+stacks:
   website:
     root: website
     files:
@@ -192,7 +192,7 @@ func TestValidate_Fails_WhenRootSopsSecretMissing(t *testing.T) {
 secrets:
   sops:
     - secrets.env
-applications:
+stacks:
   website:
     root: website
     files:
@@ -233,7 +233,7 @@ func TestValidate_Fails_WhenSopsAgeKeyMissing(t *testing.T) {
 sops:
   age:
     key_file: ~/.config/sops/age/keys.txt
-applications:
+stacks:
   website:
     root: website
     files:
@@ -265,7 +265,7 @@ func TestValidate_Fails_WhenAppRootMissing(t *testing.T) {
 	yml := []byte(`docker:
   context: default
   identifier: test-id
-applications:
+stacks:
   website:
     root: website
     files:
@@ -300,7 +300,7 @@ func TestValidate_Fails_WhenComposeFileMissing(t *testing.T) {
 	yml := []byte(`docker:
   context: default
   identifier: test-id
-applications:
+stacks:
   website:
     root: website
     files:
@@ -333,7 +333,7 @@ func TestValidate_Fails_WhenAppEnvMissing(t *testing.T) {
 	yml := []byte(`docker:
   context: default
   identifier: test-id
-applications:
+stacks:
   website:
     root: website
     files:
@@ -368,7 +368,7 @@ func TestValidate_Fails_WhenAppSopsSecretMissing(t *testing.T) {
 	yml := []byte(`docker:
   context: default
   identifier: test-id
-applications:
+stacks:
   website:
     root: website
     files:
@@ -404,7 +404,7 @@ func TestValidate_Identifier_Invalid(t *testing.T) {
 	yml := []byte(`docker:
   context: default
   identifier: invalid_id!
-applications:
+stacks:
   website:
     root: website
     files:
@@ -431,7 +431,7 @@ func TestValidate_Fails_WhenDockerDaemonUnreachable(t *testing.T) {
 	yml := []byte(`docker:
   context: default
   identifier: test-id
-applications:
+stacks:
   website:
     root: website
     files: []
@@ -452,10 +452,10 @@ applications:
 func TestValidate_Assets_SourceRequired(t *testing.T) {
 	defer withStubDocker(t)()
 	cfg := manifest.Config{
-		Docker:       manifest.DockerConfig{Context: "default", Identifier: "test-id"},
-		Networks:     map[string]manifest.NetworkSpec{},
-		Applications: map[string]manifest.Application{},
-		Filesets:     map[string]manifest.FilesetSpec{"a": {SourceAbs: "", TargetVolume: "v", TargetPath: "/t"}},
+		Docker:   manifest.DockerConfig{Context: "default", Identifier: "test-id"},
+		Networks: map[string]manifest.NetworkSpec{},
+		Stacks:   map[string]manifest.Stack{},
+		Filesets: map[string]manifest.FilesetSpec{"a": {SourceAbs: "", TargetVolume: "v", TargetPath: "/t"}},
 	}
 	d := dockercli.New(cfg.Docker.Context)
 	if err := Validate(context.Background(), cfg, d); err == nil {
@@ -468,9 +468,9 @@ func TestValidate_Assets_SourceNotFound_AndNotDir(t *testing.T) {
 	tmp := t.TempDir()
 	d := dockercli.New("")
 	cfg := manifest.Config{
-		Docker:       manifest.DockerConfig{Context: "default", Identifier: "test-id"},
-		Networks:     map[string]manifest.NetworkSpec{},
-		Applications: map[string]manifest.Application{},
+		Docker:   manifest.DockerConfig{Context: "default", Identifier: "test-id"},
+		Networks: map[string]manifest.NetworkSpec{},
+		Stacks:   map[string]manifest.Stack{},
 	}
 	// Not found
 	cfg.Filesets = map[string]manifest.FilesetSpec{"a": {SourceAbs: filepath.Join(tmp, "missing"), TargetVolume: "v", TargetPath: "/t"}}
@@ -498,7 +498,7 @@ func TestValidate_AppRootIsFile_NotDir(t *testing.T) {
 	yml := []byte(`docker:
   context: default
   identifier: test-id
-applications:
+stacks:
   website:
     root: website
     files: []

@@ -14,7 +14,7 @@ import (
 
 // Validate performs comprehensive validation of the user config and environment.
 // - Verifies docker daemon liveness for the configured context
-// - Ensures application roots and referenced files exist (compose files, env files, sops secrets)
+// - Ensures stack roots and referenced files exist (compose files, env files, sops secrets)
 // - Verifies SOPS key file exists when SOPS is configured
 func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) error {
 	// 1) Docker daemon liveness
@@ -79,60 +79,60 @@ func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) err
 		}
 	}
 
-	// 5) Applications: roots and referenced files
-	for appName, app := range cfg.Applications {
+	// 5) Stacks: roots and referenced files
+	for stackName, stack := range cfg.Stacks {
 		// Root must exist
-		if st, err := os.Stat(app.Root); err != nil || !st.IsDir() {
+		if st, err := os.Stat(stack.Root); err != nil || !st.IsDir() {
 			if err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "application %s root", appName)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s root", stackName)
 			}
-			return apperr.New("validator.Validate", apperr.InvalidInput, "application %s root is not a directory: %s", appName, app.Root)
+			return apperr.New("validator.Validate", apperr.InvalidInput, "stack %s root is not a directory: %s", stackName, stack.Root)
 		}
 		// Compose files
-		for _, f := range app.Files {
+		for _, f := range stack.Files {
 			p := f
 			if !filepath.IsAbs(p) {
-				p = filepath.Join(app.Root, p)
+				p = filepath.Join(stack.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "application %s compose file %s", appName, f)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s compose file %s", stackName, f)
 			}
 		}
 
 		// Validate compose file syntax by attempting to parse it with Docker
-		if _, err := d.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, []string{}, []string{}); err != nil {
+		if _, err := d.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, []string{}, []string{}); err != nil {
 			// Check if this is a context cancellation error - if so, return it directly
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if len(app.Files) == 1 {
-				return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file %s for application %s", app.Files[0], appName)
-			} else if len(app.Files) > 1 {
-				return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose files %v for application %s", app.Files, appName)
+			if len(stack.Files) == 1 {
+				return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file %s for stack %s", stack.Files[0], stackName)
+			} else if len(stack.Files) > 1 {
+				return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose files %v for stack %s", stack.Files, stackName)
 			}
-			return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file for application %s", appName)
+			return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file for stack %s", stackName)
 		}
-		// Env files (already rebased to app root semantics in config normalization)
-		for _, e := range app.EnvFile {
+		// Env files (already rebased to stack root semantics in config normalization)
+		for _, e := range stack.EnvFile {
 			p := e
 			if !filepath.IsAbs(p) {
-				p = filepath.Join(app.Root, p)
+				p = filepath.Join(stack.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "application %s env file %s", appName, e)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s env file %s", stackName, e)
 			}
 		}
 		// SOPS secrets (merged and rebased in config normalization)
-		for _, sp := range app.SopsSecrets {
+		for _, sp := range stack.SopsSecrets {
 			p := sp
 			if p == "" {
 				continue
 			}
 			if !filepath.IsAbs(p) {
-				p = filepath.Join(app.Root, p)
+				p = filepath.Join(stack.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "application %s sops secret %s", appName, sp)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s sops secret %s", stackName, sp)
 			}
 		}
 	}

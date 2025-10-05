@@ -16,25 +16,25 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 	}
 
 	rp := &ResourcePlan{
-		Applications: make(map[string][]Resource),
-		Filesets:     make(map[string][]Resource),
+		Stacks:   make(map[string][]Resource),
+		Filesets: make(map[string][]Resource),
 	}
 
-	// Discover all labeled containers and group by application
+	// Discover all labeled containers and group by stack
 	containers, err := p.docker.ListComposeContainersAll(ctx)
 	if err != nil {
 		return nil, apperr.Wrap("planner.BuildDestroyPlan", apperr.External, err, "list containers")
 	}
 
-	// Group containers by project (application) and deduplicate by service
-	appServices := make(map[string]map[string]struct{}) // project -> service -> exists
+	// Group containers by project (stack) and deduplicate by service
+	stackServices := make(map[string]map[string]struct{}) // project -> service -> exists
 	for _, container := range containers {
-		// Group by project name as application
+		// Group by project name as stack
 		if container.Project != "" {
-			if appServices[container.Project] == nil {
-				appServices[container.Project] = make(map[string]struct{})
+			if stackServices[container.Project] == nil {
+				stackServices[container.Project] = make(map[string]struct{})
 			}
-			appServices[container.Project][container.Service] = struct{}{}
+			stackServices[container.Project][container.Service] = struct{}{}
 		} else {
 			// Orphaned container without project
 			res := NewResource(ResourceContainer, container.Name, ActionDelete, "will be destroyed")
@@ -42,12 +42,12 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 		}
 	}
 
-	// Build resources from unique services per application
-	for app, services := range appServices {
-		rp.Applications[app] = []Resource{}
+	// Build resources from unique services per stack
+	for stack, services := range stackServices {
+		rp.Stacks[stack] = []Resource{}
 		for svc := range services {
 			res := NewResource(ResourceService, svc, ActionDelete, "will be destroyed")
-			rp.Applications[app] = append(rp.Applications[app], res)
+			rp.Stacks[stack] = append(rp.Stacks[stack], res)
 		}
 	}
 
@@ -116,7 +116,7 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 
 	// Calculate total operations for progress tracking
 	total := 0
-	for _, services := range rp.Applications {
+	for _, services := range rp.Stacks {
 		total += len(services)
 	}
 	total += len(rp.Containers)
@@ -133,7 +133,7 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 		p.prog.Start(total)
 	}
 
-	// Step 1: Remove containers (grouped by application)
+	// Step 1: Remove containers (grouped by stack)
 	// Fetch all containers once and build lookup map
 	allContainers, _ := p.docker.ListComposeContainersAll(ctx)
 	byProjSvc := make(map[string]map[string][]string)
@@ -147,14 +147,14 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 		byProjSvc[it.Project][it.Service] = append(byProjSvc[it.Project][it.Service], it.Name)
 	}
 
-	for appName, services := range rp.Applications {
+	for stackName, services := range rp.Stacks {
 		for _, svc := range services {
 			if p.prog != nil {
-				p.prog.SetAction(fmt.Sprintf("removing service %s/%s", appName, svc.Name))
+				p.prog.SetAction(fmt.Sprintf("removing service %s/%s", stackName, svc.Name))
 			}
 
 			// Remove containers for this service using lookup map
-			if containerNames, exists := byProjSvc[appName][svc.Name]; exists {
+			if containerNames, exists := byProjSvc[stackName][svc.Name]; exists {
 				for _, name := range containerNames {
 					_ = p.docker.RemoveContainer(ctx, name, true)
 				}
