@@ -8,17 +8,11 @@
   <br/>
   <img src="plan.png" alt="Description of what the image shows" width="400"/>
   <br/>
-  <a href="https://github.com/gcstr/dockform/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/gcstr/dockform?color=blue">
-  </a>
+  <a href="https://github.com/gcstr/dockform/blob/main/LICENSE"><img src="https://img.shields.io/github/license/gcstr/dockform?color=blue"></a>
   &nbsp;
-  <a href="https://github.com/gcstr/dockform/releases/latest">
-    <img src="https://img.shields.io/github/v/tag/gcstr/dockform.svg?color=blue">
-  </a>
+  <a href="https://github.com/gcstr/dockform/releases/latest"><img src="https://img.shields.io/github/v/tag/gcstr/dockform.svg?color=blue"></a>
   &nbsp;
-  <a href="https://dockform.io">
-    <img src="https://img.shields.io/badge/docs-dockform.io-blue">
-  </a>
+  <a href="https://dockform.io"><img src="https://img.shields.io/badge/docs-dockform.io-blue"></a>
   &nbsp;
   <img src="https://github.com/gcstr/dockform/actions/workflows/ci.yml/badge.svg">
 </p>
