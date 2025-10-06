@@ -15,10 +15,10 @@ func (p *Planner) Prune(ctx context.Context, cfg manifest.Config) error {
 	if p.docker == nil {
 		return apperr.New("planner.Prune", apperr.Precondition, "docker client not configured")
 	}
-	// Desired services set across all applications
+	// Desired services set across all stacks
 	desiredServices := map[string]struct{}{}
-	for _, app := range cfg.Applications {
-		inline := append([]string(nil), app.EnvInline...)
+	for _, stack := range cfg.Stacks {
+		inline := append([]string(nil), stack.EnvInline...)
 		ageKeyFile := ""
 		pgpDir := ""
 		pgpAgent := false
@@ -33,16 +33,16 @@ func (p *Planner) Prune(ctx context.Context, cfg manifest.Config) error {
 			pgpMode = cfg.Sops.Pgp.PinentryMode
 			pgpPass = cfg.Sops.Pgp.Passphrase
 		}
-		for _, pth0 := range app.SopsSecrets {
+		for _, pth0 := range stack.SopsSecrets {
 			pth := pth0
 			if pth != "" && !filepath.IsAbs(pth) {
-				pth = filepath.Join(app.Root, pth)
+				pth = filepath.Join(stack.Root, pth)
 			}
 			if pairs, err := secrets.DecryptAndParse(ctx, pth, secrets.SopsOptions{AgeKeyFile: ageKeyFile, PgpKeyringDir: pgpDir, PgpUseAgent: pgpAgent, PgpPinentryMode: pgpMode, PgpPassphrase: pgpPass}); err == nil {
 				inline = append(inline, pairs...)
 			}
 		}
-		if doc, err := p.docker.ComposeConfigFull(ctx, app.Root, app.Files, app.Profiles, app.EnvFile, inline); err == nil {
+		if doc, err := p.docker.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, inline); err == nil {
 			for s := range doc.Services {
 				desiredServices[s] = struct{}{}
 			}

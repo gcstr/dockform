@@ -44,13 +44,13 @@ func TestBuildPlan_NoDocker_ClientNil(t *testing.T) {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	out := pln.String()
-	if !strings.Contains(out, "no applications defined") && out == "" {
+	if !strings.Contains(out, "no stacks defined") && out == "" {
 		t.Fatalf("expected a no-op line or empty output; got:\n%s", out)
 	}
 }
 
 func TestBuildPlan_NoDocker_AppsPlannedTBD(t *testing.T) {
-	cfg := manifest.Config{Applications: map[string]manifest.Application{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{Stacks: map[string]manifest.Stack{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
 	pln, err := New().BuildPlan(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
@@ -63,7 +63,7 @@ func TestBuildPlan_NoDocker_AppsPlannedTBD(t *testing.T) {
 
 func TestBuildPlan_ComposeConfigError(t *testing.T) {
 	_ = writeComposeErrorStub(t)
-	cfg := manifest.Config{Applications: map[string]manifest.Application{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{Stacks: map[string]manifest.Stack{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
 	d := dockercli.New("")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
@@ -86,7 +86,7 @@ func TestApply_Precondition_NoDocker(t *testing.T) {
 
 func TestApply_ComposeConfigError(t *testing.T) {
 	_ = writeComposeErrorStub(t)
-	cfg := manifest.Config{Applications: map[string]manifest.Application{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{Stacks: map[string]manifest.Stack{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
 	d := dockercli.New("")
 	err := NewWithDocker(d).Apply(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to detect service states") {
@@ -134,7 +134,7 @@ exit 0
 	_ = os.Setenv("PATH", dir+string(os.PathListSeparator)+old)
 	t.Cleanup(func() { _ = os.Setenv("PATH", old) })
 
-	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Applications: map[string]manifest.Application{
+	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Stacks: map[string]manifest.Stack{
 		"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 	}}
 	d := dockercli.New("").WithIdentifier("demo")
@@ -174,7 +174,7 @@ func TestPlanString_Grouping(t *testing.T) {
 			Networks: []Resource{
 				NewResource(ResourceNetwork, "n1", ActionCreate, ""),
 			},
-			Applications: map[string][]Resource{
+			Stacks: map[string][]Resource{
 				"app": {
 					NewResource(ResourceService, "s1", ActionCreate, ""),
 				},
@@ -187,7 +187,7 @@ func TestPlanString_Grouping(t *testing.T) {
 		},
 	}
 	out := ui.StripANSI(pl.String())
-	if !strings.Contains(out, "Volumes") || !strings.Contains(out, "Networks") || !strings.Contains(out, "Applications") || !strings.Contains(out, "Filesets") {
+	if !strings.Contains(out, "Volumes") || !strings.Contains(out, "Networks") || !strings.Contains(out, "Stacks") || !strings.Contains(out, "Filesets") {
 		t.Fatalf("expected grouped section titles; got:\n%s", out)
 	}
 }

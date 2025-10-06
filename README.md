@@ -32,7 +32,7 @@ sops:
   age:
     key_file: ${AGE_KEY_FILE}
 
-applications:
+stacks:
   traefik:
     root: traefik
   linkwarden:

@@ -11,7 +11,7 @@ import (
 func TestServiceStateDetector_BuildInlineEnv(t *testing.T) {
 	detector := NewServiceStateDetector(nil)
 
-	app := manifest.Application{
+	app := manifest.Stack{
 		EnvInline: []string{"FOO=bar", "BAZ=qux"},
 	}
 
@@ -32,7 +32,7 @@ func TestServiceStateDetector_BuildInlineEnv(t *testing.T) {
 func TestServiceStateDetector_DetectServiceState_Missing(t *testing.T) {
 	detector := NewServiceStateDetector(nil)
 
-	app := manifest.Application{Root: "/tmp"}
+	app := manifest.Stack{Root: "/tmp"}
 	running := map[string]dockercli.ComposePsItem{} // Empty - no running services
 
 	info, err := detector.DetectServiceState(context.Background(), "web", "myapp", app, "test-id", []string{}, running)
@@ -57,7 +57,7 @@ func TestServiceStateDetector_DetectServiceState_Missing(t *testing.T) {
 func TestServiceStateDetector_DetectServiceState_Running(t *testing.T) {
 	detector := NewServiceStateDetector(nil)
 
-	app := manifest.Application{Root: "/tmp"}
+	app := manifest.Stack{Root: "/tmp"}
 	container := dockercli.ComposePsItem{
 		Name:    "myapp_web_1",
 		Service: "web",

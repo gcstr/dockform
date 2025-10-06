@@ -48,12 +48,12 @@ func (pe *ProgressEstimator) EstimateAndStartProgress(ctx context.Context, cfg m
 	}
 	total += networkCount
 
-	// Count applications requiring compose up
-	appCount, err := pe.countApplicationsToUpdate(ctx, cfg, identifier)
+	// Count stacks requiring compose up
+	stackCount, err := pe.countStacksToUpdate(ctx, cfg, identifier)
 	if err != nil {
 		return err
 	}
-	total += appCount
+	total += stackCount
 
 	// Count service restarts needed
 	restartCount, err := pe.countServiceRestarts(ctx, cfg)
@@ -161,16 +161,16 @@ func (pe *ProgressEstimator) countNetworksToCreate(ctx context.Context, cfg mani
 	return count, nil
 }
 
-// countApplicationsToUpdate counts how many applications need compose up.
-func (pe *ProgressEstimator) countApplicationsToUpdate(ctx context.Context, cfg manifest.Config, identifier string) (int, error) {
+// countStacksToUpdate counts how many stacks need compose up.
+func (pe *ProgressEstimator) countStacksToUpdate(ctx context.Context, cfg manifest.Config, identifier string) (int, error) {
 	if pe.docker == nil {
 		return 0, nil
 	}
 	detector := NewServiceStateDetector(pe.docker)
 	count := 0
 
-	for appName, app := range cfg.Applications {
-		services, err := detector.DetectAllServicesState(ctx, appName, app, identifier, cfg.Sops)
+	for stackName, stack := range cfg.Stacks {
+		services, err := detector.DetectAllServicesState(ctx, stackName, stack, identifier, cfg.Sops)
 		if err == nil && NeedsApply(services) {
 			count++
 		}

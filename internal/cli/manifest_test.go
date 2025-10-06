@@ -21,7 +21,7 @@ func TestManifest_Render_Success_WithTrailingNewline(t *testing.T) {
 	if !strings.HasSuffix(got, "\n") {
 		t.Fatalf("expected trailing newline in output; got: %q", got)
 	}
-	if !strings.Contains(got, "docker:") || !strings.Contains(got, "applications:") {
+	if !strings.Contains(got, "docker:") || !strings.Contains(got, "stacks:") {
 		t.Fatalf("expected manifest contents in output; got: %s", got)
 	}
 }

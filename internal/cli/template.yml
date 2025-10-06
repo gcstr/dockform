@@ -24,7 +24,7 @@ sops:
 secrets:
   sops: []
 
-applications:
+stacks:
   app:
     root: ""
     files: []

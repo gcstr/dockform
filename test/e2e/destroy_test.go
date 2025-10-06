@@ -76,8 +76,8 @@ func TestDestroy_FullLifecycle(t *testing.T) {
 	}
 
 	// Verify plan was shown (sections and actions)
-	if !strings.Contains(destroyOut, "Applications") {
-		t.Fatalf("destroy output missing Applications section:\n%s", destroyOut)
+	if !strings.Contains(destroyOut, "Stacks") {
+		t.Fatalf("destroy output missing Stacks section:\n%s", destroyOut)
 	}
 	if !strings.Contains(destroyOut, "Networks") {
 		t.Fatalf("destroy output missing Networks section:\n%s", destroyOut)
@@ -342,7 +342,7 @@ func TestDestroy_IndependentOfConfigFile(t *testing.T) {
 	}
 
 	// Verify resources were still discovered and destroyed despite different config
-	if !strings.Contains(destroyOut, "Volumes") || !strings.Contains(destroyOut, "Networks") || !strings.Contains(destroyOut, "Applications") {
+	if !strings.Contains(destroyOut, "Volumes") || !strings.Contains(destroyOut, "Networks") || !strings.Contains(destroyOut, "Stacks") {
 		t.Fatalf("destroy should have found resources despite different config:\n%s", destroyOut)
 	}
 

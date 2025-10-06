@@ -27,7 +27,7 @@ func TestParallelVsSequentialSameResults(t *testing.T) {
 			Context:    "default",
 			Identifier: "parallel-test",
 		},
-		Applications: map[string]manifest.Application{
+		Stacks: map[string]manifest.Stack{
 			"app1": {
 				Root:  "/tmp/app1",
 				Files: []string{"docker-compose.yml"},
@@ -129,7 +129,7 @@ func TestServiceStateDetectorParallel(t *testing.T) {
 		},
 	}
 
-	app := manifest.Application{
+	app := manifest.Stack{
 		Root:  "/tmp/app1",
 		Files: []string{"docker-compose.yml"},
 		Environment: &manifest.Environment{

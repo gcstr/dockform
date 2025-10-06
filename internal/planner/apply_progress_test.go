@@ -25,7 +25,7 @@ func TestProgressEstimator_New(t *testing.T) {
 func TestProgressEstimator_EstimateProgress_BasicLogic(t *testing.T) {
 	// Test the basic calculation logic without Docker interactions
 	cfg := manifest.Config{
-		Applications: map[string]manifest.Application{
+		Stacks: map[string]manifest.Stack{
 			"web": {Root: "./web", Files: []string{"docker-compose.yml"}},
 			"api": {Root: "./api", Files: []string{"docker-compose.yml"}},
 		},
@@ -43,8 +43,8 @@ func TestProgressEstimator_EstimateProgress_BasicLogic(t *testing.T) {
 	// This is basic validation that the logic counts configuration items
 	expectedMinWork := 6 // At minimum: apps + networks + filesets
 
-	if len(cfg.Applications) < 1 {
-		t.Error("Expected at least 1 application in test config")
+	if len(cfg.Stacks) < 1 {
+		t.Error("Expected at least 1 stack in test config")
 	}
 	if len(cfg.Networks) < 1 {
 		t.Error("Expected at least 1 network in test config")
@@ -53,7 +53,7 @@ func TestProgressEstimator_EstimateProgress_BasicLogic(t *testing.T) {
 		t.Error("Expected at least 1 fileset in test config")
 	}
 
-	totalConfigItems := len(cfg.Applications) + len(cfg.Networks) + len(cfg.Filesets)
+	totalConfigItems := len(cfg.Stacks) + len(cfg.Networks) + len(cfg.Filesets)
 	if totalConfigItems < expectedMinWork {
 		t.Errorf("Expected at least %d total config items, got %d", expectedMinWork, totalConfigItems)
 	}

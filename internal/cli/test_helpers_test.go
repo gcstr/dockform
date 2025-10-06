@@ -106,7 +106,7 @@ func basicConfigPath(t *testing.T) string {
 		"docker:",
 		"  context: default",
 		"  identifier: demo",
-		"applications:",
+		"stacks:",
 		"  website:",
 		"    root: website",
 		"    files:",

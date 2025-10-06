@@ -156,7 +156,7 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 	defer withPlannerDockerStub_Basic(t)()
 	cfg := manifest.Config{
 		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
-		Applications: map[string]manifest.Application{
+		Stacks: map[string]manifest.Stack{
 			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
 		Filesets: map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app"}},
@@ -183,7 +183,7 @@ func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
 	defer withPlannerDockerStub_Mismatch(t)()
 	cfg := manifest.Config{
 		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
-		Applications: map[string]manifest.Application{
+		Stacks: map[string]manifest.Stack{
 			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
 	}
@@ -200,7 +200,7 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 	defer withPlannerDockerStub_Basic(t)()
 	cfg := manifest.Config{
 		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
-		Applications: map[string]manifest.Application{
+		Stacks: map[string]manifest.Stack{
 			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
 		// Mix of explicit volumes and volumes from filesets
@@ -232,8 +232,8 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 func TestApply_PropagatesVolumeListError(t *testing.T) {
 	defer withPlannerDockerStub_VolumeLsError(t)()
 	cfg := manifest.Config{
-		Docker:       manifest.DockerConfig{Context: "", Identifier: "demo"},
-		Applications: map[string]manifest.Application{},
+		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
+		Stacks: map[string]manifest.Stack{},
 	}
 	d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
 	err := NewWithDocker(d).Apply(context.Background(), cfg)
