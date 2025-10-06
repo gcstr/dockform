@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -48,10 +49,19 @@ const (
 	rightMinWidth  = 20
 	rightMaxWidth  = 30
 	centerMinWidth = 40
-	// Overheads per column: borders and margins used in renderColumns
-	leftOverhead   = 3 // border(2) + marginRight(1)
-	centerOverhead = 3 // border(2) + marginRight(1)
-	rightOverhead  = 2 // border(2)
+
+	// Padding for container boxes (vertical, horizontal)
+	// Used in Padding(paddingVertical, paddingHorizontal)
+	paddingVertical   = 0
+	paddingHorizontal = 1
+	// Total horizontal padding applied to content width (left + right)
+	totalHorizontalPadding = paddingHorizontal * 2
+
+	// Overheads per column: paddings and margins used in renderColumns
+	// box has Padding(0,1). Left/Center also have MarginRight(1).
+	leftOverhead   = 3 // padding(2) + marginRight(1)
+	centerOverhead = 3 // padding(2) + marginRight(1)
+	rightOverhead  = 2 // padding(2)
 )
 
 // model is the Bubble Tea model for the dashboard.
@@ -169,10 +179,10 @@ func computeColumnWidths(total int) (left, center, right int) {
 }
 
 func (m model) renderColumns(bodyHeight int) string {
-	// Styles for columns
-	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
-	// Height() sets the minimum content height; account for borders (top+bottom = 2)
-	innerHeight := bodyHeight - 2
+	// Styles for columns (no borders, just padding)
+	box := lipgloss.NewStyle().Padding(paddingVertical, paddingHorizontal)
+	// Height() sets the minimum content height
+	innerHeight := bodyHeight
 	if innerHeight < 0 {
 		innerHeight = 0
 	}
@@ -181,37 +191,41 @@ func (m model) renderColumns(bodyHeight int) string {
 	// Right column intentionally does not set Height, so it only grows to its content
 	rightStyle := box.Align(lipgloss.Left)
 
-	// Titles
-	leftTitle := lipgloss.NewStyle().Bold(true).Render("Left")
-	centerTitle := lipgloss.NewStyle().Bold(true).Render("Center")
+	// Titles (used for header titles)
+	leftTitle := "Left"
+	centerTitle := "Center"
 
 	// Compute widths for this frame
-	leftW, centerW, rightW := computeColumnWidths(m.width)
+	leftW, centerW, _ := computeColumnWidths(m.width)
 
-	// Placeholder content
-	leftContent := fmt.Sprintf("%s\n%-s", leftTitle, "placeholder")
-	centerContent := fmt.Sprintf("%s\n%-s", centerTitle, "placeholder")
-	// Right column: three stacked rows that do not stretch beyond their content
-	rightRow1 := fmt.Sprintf("%s\n%-s", lipgloss.NewStyle().Bold(true).Render("Row 1"), "placeholder")
-	rightRow2 := fmt.Sprintf("%s\n%-s", lipgloss.NewStyle().Bold(true).Render("Row 2"), "placeholder")
-	rightRow3 := fmt.Sprintf("%s\n%-s", lipgloss.NewStyle().Bold(true).Render("Row 3"), "placeholder")
-	rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow1, rightRow2, rightRow3)
+	// Placeholder content with headers (headers sized to container content width)
+	// Headers are plain text, pre-sized to exact width to prevent wrapping
+	leftHeader := renderHeader(leftTitle, leftW)
+	centerHeader := renderHeader(centerTitle, centerW)
+	leftContent := leftHeader + "\n" + "placeholder"
+	centerContent := centerHeader + "\n" + "placeholder"
 
 	// Apply widths for left and center first
 	leftView := leftStyle.Width(leftW).Render(leftContent)
 	centerView := centerStyle.Width(centerW).Render(centerContent)
 
-	// Compute remaining space for the right column and convert it to content width (subtract rightOverhead)
+	// Compute remaining space for the right column and convert it to content width
 	used := lipgloss.Width(lipgloss.JoinHorizontal(lipgloss.Top, leftView, centerView))
 	remaining := m.width - used
-	// Translate remaining terminal cells to content width for right column
-	remainingContent := remaining - rightOverhead
+	// Account for border(2) + padding(2), but add back 2 to fill the full width
+	// (the overhead calculation seems to be too conservative by 2 cells)
+	remainingContent := remaining - rightOverhead + 2
 	if remainingContent < 1 {
 		remainingContent = 1
 	}
-	if remainingContent > rightW {
-		remainingContent = rightW
-	}
+	// Right column: three stacked rows with headers sized to remainingContent
+	r1Header := renderHeader("Row 1", remainingContent)
+	r2Header := renderHeader("Row 2", remainingContent)
+	r3Header := renderHeader("Row 3", remainingContent)
+	rightRow1 := r1Header + "\n" + "placeholder"
+	rightRow2 := r2Header + "\n" + "placeholder"
+	rightRow3 := r3Header + "\n" + "placeholder"
+	rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow1, rightRow2, rightRow3)
 	rightView := rightStyle.Width(remainingContent).Render(rightRows)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftView, centerView, rightView)
@@ -222,6 +236,40 @@ func (m model) renderHelp() string {
 		return m.help.View(m.keys)
 	}
 	return lipgloss.NewStyle().Width(m.width).Render(m.help.View(m.keys))
+}
+
+// renderHeader renders a single-line header like "◇ Title /////" that fills the full
+// content width of the parent container, never wrapping. It clamps to the given width.
+// The containerWidth should be the container's content width; the function accounts for
+// horizontal padding internally.
+func renderHeader(title string, containerWidth int) string {
+	// Account for horizontal padding inside the container
+	contentWidth := containerWidth - totalHorizontalPadding
+	if contentWidth <= 0 {
+		return ""
+	}
+	// Build the base: "◇ Title "
+	base := fmt.Sprintf("◇ %s ", title)
+	baseWidth := lipgloss.Width(base)
+
+	// Calculate how many slashes we need to fill the exact width
+	slashCount := contentWidth - baseWidth
+	if slashCount < 0 {
+		// If title is too long, truncate the whole thing
+		return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(base)
+	}
+
+	// Build slashes
+	slashes := strings.Repeat("/", slashCount)
+	result := base + slashes
+
+	// Force truncate at exact width to prevent any wrapping
+	if lipgloss.Width(result) > contentWidth {
+		// Truncate using lipgloss utilities
+		return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(result)
+	}
+
+	return result
 }
 
 // newDashboardCmd creates the `dockform dashboard` command.
