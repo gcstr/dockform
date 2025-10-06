@@ -1,19 +1,21 @@
-package cli
+package plancmd
 
 import (
 	"context"
 
+	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/gcstr/dockform/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-func newPlanCmd() *cobra.Command {
+// New creates the `plan` command.
+func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plan",
 		Short: "Show the plan to reach the desired state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Setup CLI context with all standard initialization
-			ctx, err := SetupCLIContext(cmd)
+			ctx, err := common.SetupCLIContext(cmd)
 			if err != nil {
 				return err
 			}
@@ -25,6 +27,7 @@ func newPlanCmd() *cobra.Command {
 			}
 
 			// Build plan normally
+			verbose, _ := cmd.Flags().GetBool("verbose")
 			if verbose {
 				plan, err := ctx.BuildPlan()
 				if err != nil {

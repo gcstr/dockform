@@ -1,4 +1,4 @@
-package cli
+package volumecmd
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/cli/buildinfo"
+	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/ui"
@@ -20,14 +22,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newVolumeCmd() *cobra.Command {
+// New creates the `volume` command.
+func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "volume",
 		Short: "Manage Docker volumes (snapshots, restore)",
 		Args:  cobra.NoArgs,
 	}
-	cmd.AddCommand(newVolumeSnapshotCmd())
-	cmd.AddCommand(newVolumeRestoreCmd())
+	cmd.AddCommand(newSnapshotCmd())
+	cmd.AddCommand(newRestoreCmd())
 	return cmd
 }
 
@@ -109,7 +112,7 @@ func manifestHasVolume(cfg *manifest.Config, name string) bool {
 	return false
 }
 
-func newVolumeSnapshotCmd() *cobra.Command {
+func newSnapshotCmd() *cobra.Command {
 	var outDirFlag string
 	var note string
 	cmd := &cobra.Command{
@@ -118,7 +121,7 @@ func newVolumeSnapshotCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			clictx, err := SetupCLIContext(cmd)
+			clictx, err := common.SetupCLIContext(cmd)
 			if err != nil {
 				return err
 			}
@@ -152,7 +155,7 @@ func newVolumeSnapshotCmd() *cobra.Command {
 			defer func() { _ = f.Close() }()
 
 			stdPr := pr.(ui.StdPrinter)
-			if err := SpinnerOperation(stdPr, "Creating snapshot...", func() error {
+			if err := common.SpinnerOperation(stdPr, "Creating snapshot...", func() error {
 				return clictx.Docker.StreamTarZstdFromVolume(ctx, volName, f)
 			}); err != nil {
 				return err
@@ -170,7 +173,7 @@ func newVolumeSnapshotCmd() *cobra.Command {
 			}
 
 			meta := snapshotMeta{
-				DockformVersion:   Version(),
+				DockformVersion:   buildinfo.Version(),
 				CreatedAt:         time.Now().UTC().Format(time.RFC3339),
 				VolumeName:        volName,
 				SpecHash:          short,
@@ -202,7 +205,7 @@ func newVolumeSnapshotCmd() *cobra.Command {
 	return cmd
 }
 
-func newVolumeRestoreCmd() *cobra.Command {
+func newRestoreCmd() *cobra.Command {
 	var force bool
 	var stopContainers bool
 	cmd := &cobra.Command{
@@ -211,7 +214,7 @@ func newVolumeRestoreCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			clictx, err := SetupCLIContext(cmd)
+			clictx, err := common.SetupCLIContext(cmd)
 			if err != nil {
 				return err
 			}
@@ -326,7 +329,7 @@ func newVolumeRestoreCmd() *cobra.Command {
 					return apperr.Wrap("cli.volume.restore", apperr.Internal, err, "open snapshot")
 				}
 				defer func() { _ = in.Close() }()
-				if err := SpinnerOperation(stdPr, "Restoring snapshot...", func() error {
+				if err := common.SpinnerOperation(stdPr, "Restoring snapshot...", func() error {
 					return clictx.Docker.ExtractZstdTarToVolume(ctx, volName, in)
 				}); err != nil {
 					return err
@@ -337,7 +340,7 @@ func newVolumeRestoreCmd() *cobra.Command {
 					return apperr.Wrap("cli.volume.restore", apperr.Internal, err, "open snapshot")
 				}
 				defer func() { _ = in.Close() }()
-				if err := SpinnerOperation(stdPr, "Restoring snapshot...", func() error {
+				if err := common.SpinnerOperation(stdPr, "Restoring snapshot...", func() error {
 					return clictx.Docker.ExtractTarToVolume(ctx, volName, "/dst", io.Reader(in))
 				}); err != nil {
 					return err

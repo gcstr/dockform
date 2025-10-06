@@ -1,4 +1,4 @@
-package cli
+package doctorcmd_test
 
 import (
 	"bytes"
@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -16,7 +18,7 @@ var update = flag.Bool("update", false, "update golden files")
 func TestDoctorCmd_Golden_Healthy(t *testing.T) {
 	defer withHealthyDoctorStub(t)()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -58,7 +60,7 @@ case "$cmd" in
 esac
 `)()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -119,7 +121,7 @@ esac
 exit 0
 `)()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -196,7 +198,7 @@ exit 0
 	}
 	defer func() { _ = os.Setenv("PATH", oldPath) }()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)

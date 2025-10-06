@@ -9,6 +9,18 @@ import (
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/cli/applycmd"
+	"github.com/gcstr/dockform/internal/cli/buildinfo"
+	"github.com/gcstr/dockform/internal/cli/composecmd"
+	"github.com/gcstr/dockform/internal/cli/destroycmd"
+	"github.com/gcstr/dockform/internal/cli/doctorcmd"
+	"github.com/gcstr/dockform/internal/cli/initcmd"
+	"github.com/gcstr/dockform/internal/cli/manifestcmd"
+	"github.com/gcstr/dockform/internal/cli/plancmd"
+	"github.com/gcstr/dockform/internal/cli/secretcmd"
+	"github.com/gcstr/dockform/internal/cli/validatecmd"
+	"github.com/gcstr/dockform/internal/cli/versioncmd"
+	"github.com/gcstr/dockform/internal/cli/volumecmd"
 	"github.com/gcstr/dockform/internal/logger"
 	"github.com/spf13/cobra"
 )
@@ -16,14 +28,7 @@ import (
 // verbose controls extra error detail printing.
 var verbose bool
 
-// build-time variables injected via -ldflags; defaults are used for dev builds.
-var (
-	version   = "0.1.0-dev"
-	commit    = ""
-	date      = ""
-	builtBy   = ""
-	goVersion = ""
-)
+// build-time variables injected via -ldflags are now in buildinfo.
 
 // Execute runs the root command and handles error formatting and exit codes.
 // It accepts a context that should be cancelled on interrupt signals.
@@ -100,63 +105,39 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().String("log-file", "", "Write JSON logs to file (in addition to stderr)")
 	cmd.PersistentFlags().Bool("no-color", false, "Disable color in pretty logs")
 
-	cmd.AddCommand(newInitCmd())
-	cmd.AddCommand(newPlanCmd())
-	cmd.AddCommand(newApplyCmd())
-	cmd.AddCommand(newDestroyCmd())
-	cmd.AddCommand(newValidateCmd())
-	cmd.AddCommand(newSecretCmd())
-	cmd.AddCommand(newManifestCmd())
+	cmd.AddCommand(initcmd.New())
+	cmd.AddCommand(plancmd.New())
+	cmd.AddCommand(applycmd.New())
+	cmd.AddCommand(destroycmd.New())
+	cmd.AddCommand(validatecmd.New())
+	cmd.AddCommand(secretcmd.New())
+	cmd.AddCommand(manifestcmd.New())
 	// New top-level compose command
-	cmd.AddCommand(newComposeCmd())
-	cmd.AddCommand(newVersionCmd())
-	cmd.AddCommand(newVolumeCmd())
-	cmd.AddCommand(newDoctorCmd())
+	cmd.AddCommand(composecmd.New())
+	cmd.AddCommand(versioncmd.New())
+	cmd.AddCommand(volumecmd.New())
+	cmd.AddCommand(doctorcmd.New())
 
 	// Register optional developer-only commands
 	registerDocsCmd(cmd)
 
 	cmd.SetHelpTemplate(cmd.HelpTemplate() + "\n\nProject home: https://github.com/gcstr/dockform\n")
 
-	cmd.SetVersionTemplate(fmt.Sprintf("%s\n", VersionSimple()))
-	cmd.Version = VersionSimple()
+	cmd.SetVersionTemplate(fmt.Sprintf("%s\n", buildinfo.VersionSimple()))
+	cmd.Version = buildinfo.VersionSimple()
 
 	return cmd
 }
 
-func Version() string {
-	return version
-}
-
-// VersionSimple returns version number with build info for --version flag
-func VersionSimple() string {
-	v := version
-	if commit != "" {
-		v += " (" + commit[:7] + ")" // Short commit hash only
-	}
-	return v
-}
-
-// VersionDetailed returns version info with build metadata if available.
-func VersionDetailed() string {
-	v := version
-	if commit != "" {
-		v += " (" + commit
-		if date != "" {
-			v += ", " + date
-		}
-		if builtBy != "" {
-			v += ", " + builtBy
-		}
-		v += ")"
-	}
-	return v
-}
+// Version helpers are provided by buildinfo now.
 
 // TestPrintUserFriendly exposes printUserFriendly for testing
 func TestPrintUserFriendly(err error) {
 	printUserFriendly(err)
 }
+
+// TestNewRootCmd exposes the root command for integration tests.
+func TestNewRootCmd() *cobra.Command { return newRootCmd() }
 
 func provideExternalErrorHints(err error) {
 	msg := err.Error()

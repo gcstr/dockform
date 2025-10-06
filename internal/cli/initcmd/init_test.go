@@ -1,4 +1,4 @@
-package cli
+package initcmd_test
 
 import (
 	"bytes"
@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli"
 )
 
 func TestInitCmd_CurrentDirectory(t *testing.T) {
@@ -22,7 +24,7 @@ func TestInitCmd_CurrentDirectory(t *testing.T) {
 	}
 
 	// Run init command
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -74,7 +76,7 @@ func TestInitCmd_WithDirectory(t *testing.T) {
 	}
 
 	// Run init command with directory argument
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -101,7 +103,7 @@ func TestInitCmd_FileAlreadyExists(t *testing.T) {
 	}
 
 	// Run init command
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out, errOut bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&errOut)
@@ -125,7 +127,7 @@ func TestInitCmd_NonExistentDirectory(t *testing.T) {
 	nonExistentDir := filepath.Join(tempDir, "does-not-exist")
 
 	// Run init command with non-existent directory
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out, errOut bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&errOut)

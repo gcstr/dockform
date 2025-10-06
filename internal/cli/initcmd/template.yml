@@ -1,0 +1,11 @@
+# Dockform Configuration Template
+
+docker:
+  context: default
+  identifier: my-app
+
+stacks: {}
+networks: {}
+filesets: {}
+
+

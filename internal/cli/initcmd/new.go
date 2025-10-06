@@ -1,4 +1,4 @@
-package cli
+package initcmd
 
 import (
 	_ "embed"
@@ -13,7 +13,8 @@ import (
 //go:embed template.yml
 var dockformTemplate string
 
-func newInitCmd() *cobra.Command {
+// New creates the `init` command.
+func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init [directory]",
 		Short: "Create a template dockform.yml configuration file",

@@ -1,4 +1,4 @@
-package cli
+package doctorcmd
 
 import (
 	"context"
@@ -8,30 +8,32 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gcstr/dockform/internal/cli/buildinfo"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-type checkStatus int
+type CheckStatus int
 
 const (
-	statusPass checkStatus = iota
-	statusWarn
-	statusFail
+	StatusPass CheckStatus = iota
+	StatusWarn
+	StatusFail
 )
 
 type checkResult struct {
 	id      string
 	title   string
-	status  checkStatus
+	status  CheckStatus
 	summary string
 	note    string   // Remedy/Tip/Note line (single line)
 	errMsg  string   // Optional error line for FAILs
 	sub     []string // Additional informational lines to render under the item
 }
 
-func newDoctorCmd() *cobra.Command {
+// New creates the `doctor` command.
+func New() *cobra.Command {
 	var contextName string
 
 	cmd := &cobra.Command{
@@ -83,7 +85,7 @@ func newDoctorCmd() *cobra.Command {
 
 			// Render
 			// Top header
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Dockform (v%s) Doctor — health scan\n", version)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Dockform (v%s) Doctor — health scan\n", buildinfo.Version())
 			if host != "" {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Context: %s  •  Host: %s\n\n", ctxName, host)
 			} else {
@@ -97,24 +99,24 @@ func newDoctorCmd() *cobra.Command {
 				idStyled := ui.BlueText("[" + r.id + "]")
 				bracketedID = idStyled
 				switch r.status {
-				case statusPass:
+				case StatusPass:
 					icon = ui.GreenText("✓")
-				case statusWarn:
+				case StatusWarn:
 					icon = ui.YellowText("!")
-				case statusFail:
+				case StatusFail:
 					icon = ui.RedText("×")
 				}
 				line = fmt.Sprintf("│ %s %s %s — %s", icon, bracketedID, r.title, r.summary)
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), line)
-				if r.status == statusWarn && r.note != "" {
-					printIndentedLines(cmd.OutOrStdout(), r.note)
+				if r.status == StatusWarn && r.note != "" {
+					PrintIndentedLines(cmd.OutOrStdout(), r.note)
 				}
-				if r.status == statusFail {
+				if r.status == StatusFail {
 					if r.errMsg != "" {
-						printIndentedLines(cmd.OutOrStdout(), "Error: "+r.errMsg)
+						PrintIndentedLines(cmd.OutOrStdout(), "Error: "+r.errMsg)
 					}
 					if r.note != "" {
-						printIndentedLines(cmd.OutOrStdout(), r.note)
+						PrintIndentedLines(cmd.OutOrStdout(), r.note)
 					}
 				}
 				// Render any additional sub-lines regardless of status
@@ -122,14 +124,14 @@ func newDoctorCmd() *cobra.Command {
 					if strings.TrimSpace(s) == "" {
 						continue
 					}
-					printIndentedLines(cmd.OutOrStdout(), s)
+					PrintIndentedLines(cmd.OutOrStdout(), s)
 				}
 				switch r.status {
-				case statusPass:
+				case StatusPass:
 					pass++
-				case statusWarn:
+				case StatusWarn:
 					warn++
-				case statusFail:
+				case StatusFail:
 					fail++
 				}
 			}
@@ -168,7 +170,7 @@ func checkEngine(ctx context.Context, docker *dockercli.Client) checkResult {
 		return checkResult{
 			id:      "engine",
 			title:   "Docker Engine reachable",
-			status:  statusFail,
+			status:  StatusFail,
 			summary: "daemon not reachable",
 			errMsg:  err.Error(),
 			note:    "Remedy: Ensure Docker is running and your user can access it.",
@@ -176,31 +178,31 @@ func checkEngine(ctx context.Context, docker *dockercli.Client) checkResult {
 	}
 	ver, err := docker.ServerVersion(ctx)
 	if err != nil || strings.TrimSpace(ver) == "" {
-		return checkResult{id: "engine", title: "Docker Engine reachable", status: statusPass, summary: "version unknown"}
+		return checkResult{id: "engine", title: "Docker Engine reachable", status: StatusPass, summary: "version unknown"}
 	}
-	return checkResult{id: "engine", title: "Docker Engine reachable", status: statusPass, summary: "v" + ver}
+	return checkResult{id: "engine", title: "Docker Engine reachable", status: StatusPass, summary: "v" + ver}
 }
 
 func checkContextReachable(ctx context.Context, docker *dockercli.Client, ctxName string) checkResult {
 	// If engine is reachable, context is implicitly resolvable; still try to display
 	if _, err := docker.ContextHost(ctx); err != nil {
-		return checkResult{id: "context", title: "Active context reachable", status: statusFail, summary: fmt.Sprintf("%q unreachable", ctxName), errMsg: err.Error(), note: "Remedy: Verify context exists: docker context ls"}
+		return checkResult{id: "context", title: "Active context reachable", status: StatusFail, summary: fmt.Sprintf("%q unreachable", ctxName), errMsg: err.Error(), note: "Remedy: Verify context exists: docker context ls"}
 	}
-	return checkResult{id: "context", title: "Active context reachable", status: statusPass, summary: fmt.Sprintf("%q", ctxName)}
+	return checkResult{id: "context", title: "Active context reachable", status: StatusPass, summary: fmt.Sprintf("%q", ctxName)}
 }
 
 func checkCompose(ctx context.Context, docker *dockercli.Client) checkResult {
 	ver, err := docker.ComposeVersion(ctx)
 	if err != nil {
-		return checkResult{id: "compose", title: "Docker Compose (v2)", status: statusFail, summary: "not found", note: "Remedy: Install docker compose plugin (v2+).", errMsg: err.Error()}
+		return checkResult{id: "compose", title: "Docker Compose (v2)", status: StatusFail, summary: "not found", note: "Remedy: Install docker compose plugin (v2+).", errMsg: err.Error()}
 	}
 	// Heuristic: ensure it mentions v2
 	if !strings.Contains(ver, "v2") && !isSemver2(ver) {
-		return checkResult{id: "compose", title: "Docker Compose (v2)", status: statusFail, summary: "not found", note: "Remedy: Install docker compose plugin (v2+)."}
+		return checkResult{id: "compose", title: "Docker Compose (v2)", status: StatusFail, summary: "not found", note: "Remedy: Install docker compose plugin (v2+)."}
 	}
 	// Extract short if full text
 	short := strings.TrimSpace(ver)
-	return checkResult{id: "compose", title: "Docker Compose plugin", status: statusPass, summary: short}
+	return checkResult{id: "compose", title: "Docker Compose plugin", status: StatusPass, summary: short}
 }
 
 func isSemver2(s string) bool {
@@ -215,7 +217,7 @@ func isSemver2(s string) bool {
 func checkSops() checkResult {
 	if _, err := exec.LookPath("sops"); err != nil {
 		// Warn only
-		return checkResult{id: "sops", title: "SOPS", status: statusWarn, summary: "not found", note: "Tip: Install SOPS to decrypt secrets: https://github.com/getsops/sops"}
+		return checkResult{id: "sops", title: "SOPS", status: StatusWarn, summary: "not found", note: "Tip: Install SOPS to decrypt secrets: https://github.com/getsops/sops"}
 	}
 	// Try version
 	out, err := exec.Command("sops", "--version").CombinedOutput()
@@ -240,15 +242,15 @@ func checkSops() checkResult {
 		}
 	}
 	if err != nil || ver == "" {
-		return checkResult{id: "sops", title: "SOPS present", status: statusPass, summary: "installed", sub: sub}
+		return checkResult{id: "sops", title: "SOPS present", status: StatusPass, summary: "installed", sub: sub}
 	}
-	return checkResult{id: "sops", title: "SOPS present", status: statusPass, summary: ver, sub: sub}
+	return checkResult{id: "sops", title: "SOPS present", status: StatusPass, summary: ver, sub: sub}
 }
 
 func checkGpg() checkResult {
 	if _, err := exec.LookPath("gpg"); err != nil {
 		// Not fatal; only warn if gpg not present
-		return checkResult{id: "gpg", title: "GnuPG", status: statusWarn, summary: "gpg not found", note: "Tip: Install GnuPG if using PGP with SOPS."}
+		return checkResult{id: "gpg", title: "GnuPG", status: StatusWarn, summary: "gpg not found", note: "Tip: Install GnuPG if using PGP with SOPS."}
 	}
 	// Version and loopback support
 	out, _ := exec.Command("gpg", "--version").CombinedOutput()
@@ -278,7 +280,7 @@ func checkGpg() checkResult {
 	if ver == "" {
 		ver = "installed"
 	}
-	return checkResult{id: "gpg", title: "GnuPG present", status: statusPass, summary: ver, sub: sub}
+	return checkResult{id: "gpg", title: "GnuPG present", status: StatusPass, summary: ver, sub: sub}
 }
 
 func checkHelperImage(ctx context.Context, docker *dockercli.Client) checkResult {
@@ -287,48 +289,48 @@ func checkHelperImage(ctx context.Context, docker *dockercli.Client) checkResult
 	exists, err := docker.ImageExists(ctx, img)
 	if err != nil {
 		// Non-fatal; treat as warn because registry may be offline
-		return checkResult{id: "helper", title: "Helper image", status: statusWarn, summary: fmt.Sprintf("check failed — %s", strings.TrimSpace(err.Error())), note: "Note: Could not verify helper image presence."}
+		return checkResult{id: "helper", title: "Helper image", status: StatusWarn, summary: fmt.Sprintf("check failed — %s", strings.TrimSpace(err.Error())), note: "Note: Could not verify helper image presence."}
 	}
 	if !exists {
-		return checkResult{id: "helper", title: "Helper image missing", status: statusWarn, summary: img, note: "Note: Skipped pulling (no registry access). Run again when online."}
+		return checkResult{id: "helper", title: "Helper image missing", status: StatusWarn, summary: img, note: "Note: Skipped pulling (no registry access). Run again when online."}
 	}
 
 	// Image exists - alpine:3.22 includes all required binaries by default
 	// (sh, find, xargs, getent, chown, chmod, cut)
 	var sub []string
 	sub = append(sub, "provides: sh, find, xargs, getent, chown, chmod, cut")
-	return checkResult{id: "helper", title: "Helper image ready", status: statusPass, summary: img, sub: sub}
+	return checkResult{id: "helper", title: "Helper image ready", status: StatusPass, summary: img, sub: sub}
 }
 
 func checkNetworkPerms(ctx context.Context, docker *dockercli.Client) checkResult {
 	name := fmt.Sprintf("df-doctor-net-%d", time.Now().UnixNano())
 	labels := map[string]string{"io.dockform.doctor": "1"}
 	if err := docker.CreateNetwork(ctx, name, labels); err != nil {
-		return checkResult{id: "net-perms", title: "Network create/remove", status: statusFail, summary: "Cannot create network", errMsg: err.Error(), note: "Remedy: Ensure your user can access the Docker daemon (docker group)."}
+		return checkResult{id: "net-perms", title: "Network create/remove", status: StatusFail, summary: "Cannot create network", errMsg: err.Error(), note: "Remedy: Ensure your user can access the Docker daemon (docker group)."}
 	}
 	// Best-effort cleanup
 	if err := docker.RemoveNetwork(ctx, name); err != nil {
 		// still pass but mention remove failure
-		return checkResult{id: "net-perms", title: "Network create/remove", status: statusWarn, summary: "Created but failed to remove", note: "Tip: Manually remove network: docker network rm " + name}
+		return checkResult{id: "net-perms", title: "Network create/remove", status: StatusWarn, summary: "Created but failed to remove", note: "Tip: Manually remove network: docker network rm " + name}
 	}
-	return checkResult{id: "net-perms", title: "Network create/remove", status: statusPass, summary: "ok"}
+	return checkResult{id: "net-perms", title: "Network create/remove", status: StatusPass, summary: "ok"}
 }
 
 func checkVolumePerms(ctx context.Context, docker *dockercli.Client) checkResult {
 	name := fmt.Sprintf("df-doctor-vol-%d", time.Now().UnixNano())
 	labels := map[string]string{"io.dockform.doctor": "1"}
 	if err := docker.CreateVolume(ctx, name, labels); err != nil {
-		return checkResult{id: "vol-perms", title: "Volume create/remove", status: statusFail, summary: "Cannot create volume", errMsg: err.Error(), note: "Remedy: Ensure daemon is running and you have access to volumes."}
+		return checkResult{id: "vol-perms", title: "Volume create/remove", status: StatusFail, summary: "Cannot create volume", errMsg: err.Error(), note: "Remedy: Ensure daemon is running and you have access to volumes."}
 	}
 	if err := docker.RemoveVolume(ctx, name); err != nil {
-		return checkResult{id: "vol-perms", title: "Volume create/remove", status: statusWarn, summary: "Created but failed to remove", note: "Tip: Manually remove volume: docker volume rm " + name}
+		return checkResult{id: "vol-perms", title: "Volume create/remove", status: StatusWarn, summary: "Created but failed to remove", note: "Tip: Manually remove volume: docker volume rm " + name}
 	}
-	return checkResult{id: "vol-perms", title: "Volume create/remove", status: statusPass, summary: "ok"}
+	return checkResult{id: "vol-perms", title: "Volume create/remove", status: StatusPass, summary: "ok"}
 }
 
 // printIndentedLines prints multi-line text with proper indentation and pipe continuation.
 // Each line is prefixed with "│     " to maintain visual alignment under the check item.
-func printIndentedLines(w io.Writer, text string) {
+func PrintIndentedLines(w io.Writer, text string) {
 	// Wrap text at reasonable width (e.g., 80 chars minus the prefix "│     ")
 	const maxWidth = 80
 	const prefix = "│     "

@@ -1,13 +1,16 @@
-package cli
+package versioncmd_test
 
 import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli"
+	"github.com/gcstr/dockform/internal/cli/versioncmd"
 )
 
 func TestVersionCmd_OutputsDetailedInfo(t *testing.T) {
-	cmd := newVersionCmd()
+	cmd := versioncmd.New()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -36,13 +39,13 @@ func TestVersionCmd_OutputsDetailedInfo(t *testing.T) {
 	}
 
 	// Should contain the version number
-	if !strings.Contains(got, Version()) {
-		t.Errorf("version output should contain version %q; got: %q", Version(), got)
+	if !strings.Contains(got, cli.Version()) {
+		t.Errorf("version output should contain version %q; got: %q", cli.Version(), got)
 	}
 }
 
 func TestVersionCmd_NoArgs(t *testing.T) {
-	cmd := newVersionCmd()
+	cmd := versioncmd.New()
 	cmd.SetArgs([]string{"extra"})
 
 	if err := cmd.Execute(); err == nil {

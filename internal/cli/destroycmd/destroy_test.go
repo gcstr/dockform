@@ -1,13 +1,16 @@
-package cli
+package destroycmd_test
 
 import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli"
+	"github.com/gcstr/dockform/internal/cli/clitest"
 )
 
 func TestDestroy_ShowsPlan_WhenResourcesPresent(t *testing.T) {
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -30,12 +33,12 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("demo\n")) // Provide identifier for confirmation
-	root.SetArgs([]string{"destroy", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -64,7 +67,7 @@ exit 0
 }
 
 func TestDestroy_NoResources_ShowsNoResourcesMessage(t *testing.T) {
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -86,11 +89,11 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"destroy", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -102,7 +105,7 @@ exit 0
 }
 
 func TestDestroy_InvalidIdentifier_CancelsDestroy(t *testing.T) {
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -124,12 +127,12 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("wrong-identifier\n")) // Wrong identifier
-	root.SetArgs([]string{"destroy", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -145,7 +148,7 @@ exit 0
 }
 
 func TestDestroy_CorrectIdentifier_ProceedsWithDestruction(t *testing.T) {
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -172,12 +175,12 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("demo\n")) // Correct identifier
-	root.SetArgs([]string{"destroy", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -192,7 +195,7 @@ exit 0
 }
 
 func TestDestroy_SkipConfirmation_BypassesPrompt(t *testing.T) {
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -219,12 +222,12 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
 	// No stdin provided; should not prompt when flag is set.
-	root.SetArgs([]string{"destroy", "--skip-confirmation", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--skip-confirmation", "-c", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute with --skip-confirmation: %v", err)
 	}
@@ -241,7 +244,7 @@ exit 0
 }
 
 func TestDestroy_InvalidConfigPath_ReturnsError(t *testing.T) {
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -253,7 +256,7 @@ func TestDestroy_InvalidConfigPath_ReturnsError(t *testing.T) {
 }
 
 func TestDestroy_DockerDiscoveryFailure_ReturnsError(t *testing.T) {
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -274,12 +277,12 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("demo\n"))
-	root.SetArgs([]string{"destroy", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error from destroy when docker discovery fails, got nil")
 	}

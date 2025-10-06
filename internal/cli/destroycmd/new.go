@@ -1,13 +1,15 @@
-package cli
+package destroycmd
 
 import (
 	"context"
 	"os"
 
+	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/spf13/cobra"
 )
 
-func newDestroyCmd() *cobra.Command {
+// New creates the `destroy` command.
+func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "destroy",
 		Short: "Destroy all managed resources",
@@ -25,7 +27,7 @@ regardless of what's in your current configuration file.`,
 			skipConfirm, _ := cmd.Flags().GetBool("skip-confirmation")
 
 			// Setup CLI context with all standard initialization
-			ctx, err := SetupCLIContext(cmd)
+			ctx, err := common.SetupCLIContext(cmd)
 			if err != nil {
 				return err
 			}
@@ -52,7 +54,7 @@ regardless of what's in your current configuration file.`,
 			ctx.Printer.Plain("%s", out)
 
 			// Get confirmation from user (requires typing identifier)
-			confirmed, err := GetDestroyConfirmation(cmd, ctx.Printer, DestroyConfirmationOptions{
+			confirmed, err := common.GetDestroyConfirmation(cmd, ctx.Printer, common.DestroyConfirmationOptions{
 				SkipConfirmation: skipConfirm,
 				Identifier:       ctx.Config.Docker.Identifier,
 			})
@@ -65,7 +67,8 @@ regardless of what's in your current configuration file.`,
 			}
 
 			// Execute the destruction with rolling logs (or direct when verbose)
-			_, _, err = RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
+			verbose, _ := cmd.Flags().GetBool("verbose")
+			_, _, err = common.RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
 				prev := ctx.Ctx
 				ctx.Ctx = runCtx
 				defer func() { ctx.Ctx = prev }()

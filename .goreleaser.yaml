@@ -21,10 +21,10 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/gcstr/dockform/internal/cli.version={{ .Version }}
-      - -X github.com/gcstr/dockform/internal/cli.commit={{ .ShortCommit }}
-      - -X github.com/gcstr/dockform/internal/cli.date={{ .CommitDate }}
-      - -X github.com/gcstr/dockform/internal/cli.builtBy=goreleaser
+      - -X github.com/gcstr/dockform/internal/cli/buildinfo.version={{ .Version }}
+      - -X github.com/gcstr/dockform/internal/cli/buildinfo.commit={{ .ShortCommit }}
+      - -X github.com/gcstr/dockform/internal/cli/buildinfo.date={{ .CommitDate }}
+      - -X github.com/gcstr/dockform/internal/cli/buildinfo.builtBy=goreleaser
     goos:
       - linux
       - darwin

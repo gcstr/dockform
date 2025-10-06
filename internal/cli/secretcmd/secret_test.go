@@ -1,4 +1,4 @@
-package cli
+package secretcmd_test
 
 import (
 	"bytes"
@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli"
 
 	age "filippo.io/age"
 )
@@ -49,7 +51,7 @@ func TestSecret_Create_Success(t *testing.T) {
 	}
 
 	target := filepath.Join(dir, "secrets.env")
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -89,7 +91,7 @@ func TestSecret_Create_FileExists_Error(t *testing.T) {
 	if err := os.WriteFile(target, []byte("x"), 0o600); err != nil {
 		t.Fatalf("precreate target: %v", err)
 	}
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -106,7 +108,7 @@ func TestSecret_Create_MissingKeyConfig_Error(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 	target := filepath.Join(dir, "secrets.env")
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -132,7 +134,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 		t.Fatalf("write create config: %v", err)
 	}
 	target := filepath.Join(dir, "secrets.env")
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -153,7 +155,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 	_ = os.Chdir(dir)
 
 	out.Reset()
-	root = newRootCmd()
+	root = cli.TestNewRootCmd()
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetArgs([]string{"secrets", "rekey", "-c", cfgRekeyPath})
@@ -179,7 +181,7 @@ func TestSecret_Rekey_DecryptError(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write cfg: %v", err)
 	}
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -198,7 +200,7 @@ func TestSecret_Rekey_NoSecretsConfigured(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write cfg: %v", err)
 	}
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)

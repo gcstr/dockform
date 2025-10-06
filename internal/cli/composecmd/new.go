@@ -1,4 +1,4 @@
-package cli
+package composecmd
 
 import (
 	"os"
@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/planner"
@@ -13,62 +14,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newManifestCmd() *cobra.Command {
+// New creates the top-level `compose` command and wires subcommands
+func New() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "manifest",
-		Short: "Work with the manifest file",
+		Use:   "compose",
+		Short: "Work with docker compose files for stacks",
 	}
-
-	cmd.AddCommand(newManifestRenderCmd())
+	cmd.AddCommand(newRenderCmd())
 	return cmd
 }
 
-func newManifestRenderCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "render",
-		Short: "Render the manifest with environment variables interpolated",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			file, _ := cmd.Flags().GetString("config")
-			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-			out, filename, missing, err := manifest.RenderWithWarningsAndPath(file)
-			if err != nil {
-				// Interactive discovery if no manifest at CWD and no explicit --config
-				if file == "" && apperr.IsKind(err, apperr.NotFound) {
-					if selPath, ok, selErr := selectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
-						_ = cmd.Flags().Set("config", selPath)
-						out, filename, missing, err = manifest.RenderWithWarningsAndPath(selPath)
-					} else if selErr != nil {
-						return selErr
-					}
-				}
-				if err != nil {
-					return err
-				}
-			}
-			for _, name := range missing {
-				pr.Warn("environment variable %s is not set; replacing with empty string", name)
-			}
-			// Render in a full-screen viewport pager when attached to a TTY;
-			// otherwise fall back to plain printing to preserve pipes/tests.
-			if err := ui.RenderYAMLInPagerTTY(cmd.InOrStdin(), cmd.OutOrStdout(), out, filename); err != nil {
-				return err
-			}
-			return nil
-		},
-	}
-	return cmd
-}
-
-// compose masking strategies
-type maskStrategy string
-
-const (
-	maskFull           maskStrategy = "full"
-	maskPartial        maskStrategy = "partial"
-	maskPreserveLength maskStrategy = "preserve-length"
-)
-
-func newComposeRenderCmd() *cobra.Command {
+func newRenderCmd() *cobra.Command {
 	var showSecrets bool
 	var maskStr string
 
@@ -108,7 +64,7 @@ func newComposeRenderCmd() *cobra.Command {
 
 			// Optionally mask secrets from manifest environment/secrets
 			if !showSecrets {
-				raw = maskSecretsSimple(raw, stack, maskStrategy(maskStr))
+				raw = common.MaskSecretsSimple(raw, stack, maskStr)
 			}
 
 			// Build a clean display title: relative path from CWD to the first compose file
@@ -141,15 +97,5 @@ func newComposeRenderCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&showSecrets, "show-secrets", false, "Show secrets inline (dangerous)")
 	cmd.Flags().StringVar(&maskStr, "mask", "full", "Secret masking strategy: full|partial|preserve-length")
-	return cmd
-}
-
-// newComposeCmd creates the top-level `compose` command and wires subcommands
-func newComposeCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "compose",
-		Short: "Work with docker compose files for stacks",
-	}
-	cmd.AddCommand(newComposeRenderCmd())
 	return cmd
 }

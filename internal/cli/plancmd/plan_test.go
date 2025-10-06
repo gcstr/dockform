@@ -1,19 +1,24 @@
-package cli
+package plancmd_test
 
 import (
 	"bytes"
-	"os"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli"
+	"github.com/gcstr/dockform/internal/cli/clitest"
 )
 
 func TestPlan_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
-	defer withStubDocker(t)()
-	root := newRootCmd()
+	t.Helper()
+	defer clitest.WithStubDocker(t)()
+
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"plan", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"plan", "-c", clitest.BasicConfigPath(t)})
+
 	if err := root.Execute(); err != nil {
 		t.Fatalf("plan execute: %v", err)
 	}
@@ -24,7 +29,8 @@ func TestPlan_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
 }
 
 func TestPlan_NoRemovals_NoGuidance(t *testing.T) {
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	t.Helper()
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -50,11 +56,12 @@ case "$cmd" in
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"plan", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"plan", "-c", clitest.BasicConfigPath(t)})
+
 	if err := root.Execute(); err != nil {
 		t.Fatalf("plan execute: %v", err)
 	}
@@ -65,9 +72,8 @@ case "$cmd" in
 }
 
 func TestPlan_InvalidConfigPath_ReturnsError(t *testing.T) {
-	// Clear any env that could affect Render/Load warnings to keep error surface small
-	_ = os.Unsetenv("AGE_KEY_FILE")
-	root := newRootCmd()
+	t.Helper()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)

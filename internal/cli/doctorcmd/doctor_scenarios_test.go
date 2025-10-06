@@ -1,4 +1,4 @@
-package cli
+package doctorcmd_test
 
 import (
 	"bytes"
@@ -7,12 +7,14 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli"
 )
 
 func TestDoctorCmd_AllHealthy(t *testing.T) {
 	defer withHealthyDoctorStub(t)()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -58,7 +60,7 @@ func TestDoctorCmd_AllHealthy(t *testing.T) {
 func TestDoctorCmd_WithContext(t *testing.T) {
 	defer withHealthyDoctorStub(t)()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -88,7 +90,7 @@ case "$cmd" in
 esac
 `)()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -147,7 +149,7 @@ esac
 exit 0
 `)()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -220,7 +222,7 @@ exit 0
 	}
 	defer func() { _ = os.Setenv("PATH", oldPath) }()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -284,7 +286,7 @@ esac
 exit 0
 `)()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -346,7 +348,7 @@ esac
 exit 0
 `)()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -400,7 +402,7 @@ esac
 exit 0
 `)()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -436,7 +438,7 @@ case "$cmd" in
 esac
 `)()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
