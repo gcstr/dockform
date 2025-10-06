@@ -178,12 +178,12 @@ func (m model) renderColumns(bodyHeight int) string {
 	}
 	leftStyle := box.Align(lipgloss.Left).MarginRight(1).Height(innerHeight)
 	centerStyle := box.Align(lipgloss.Left).MarginRight(1).Height(innerHeight)
-	rightStyle := box.Align(lipgloss.Left).Height(innerHeight)
+	// Right column intentionally does not set Height, so it only grows to its content
+	rightStyle := box.Align(lipgloss.Left)
 
 	// Titles
 	leftTitle := lipgloss.NewStyle().Bold(true).Render("Left")
 	centerTitle := lipgloss.NewStyle().Bold(true).Render("Center")
-	rightTitle := lipgloss.NewStyle().Bold(true).Render("Right")
 
 	// Compute widths for this frame
 	leftW, centerW, rightW := computeColumnWidths(m.width)
@@ -191,7 +191,11 @@ func (m model) renderColumns(bodyHeight int) string {
 	// Placeholder content
 	leftContent := fmt.Sprintf("%s\n%-s", leftTitle, "placeholder")
 	centerContent := fmt.Sprintf("%s\n%-s", centerTitle, "placeholder")
-	rightContent := fmt.Sprintf("%s\n%-s", rightTitle, "placeholder")
+	// Right column: three stacked rows that do not stretch beyond their content
+	rightRow1 := fmt.Sprintf("%s\n%-s", lipgloss.NewStyle().Bold(true).Render("Row 1"), "placeholder")
+	rightRow2 := fmt.Sprintf("%s\n%-s", lipgloss.NewStyle().Bold(true).Render("Row 2"), "placeholder")
+	rightRow3 := fmt.Sprintf("%s\n%-s", lipgloss.NewStyle().Bold(true).Render("Row 3"), "placeholder")
+	rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow1, rightRow2, rightRow3)
 
 	// Apply widths for left and center first
 	leftView := leftStyle.Width(leftW).Render(leftContent)
@@ -208,7 +212,7 @@ func (m model) renderColumns(bodyHeight int) string {
 	if remainingContent > rightW {
 		remainingContent = rightW
 	}
-	rightView := rightStyle.Width(remainingContent).Render(rightContent)
+	rightView := rightStyle.Width(remainingContent).Render(rightRows)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftView, centerView, rightView)
 }
