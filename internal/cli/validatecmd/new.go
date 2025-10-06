@@ -1,18 +1,20 @@
-package cli
+package validatecmd
 
 import (
 	"fmt"
 
+	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/spf13/cobra"
 )
 
-func newValidateCmd() *cobra.Command {
+// New creates the `validate` command.
+func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate",
 		Short: "Validate configuration and environment",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Setup CLI context (which includes validation)
-			_, err := SetupCLIContext(cmd)
+			_, err := common.SetupCLIContext(cmd)
 			if err != nil {
 				return err
 			}

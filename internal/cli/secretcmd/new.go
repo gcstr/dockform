@@ -1,4 +1,4 @@
-package cli
+package secretcmd
 
 import (
 	"context"
@@ -9,22 +9,24 @@ import (
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/secrets"
 	"github.com/gcstr/dockform/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-func newSecretCmd() *cobra.Command {
+// New creates the top-level `secrets` command and wires subcommands
+func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "secrets",
 		Short: "Manage SOPS secrets",
 		RunE:  func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
-	cmd.AddCommand(newSecretCreateCmd())
-	cmd.AddCommand(newSecretRekeyCmd())
-	cmd.AddCommand(newSecretDecryptCmd())
-	cmd.AddCommand(newSecretEditCmd())
+	cmd.AddCommand(newCreateCmd())
+	cmd.AddCommand(newRekeyCmd())
+	cmd.AddCommand(newDecryptCmd())
+	cmd.AddCommand(newEditCmd())
 	return cmd
 }
 
@@ -70,7 +72,7 @@ func resolveRecipientsAndKey(cfg manifest.Config) (sopsResolved, error) {
 	return sopsResolved{opts: secrets.SopsOptions{AgeKeyFile: ageKey, AgeRecipients: ageRecipients, PgpKeyringDir: pgpDir, PgpUseAgent: pgpAgent, PgpPinentryMode: pgpMode, PgpPassphrase: pgpPass, PgpRecipients: pgpRecipients}, ageRecipients: ageRecipients}, nil
 }
 
-func newSecretCreateCmd() *cobra.Command {
+func newCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <path>",
 		Short: "Create a new SOPS-encrypted dotenv file",
@@ -80,7 +82,7 @@ func newSecretCreateCmd() *cobra.Command {
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
 			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := selectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
 					_ = cmd.Flags().Set("config", selPath)
 					cfg, err = manifest.Load(selPath)
 				} else if selErr != nil {
@@ -117,7 +119,7 @@ func newSecretCreateCmd() *cobra.Command {
 	return cmd
 }
 
-func newSecretRekeyCmd() *cobra.Command {
+func newRekeyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rekey",
 		Short: "Re-encrypt all declared SOPS secret files with configured recipients",
@@ -127,7 +129,7 @@ func newSecretRekeyCmd() *cobra.Command {
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
 			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := selectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
 					_ = cmd.Flags().Set("config", selPath)
 					cfg, err = manifest.Load(selPath)
 				} else if selErr != nil {
@@ -173,7 +175,7 @@ func newSecretRekeyCmd() *cobra.Command {
 	return cmd
 }
 
-func newSecretDecryptCmd() *cobra.Command {
+func newDecryptCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "decrypt <path>",
 		Short: "Decrypt a SOPS-encrypted dotenv file and print to stdout",
@@ -183,7 +185,7 @@ func newSecretDecryptCmd() *cobra.Command {
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
 			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := selectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
 					_ = cmd.Flags().Set("config", selPath)
 					cfg, err = manifest.Load(selPath)
 				} else if selErr != nil {
@@ -219,7 +221,7 @@ func newSecretDecryptCmd() *cobra.Command {
 	return cmd
 }
 
-func newSecretEditCmd() *cobra.Command {
+func newEditCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit <path>",
 		Short: "Edit a SOPS-encrypted dotenv file interactively",
@@ -229,7 +231,7 @@ func newSecretEditCmd() *cobra.Command {
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
 			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := selectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
 					_ = cmd.Flags().Set("config", selPath)
 					cfg, err = manifest.Load(selPath)
 				} else if selErr != nil {

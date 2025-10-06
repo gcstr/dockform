@@ -1,4 +1,4 @@
-package cli
+package common
 
 import (
 	"bufio"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
@@ -41,7 +42,7 @@ func LoadConfigWithWarnings(cmd *cobra.Command, pr ui.Printer) (*manifest.Config
 
 	// If no config found in CWD and no explicit --config, try interactive discovery
 	if file == "" && apperr.IsKind(err, apperr.NotFound) {
-		selectedPath, ok, selErr := selectManifestPath(cmd, pr, ".", 3)
+		selectedPath, ok, selErr := SelectManifestPath(cmd, pr, ".", 3)
 		if selErr != nil {
 			return nil, selErr
 		}
@@ -62,10 +63,10 @@ func LoadConfigWithWarnings(cmd *cobra.Command, pr ui.Printer) (*manifest.Config
 	return nil, err
 }
 
-// selectManifestPath scans for manifest files up to maxDepth and presents an interactive picker
+// SelectManifestPath scans for manifest files up to maxDepth and presents an interactive picker
 // of docker.context values when attached to a TTY. Returns the chosen manifest path and whether
 // a selection was made. On non-TTY, returns ok=false with no error.
-func selectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth int) (string, bool, error) {
+func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth int) (string, bool, error) {
 	// Check TTY
 	inTTY := false
 	outTTY := false
@@ -180,9 +181,18 @@ func CreatePlanner(docker *dockercli.Client, pr ui.Printer) *planner.Planner {
 	return planner.NewWithDocker(docker).WithPrinter(pr)
 }
 
-// maskSecretsSimple redacts secret-like values from a YAML string based on stack config.
-// This is a pragmatic heuristic: it masks occurrences of values provided via stack/environment
-// inline env and sops secrets (after decryption via BuildInlineEnv), as well as common sensitive keys.
+// DisplayDockerInfo shows the Docker context and identifier information
+func DisplayDockerInfo(pr ui.Printer, cfg *manifest.Config) {
+	ctxName := strings.TrimSpace(cfg.Docker.Context)
+	if ctxName == "" {
+		ctxName = "default"
+	}
+	lines := []string{
+		fmt.Sprintf("│ Context: %s", ui.Italic(ctxName)),
+		fmt.Sprintf("│ Identifier: %s", ui.Italic(cfg.Docker.Identifier)),
+	}
+	pr.Plain("\n%s", strings.Join(lines, "\n"))
+}
 
 // SpinnerOperation runs an operation with a spinner, automatically handling start/stop.
 func SpinnerOperation(pr ui.StdPrinter, message string, operation func() error) error {
@@ -228,7 +238,7 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	}
 
 	// Display Docker info
-	displayDockerInfo(pr, cfg)
+	DisplayDockerInfo(pr, cfg)
 
 	// Create Docker client
 	docker := CreateDockerClient(cfg)
@@ -242,29 +252,29 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	}
 
 	// Create planner
-	planner := CreatePlanner(docker, pr)
+	plan := CreatePlanner(docker, pr)
 
 	return &CLIContext{
 		Ctx:     cmd.Context(),
 		Config:  cfg,
 		Docker:  docker,
 		Printer: pr,
-		Planner: planner,
+		Planner: plan,
 	}, nil
 }
 
 // BuildPlan creates a plan using the CLI context with spinner UI.
 func (ctx *CLIContext) BuildPlan() (*planner.Plan, error) {
-	var plan *planner.Plan
+	var planObj *planner.Plan
 	var err error
 
 	stdPr := ctx.Printer.(ui.StdPrinter)
 	err = SpinnerOperation(stdPr, "Planning...", func() error {
-		plan, err = ctx.Planner.BuildPlan(ctx.Ctx, *ctx.Config)
+		planObj, err = ctx.Planner.BuildPlan(ctx.Ctx, *ctx.Config)
 		return err
 	})
 
-	return plan, err
+	return planObj, err
 }
 
 // ApplyPlan executes the plan with progress tracking.
@@ -280,6 +290,28 @@ func (ctx *CLIContext) PrunePlan() error {
 	stdPr := ctx.Printer.(ui.StdPrinter)
 	return SpinnerOperation(stdPr, "Pruning...", func() error {
 		return ctx.Planner.Prune(ctx.Ctx, *ctx.Config)
+	})
+}
+
+// BuildDestroyPlan creates a destruction plan for all managed resources.
+func (ctx *CLIContext) BuildDestroyPlan() (*planner.Plan, error) {
+	var planObj *planner.Plan
+	var err error
+
+	stdPr := ctx.Printer.(ui.StdPrinter)
+	err = SpinnerOperation(stdPr, "Discovering resources...", func() error {
+		planObj, err = ctx.Planner.BuildDestroyPlan(ctx.Ctx, *ctx.Config)
+		return err
+	})
+
+	return planObj, err
+}
+
+// ExecuteDestroy executes the destruction of all managed resources.
+func (ctx *CLIContext) ExecuteDestroy(bgCtx context.Context) error {
+	stdPr := ctx.Printer.(ui.StdPrinter)
+	return ProgressOperation(stdPr, "Destroying", func(pb *ui.Progress) error {
+		return ctx.Planner.WithProgress(pb).Destroy(bgCtx, *ctx.Config)
 	})
 }
 
@@ -348,28 +380,6 @@ func GetConfirmation(cmd *cobra.Command, pr ui.Printer, opts ConfirmationOptions
 	return false, nil
 }
 
-// BuildDestroyPlan creates a destruction plan for all managed resources.
-func (ctx *CLIContext) BuildDestroyPlan() (*planner.Plan, error) {
-	var plan *planner.Plan
-	var err error
-
-	stdPr := ctx.Printer.(ui.StdPrinter)
-	err = SpinnerOperation(stdPr, "Discovering resources...", func() error {
-		plan, err = ctx.Planner.BuildDestroyPlan(ctx.Ctx, *ctx.Config)
-		return err
-	})
-
-	return plan, err
-}
-
-// ExecuteDestroy executes the destruction of all managed resources.
-func (ctx *CLIContext) ExecuteDestroy(bgCtx context.Context) error {
-	stdPr := ctx.Printer.(ui.StdPrinter)
-	return ProgressOperation(stdPr, "Destroying", func(pb *ui.Progress) error {
-		return ctx.Planner.WithProgress(pb).Destroy(bgCtx, *ctx.Config)
-	})
-}
-
 // DestroyConfirmationOptions configures the destroy confirmation prompt behavior.
 type DestroyConfirmationOptions struct {
 	SkipConfirmation bool
@@ -433,4 +443,54 @@ func GetDestroyConfirmation(cmd *cobra.Command, pr ui.Printer, opts DestroyConfi
 	pr.Plain("│ %s", ui.RedText("canceled"))
 	pr.Plain("")
 	return false, nil
+}
+
+// MaskSecretsSimple redacts secret-like values from a YAML string based on stack config.
+// This is a pragmatic heuristic: it masks occurrences of values provided via stack/environment
+// inline env and sops secrets (after decryption via BuildInlineEnv), as well as common sensitive keys.
+func MaskSecretsSimple(yamlStr string, stack manifest.Stack, strategy string) string {
+	// Determine mask replacement based on strategy
+	mask := func(s string) string {
+		switch strategy {
+		case "partial":
+			if len(s) <= 4 {
+				return "****"
+			}
+			return s[:2] + strings.Repeat("*", len(s)-4) + s[len(s)-2:]
+		case "preserve-length":
+			if l := len(s); l > 0 {
+				return strings.Repeat("*", l)
+			}
+			return ""
+		case "full":
+			fallthrough
+		default:
+			return "********"
+		}
+	}
+
+	// Mask by common sensitive keys patterns: password, secret, token, key
+	// YAML format allows: key: value or key: "value"
+	// We keep it simple and mask the value part.
+	keyPatterns := []string{"password", "secret", "token", "key", "apikey", "api_key", "access_key", "private_key"}
+	for _, kp := range keyPatterns {
+		// (?i) case-insensitive; match lines like "kp: something"
+		re := regexp.MustCompile(`(?i)(` + kp + `\s*:\s*)([^\n#]+)`) // stop at newline or comment
+		yamlStr = re.ReplaceAllStringFunc(yamlStr, func(m string) string {
+			parts := re.FindStringSubmatch(m)
+			if len(parts) != 3 {
+				return m
+			}
+			prefix := parts[1]
+			val := strings.TrimSpace(parts[2])
+			// Keep quotes if present
+			if strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"") && len(val) >= 2 {
+				inner := val[1 : len(val)-1]
+				return prefix + "\"" + mask(inner) + "\""
+			}
+			return prefix + mask(val)
+		})
+	}
+
+	return yamlStr
 }

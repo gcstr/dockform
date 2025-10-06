@@ -21,8 +21,8 @@ docs/
 # Go vendor (if used)
 vendor/
 
-# CUE cache
-.cue_cache/
+# cache
+.cache/
 
 # Logs
 *.log

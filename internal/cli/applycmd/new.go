@@ -1,14 +1,15 @@
-package cli
+package applycmd
 
 import (
 	"context"
 
-	"github.com/spf13/cobra"
-
+	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/gcstr/dockform/internal/planner"
+	"github.com/spf13/cobra"
 )
 
-func newApplyCmd() *cobra.Command {
+// New creates the `apply` command.
+func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply the desired state",
@@ -16,7 +17,7 @@ func newApplyCmd() *cobra.Command {
 			skipConfirm, _ := cmd.Flags().GetBool("skip-confirmation")
 
 			// Setup CLI context with all standard initialization
-			ctx, err := SetupCLIContext(cmd)
+			ctx, err := common.SetupCLIContext(cmd)
 			if err != nil {
 				return err
 			}
@@ -29,7 +30,8 @@ func newApplyCmd() *cobra.Command {
 
 			// Build the plan with rolling logs (or direct when verbose)
 			var builtPlan *planner.Plan
-			planOut, usedTUI, err := RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
+			verbose, _ := cmd.Flags().GetBool("verbose")
+			planOut, usedTUI, err := common.RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
 				prev := ctx.Ctx
 				ctx.Ctx = runCtx
 				defer func() { ctx.Ctx = prev }()
@@ -57,8 +59,9 @@ func newApplyCmd() *cobra.Command {
 			}
 
 			// Get confirmation from user
-			confirmed, err := GetConfirmation(cmd, ctx.Printer, ConfirmationOptions{
+			confirmed, err := common.GetConfirmation(cmd, ctx.Printer, common.ConfirmationOptions{
 				SkipConfirmation: skipConfirm,
+				Message:          "",
 			})
 			if err != nil {
 				return err
@@ -69,7 +72,7 @@ func newApplyCmd() *cobra.Command {
 			}
 
 			// Apply + Prune with rolling logs (or direct when verbose)
-			_, _, err = RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
+			_, _, err = common.RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
 				prev := ctx.Ctx
 				ctx.Ctx = runCtx
 				defer func() { ctx.Ctx = prev }()
