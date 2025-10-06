@@ -136,6 +136,9 @@ func TestPrintUserFriendly(err error) {
 	printUserFriendly(err)
 }
 
+// TestNewRootCmd exposes the root command for integration tests.
+func TestNewRootCmd() *cobra.Command { return newRootCmd() }
+
 func provideExternalErrorHints(err error) {
 	msg := err.Error()
 

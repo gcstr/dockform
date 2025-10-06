@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/cli/clitest"
 )
 
 func TestRoot_HasSubcommandsAndConfigFlag(t *testing.T) {
@@ -137,7 +138,7 @@ func TestExecute_ReturnCodes_ByErrorKind(t *testing.T) {
 
 	// Unavailable -> 69 (stub failing docker)
 	defer withFailingDockerRoot(t)()
-	cfg := basicConfigPath(t)
+	cfg := clitest.BasicConfigPath(t)
 	os.Args = []string{"dockform", "validate", "-c", cfg}
 	if code := Execute(context.Background()); code != 69 {
 		t.Fatalf("expected exit code 69 for unavailable, got %d", code)

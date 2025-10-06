@@ -71,7 +71,7 @@ docker:
   identifier: %s
   context: default
 
-applications:
+stacks:
   app:
     root: .
     files:
@@ -190,7 +190,7 @@ docker:
   identifier: %s
   context: default
 
-applications:
+stacks:
   app:
     root: .
     files:
@@ -242,7 +242,7 @@ docker:
   identifier: %s
   context: default
 
-applications:
+stacks:
   app:
     root: .
     files:

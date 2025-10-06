@@ -1,4 +1,4 @@
-package cli
+package doctorcmd_test
 
 import (
 	"bytes"
@@ -7,12 +7,14 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli/doctorcmd"
 )
 
 func TestPrintIndentedLines_WordWrap(t *testing.T) {
 	var buf bytes.Buffer
 	longText := "This is a very long text that should be wrapped properly when printed because it exceeds the maximum width of eighty characters per line and needs to be split"
-	printIndentedLines(&buf, longText)
+	doctorcmd.PrintIndentedLines(&buf, longText)
 
 	output := buf.String()
 	lines := strings.Split(strings.TrimSpace(output), "\n")
@@ -36,13 +38,13 @@ func TestPrintIndentedLines_WordWrap(t *testing.T) {
 
 func TestPrintIndentedLines_EmptyText(t *testing.T) {
 	var buf bytes.Buffer
-	printIndentedLines(&buf, "")
+	doctorcmd.PrintIndentedLines(&buf, "")
 	if buf.Len() != 0 {
 		t.Errorf("expected no output for empty text, got: %q", buf.String())
 	}
 
 	buf.Reset()
-	printIndentedLines(&buf, "   ")
+	doctorcmd.PrintIndentedLines(&buf, "   ")
 	if buf.Len() != 0 {
 		t.Errorf("expected no output for whitespace-only text, got: %q", buf.String())
 	}
@@ -50,8 +52,8 @@ func TestPrintIndentedLines_EmptyText(t *testing.T) {
 
 func TestCheckStatus_Constants(t *testing.T) {
 	// Ensure status constants are distinct
-	if statusPass == statusWarn || statusPass == statusFail || statusWarn == statusFail {
-		t.Errorf("status constants should be distinct: pass=%d warn=%d fail=%d", statusPass, statusWarn, statusFail)
+	if doctorcmd.StatusPass == doctorcmd.StatusWarn || doctorcmd.StatusPass == doctorcmd.StatusFail || doctorcmd.StatusWarn == doctorcmd.StatusFail {
+		t.Errorf("status constants should be distinct: pass=%d warn=%d fail=%d", doctorcmd.StatusPass, doctorcmd.StatusWarn, doctorcmd.StatusFail)
 	}
 }
 

@@ -1,22 +1,25 @@
-package cli
+package applycmd_test
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli"
+	"github.com/gcstr/dockform/internal/cli/clitest"
 )
 
 func TestApply_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
-	defer withStubDocker(t)()
-	root := newRootCmd()
+	t.Helper()
+	defer clitest.WithStubDocker(t)()
+
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("yes\n"))
-	root.SetArgs([]string{"apply", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"apply", "-c", clitest.BasicConfigPath(t)})
+
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute: %v", err)
 	}
@@ -27,7 +30,8 @@ func TestApply_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
 }
 
 func TestApply_NoRemovals_NoGuidance(t *testing.T) {
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	t.Helper()
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -53,12 +57,13 @@ case "$cmd" in
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("yes\n"))
-	root.SetArgs([]string{"apply", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"apply", "-c", clitest.BasicConfigPath(t)})
+
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute: %v", err)
 	}
@@ -69,19 +74,22 @@ case "$cmd" in
 }
 
 func TestApply_InvalidConfigPath_ReturnsError(t *testing.T) {
-	root := newRootCmd()
+	t.Helper()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("yes\n"))
 	root.SetArgs([]string{"apply", "-c", "does-not-exist.yml"})
+
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for invalid config path, got nil")
 	}
 }
 
 func TestApply_PropagatesApplyError_OnDockerFailure(t *testing.T) {
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	t.Helper()
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -107,12 +115,13 @@ case "$cmd" in
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("yes\n"))
-	root.SetArgs([]string{"apply", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"apply", "-c", clitest.BasicConfigPath(t)})
+
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error from apply when docker fails, got nil")
 	} else if !strings.Contains(err.Error(), "list volumes") {
@@ -121,13 +130,15 @@ case "$cmd" in
 }
 
 func TestApply_SkipConfirmation_BypassesPrompt(t *testing.T) {
-	defer withStubDocker(t)()
-	root := newRootCmd()
+	t.Helper()
+	defer clitest.WithStubDocker(t)()
+
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	// No stdin provided; should not prompt when flag is set.
-	root.SetArgs([]string{"apply", "--skip-confirmation", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"apply", "--skip-confirmation", "-c", clitest.BasicConfigPath(t)})
+
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute with --skip-confirmation: %v", err)
 	}
@@ -138,24 +149,4 @@ func TestApply_SkipConfirmation_BypassesPrompt(t *testing.T) {
 	if strings.Contains(got, "canceled") {
 		t.Fatalf("did not expect apply to be canceled when skipping confirmation; got: %s", got)
 	}
-}
-
-// withCustomDockerStub writes a custom docker stub script and prepends it to PATH.
-func withCustomDockerStub(t *testing.T, script string) func() {
-	to := t.Helper
-	_ = to
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "docker")
-	if runtime.GOOS == "windows" {
-		path += ".cmd"
-	}
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("write stub: %v", err)
-	}
-	oldPath := os.Getenv("PATH")
-	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
-		t.Fatalf("set PATH: %v", err)
-	}
-	return func() { _ = os.Setenv("PATH", oldPath) }
 }

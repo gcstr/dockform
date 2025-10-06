@@ -1,4 +1,4 @@
-package cli
+package volumecmd_test
 
 import (
 	"bytes"
@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli"
+	"github.com/gcstr/dockform/internal/cli/clitest"
 )
 
 // volumeConfigPath creates a minimal config with a volume defined
@@ -64,7 +67,7 @@ func TestVolumeRestore_WithStopContainers_RestartsRunningContainers(t *testing.T
 		t.Fatalf("write snapshot: %v", err)
 	}
 
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -119,7 +122,7 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -151,7 +154,7 @@ func TestVolumeRestore_ListRunningContainersError_ReturnsError(t *testing.T) {
 		t.Fatalf("write snapshot: %v", err)
 	}
 
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -196,7 +199,7 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -228,7 +231,7 @@ func TestVolumeRestore_VolumeNotEmpty_FailsBeforeStoppingContainers(t *testing.T
 		t.Fatalf("write snapshot: %v", err)
 	}
 
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -262,7 +265,7 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -294,7 +297,7 @@ func TestVolumeRestore_WithoutStopContainers_FailsWhenContainersPresent(t *testi
 		t.Fatalf("write snapshot: %v", err)
 	}
 
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -332,7 +335,7 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -364,7 +367,7 @@ func TestVolumeRestore_OnlyRestartsRunningContainers(t *testing.T) {
 		t.Fatalf("write snapshot: %v", err)
 	}
 
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -426,7 +429,7 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -462,7 +465,7 @@ func TestVolumeRestore_RestoreFailure_RestartsContainersViaDefer(t *testing.T) {
 	}
 
 	containerStarted := false
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -523,7 +526,7 @@ exit 0
 `)
 	defer undo()
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)

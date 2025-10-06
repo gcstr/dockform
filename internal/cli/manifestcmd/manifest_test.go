@@ -1,4 +1,4 @@
-package cli
+package manifestcmd_test
 
 import (
 	"bytes"
@@ -6,14 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli"
+	"github.com/gcstr/dockform/internal/cli/clitest"
 )
 
 func TestManifest_Render_Success_WithTrailingNewline(t *testing.T) {
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"manifest", "render", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"manifest", "render", "-c", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("manifest render execute: %v", err)
 	}
@@ -39,7 +42,7 @@ func TestManifest_Render_InterpolatesEnvAndWarnsOnMissing(t *testing.T) {
 		t.Fatalf("write temp manifest: %v", err)
 	}
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -65,7 +68,7 @@ func TestManifest_Render_ShowsActualFilename(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -88,7 +91,7 @@ func TestManifest_Render_ShowsActualFilename(t *testing.T) {
 }
 
 func TestManifest_Render_InvalidPath_ReturnsError(t *testing.T) {
-	root := newRootCmd()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)

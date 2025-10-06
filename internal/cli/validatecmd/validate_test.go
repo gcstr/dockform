@@ -1,4 +1,4 @@
-package cli
+package validatecmd_test
 
 import (
 	"bytes"
@@ -6,20 +6,25 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/cli"
+	"github.com/gcstr/dockform/internal/cli/clitest"
 )
 
 func TestValidate_Success_PrintsMessage(t *testing.T) {
-	defer withStubDocker(t)()
-	root := newRootCmd()
+	t.Helper()
+	defer clitest.WithStubDocker(t)()
+
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"validate", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"validate", "-c", clitest.BasicConfigPath(t)})
+
 	if err := root.Execute(); err != nil {
 		t.Fatalf("validate execute: %v", err)
 	}
 	got := out.String()
-	// Should include environment info (Context/Identifier) and success message
 	if !strings.Contains(got, "Context:") || !strings.Contains(got, "Identifier:") {
 		t.Fatalf("expected context/identifier in output, got: %q", got)
 	}
@@ -29,7 +34,8 @@ func TestValidate_Success_PrintsMessage(t *testing.T) {
 }
 
 func TestValidate_InvalidConfigPath_ReturnsError(t *testing.T) {
-	root := newRootCmd()
+	t.Helper()
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
@@ -40,7 +46,8 @@ func TestValidate_InvalidConfigPath_ReturnsError(t *testing.T) {
 }
 
 func TestValidate_DockerNotReachable_ReturnsError(t *testing.T) {
-	undo := withCustomDockerStub(t, `#!/bin/sh
+	t.Helper()
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -50,33 +57,36 @@ case "$cmd" in
 esac
 `)
 	defer undo()
-	root := newRootCmd()
+
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"validate", "-c", basicConfigPath(t)})
+	root.SetArgs([]string{"validate", "-c", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected docker unreachable error, got nil")
 	}
 }
 
 func TestValidate_SopsKeyFileMissing_ReturnsError(t *testing.T) {
-	defer withStubDocker(t)()
-	root := newRootCmd()
+	t.Helper()
+	defer clitest.WithStubDocker(t)()
+
+	root := cli.TestNewRootCmd()
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	// Minimal config that references a missing SOPS key file
+
 	cfg := filepath.Join(t.TempDir(), "cfg.yml")
 	content := "sops:\n  age:\n    key_file: /no/such/key\n"
 	writeFile(t, cfg, content)
+
 	root.SetArgs([]string{"validate", "-c", cfg})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for missing sops key file, got nil")
 	}
 }
 
-// writeFile is a tiny helper to avoid bringing os import into this test.
 func writeFile(t *testing.T, path string, data string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {

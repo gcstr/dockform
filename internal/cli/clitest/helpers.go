@@ -1,4 +1,4 @@
-package cli
+package clitest
 
 import (
 	"os"
@@ -8,20 +8,18 @@ import (
 	"testing"
 )
 
-// writeDockerStub creates a stub 'docker' script that simulates outputs used by the CLI.
-func writeDockerStub(t *testing.T, dir string) string {
+// WriteDockerStub creates a docker stub script with basic behaviors used across CLI tests.
+func WriteDockerStub(t *testing.T, dir string) string {
 	t.Helper()
 	stub := `#!/bin/sh
-# Collect subcommand
 cmd="$1"; shift
 case "$cmd" in
   volume)
     sub="$1"; shift
-	    if [ "$sub" = "ls" ]; then
-	      # Simulate orphan volume only since no filesets use volumes in basic config
-	      echo "orphan-vol"
-	      exit 0
-	    fi
+    if [ "$sub" = "ls" ]; then
+      echo "orphan-vol"
+      exit 0
+    fi
     ;;
   network)
     sub="$1"; shift
@@ -32,33 +30,25 @@ case "$cmd" in
     fi
     ;;
   compose)
-    # passthrough args; detect --services, ps, up, or config --hash
-    # Handle services listing
     for a in "$@"; do [ "$a" = "--services" ] && { echo "nginx"; exit 0; }; done
-    # Handle hash: output "service hash"
     if [ "$1" = "config" ] && [ "$2" = "--hash" ]; then
       svc="$3"
       echo "$svc deadbeefcafebabe"
       exit 0
     fi
-    # Handle ps json
     if [ "$1" = "ps" ] && [ "$2" = "--format" ] && [ "$3" = "json" ]; then
       echo "[]"
       exit 0
     fi
-    # Handle up -d
     if [ "$1" = "up" ] && [ "$2" = "-d" ]; then
       exit 0
     fi
-    # Fallback: empty success
     exit 0
     ;;
   ps)
-    # docker ps -a --format ... used by ListComposeContainersAll
     exit 0
     ;;
   inspect)
-    # Not used in these tests
     echo "{}"
     exit 0
     ;;
@@ -75,11 +65,11 @@ exit 0
 	return path
 }
 
-func withStubDocker(t *testing.T) func() {
+// WithStubDocker prepends PATH with a standard docker stub used in CLI tests.
+func WithStubDocker(t *testing.T) func() {
 	t.Helper()
 	dir := t.TempDir()
-	stub := writeDockerStub(t, dir)
-	_ = stub
+	_ = WriteDockerStub(t, dir)
 	oldPath := os.Getenv("PATH")
 	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
 		t.Fatalf("set PATH: %v", err)
@@ -87,21 +77,36 @@ func withStubDocker(t *testing.T) func() {
 	return func() { _ = os.Setenv("PATH", oldPath) }
 }
 
-// basicConfigPath creates a minimal valid dockform config and file layout
-// in a temporary directory suitable for CLI tests without external filesets.
-func basicConfigPath(t *testing.T) string {
+// WithCustomDockerStub installs a custom docker stub script and prepends PATH with it.
+func WithCustomDockerStub(t *testing.T, script string) func() {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "docker")
+	if runtime.GOOS == "windows" {
+		path += ".cmd"
+	}
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+	oldPath := os.Getenv("PATH")
+	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
+		t.Fatalf("set PATH: %v", err)
+	}
+	return func() { _ = os.Setenv("PATH", oldPath) }
+}
+
+// BasicConfigPath materialises a minimal Dockform configuration for CLI tests.
+func BasicConfigPath(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	appRoot := filepath.Join(dir, "website")
 	if err := os.MkdirAll(appRoot, 0o755); err != nil {
 		t.Fatalf("mkdir app root: %v", err)
 	}
-	// Minimal compose file required by validator
 	composePath := filepath.Join(appRoot, "docker-compose.yaml")
 	if err := os.WriteFile(composePath, []byte("version: '3'\nservices: {}\n"), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
-	// Minimal config referencing the app and declaring networks
 	cfg := strings.Join([]string{
 		"docker:",
 		"  context: default",
