@@ -30,6 +30,10 @@ func (n *netExecStub) RunWithStdout(ctx context.Context, stdout io.Writer, args 
 	n.lastArgs = args
 	return nil
 }
+func (n *netExecStub) RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error) {
+	out, err := n.Run(ctx, args...)
+	return Result{Stdout: out, Stderr: "", ExitCode: 0}, err
+}
 
 func TestListNetworks_ParsesAndFilters(t *testing.T) {
 	stub := &netExecStub{}

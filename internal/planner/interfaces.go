@@ -20,6 +20,7 @@ type DockerClient interface {
 	WriteFileToVolume(ctx context.Context, volumeName, targetPath, relFile, content string) error
 	ExtractTarToVolume(ctx context.Context, volumeName, targetPath string, tarReader io.Reader) error
 	RemovePathsFromVolume(ctx context.Context, volumeName, targetPath string, relPaths []string) error
+	RunVolumeScript(ctx context.Context, volumeName, targetPath, script string, env []string) (dockercli.VolumeScriptResult, error)
 
 	// Network operations
 	ListNetworks(ctx context.Context) ([]string, error)

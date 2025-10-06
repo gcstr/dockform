@@ -68,6 +68,10 @@ func (e *execStub) RunWithStdout(ctx context.Context, stdout io.Writer, args ...
 	}
 	return nil
 }
+func (e *execStub) RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error) {
+	out, err := e.Run(ctx, args...)
+	return Result{Stdout: out, Stderr: "", ExitCode: 0}, err
+}
 
 func TestCheckDaemon_SuccessAndFailure(t *testing.T) {
 	stub := &execStub{}
