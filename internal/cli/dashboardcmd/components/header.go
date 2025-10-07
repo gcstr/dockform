@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/gcstr/dockform/internal/cli/dashboardcmd/theme"
 )
 
 // RenderHeader renders a single-line header like "◇ Title /////" that fills the full
@@ -24,23 +25,23 @@ func RenderHeader(title string, containerWidth int, totalHorizontalPadding int) 
 	// Calculate how many slashes we need to fill the exact width
 	slashCount := contentWidth - baseWidth
 	if slashCount < 0 {
-		// If title is too long, truncate the whole thing
-		headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
-		return headerStyle.Width(contentWidth).MaxWidth(contentWidth).Render(base)
+		// If title is too long, truncate the whole thing, style the title
+		baseStyled := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render(base)
+		return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(baseStyled)
 	}
 
 	// Build slashes
 	slashes := strings.Repeat("/", slashCount)
-	result := base + slashes
-
-	// Apply mid gray color to the entire header
-	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+	// Style parts separately
+	baseStyled := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render(base)
+	slashesStyled := lipgloss.NewStyle().Foreground(theme.FgSubtle).Render(slashes)
+	result := baseStyled + slashesStyled
 
 	// Force truncate at exact width to prevent any wrapping
 	if lipgloss.Width(result) > contentWidth {
 		// Truncate using lipgloss utilities
-		return headerStyle.Width(contentWidth).MaxWidth(contentWidth).Render(result)
+		return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(result)
 	}
 
-	return headerStyle.Render(result)
+	return result
 }

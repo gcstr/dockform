@@ -4,16 +4,16 @@ import "github.com/charmbracelet/lipgloss/v2"
 
 // Foreground colors
 var (
-	FgBase      = lipgloss.Color("#DFDBDD")
-	FgMuted     = lipgloss.Color("#858392")
-	FgHalfMuted = lipgloss.Color("#BFBCC8")
-	FgSubtle    = lipgloss.Color("#605F6B")
+	FgBase      = lipgloss.Color("#C8D3F5")
+	FgHalfMuted = lipgloss.Color("#828bb8")
+	FgMuted     = lipgloss.Color("#444a73")
+	FgSubtle    = lipgloss.Color("#444a73")
 	FgSelected  = lipgloss.Color("#F1EFEF")
 )
 
 // Background colors
 var (
-	BgBase = lipgloss.Color("#201F26")
+	BgBase = lipgloss.Color("#222436")
 )
 
 // Status colors
@@ -24,7 +24,7 @@ var (
 	Info    = lipgloss.Color("#00A4FF")
 )
 
-// Brand colors
+// Colors
 var (
 	Primary   = lipgloss.Color("#6B50FF")
 	Secondary = lipgloss.Color("#FF60FF")

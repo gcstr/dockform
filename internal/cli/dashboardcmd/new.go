@@ -17,6 +17,11 @@ import (
 type keyMap struct {
 	ToggleHelp key.Binding
 	Quit       key.Binding
+	Filter     key.Binding
+	MoveUp     key.Binding
+	MoveDown   key.Binding
+	NextPage   key.Binding
+	PrevPage   key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -24,6 +29,26 @@ func newKeyMap() keyMap {
 		ToggleHelp: key.NewBinding(
 			key.WithKeys("?"),
 			key.WithHelp("?", "toggle help"),
+		),
+		Filter: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "filter stacks"),
+		),
+		MoveUp: key.NewBinding(
+			key.WithKeys("up", "k"),
+			key.WithHelp("↑/k", "up"),
+		),
+		MoveDown: key.NewBinding(
+			key.WithKeys("down", "j"),
+			key.WithHelp("↓/j", "down"),
+		),
+		NextPage: key.NewBinding(
+			key.WithKeys("right", "l", "pgdn"),
+			key.WithHelp("→/l/pgdn", "next page"),
+		),
+		PrevPage: key.NewBinding(
+			key.WithKeys("left", "h", "pgup"),
+			key.WithHelp("←/h/pgup", "prev page"),
 		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
@@ -34,13 +59,15 @@ func newKeyMap() keyMap {
 
 // ShortHelp returns the bindings shown in the expanded help bar.
 func (k keyMap) ShortHelp() []key.Binding {
+	// Only show minimal help; full help is toggled with '?'
 	return []key.Binding{k.ToggleHelp, k.Quit}
 }
 
 // FullHelp returns all key bindings grouped.
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.ToggleHelp, k.Quit},
+		{k.MoveUp, k.MoveDown, k.NextPage, k.PrevPage}, // navigation column
+		{k.Filter, k.Quit}, // actions column
 	}
 }
 
@@ -86,6 +113,11 @@ func newModel() model {
 		components.StackItem{TitleText: "Redis", Containers: []string{"redis", "redis:7-alpine"}, Status: "● Running - 1 week"},
 		components.StackItem{TitleText: "Nginx", Containers: []string{"nginx", "nginx:latest"}, Status: "○ Stopped"},
 		components.StackItem{TitleText: "Traefik", Containers: []string{"traefik", "traefik:v3.0"}, Status: "● Running - 3 hours"},
+		components.StackItem{TitleText: "Vaultwarden", Containers: []string{"vaultwarden", "vaultwarden/server:1.32.1"}, Status: "● Running - 8 hours"},
+		components.StackItem{TitleText: "PostgreSQL", Containers: []string{"postgres", "postgres:16-alpine"}, Status: "● Running - 2 days"},
+		components.StackItem{TitleText: "Redis", Containers: []string{"redis", "redis:7-alpine"}, Status: "● Running - 1 week"},
+		components.StackItem{TitleText: "Nginx", Containers: []string{"nginx", "nginx:latest"}, Status: "○ Stopped"},
+		components.StackItem{TitleText: "Traefik", Containers: []string{"traefik", "traefik:v3.0"}, Status: "● Running - 3 hours"},
 	}
 
 	// Create the list with custom delegate
@@ -93,12 +125,33 @@ func newModel() model {
 	projectList := list.New(items, delegate, 0, 0)
 	projectList.SetShowTitle(false)
 	projectList.SetShowStatusBar(false)
-	projectList.SetFilteringEnabled(false)
+	projectList.SetFilteringEnabled(true)
 	projectList.SetShowHelp(false)
+	projectList.SetShowPagination(true)
+
+	projectList.FilterInput.Prompt = "> "
+	projectList.FilterInput.Placeholder = "Stack, container, or image..."
+	projectList.Styles.Filter.Focused.Prompt = lipgloss.NewStyle().Foreground(theme.Success)
+	projectList.Styles.Filter.Blurred.Prompt = lipgloss.NewStyle().Foreground(theme.FgMuted)
+	projectList.FilterInput.Styles.Focused.Prompt = lipgloss.NewStyle().Foreground(theme.Success)
+	projectList.FilterInput.Styles.Blurred.Prompt = lipgloss.NewStyle().Foreground(theme.FgMuted)
+
+	projectList.SetShowFilter(true)
+	projectList.Styles.TitleBar = projectList.Styles.TitleBar.Padding(0, 0, 0, 0)
+
+	h := help.New()
+	muted := lipgloss.NewStyle().Foreground(theme.FgMuted)
+	halfMuted := lipgloss.NewStyle().Foreground(theme.FgHalfMuted)
+	h.Styles.ShortKey = halfMuted
+	h.Styles.ShortDesc = muted
+	h.Styles.ShortSeparator = muted
+	h.Styles.FullKey = halfMuted
+	h.Styles.FullDesc = muted
+	h.Styles.FullSeparator = muted
 
 	return model{
 		keys: newKeyMap(),
-		help: help.New(),
+		help: h,
 		list: projectList,
 	}
 }
@@ -119,18 +172,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.ToggleHelp):
 			m.help.ShowAll = !m.help.ShowAll
+			// Recompute list size to account for new help height so the help bar
+			// remains visible and columns shrink accordingly.
+			helpHeight := 0
+			if m.help.View(m.keys) != "" {
+				helpHeight = lipgloss.Height(m.help.View(m.keys))
+			}
+			bodyHeight := m.height - helpHeight
+			if bodyHeight < 1 {
+				bodyHeight = 1
+			}
+			leftW, _, _ := computeColumnWidths(m.width)
+			listWidth := leftW - totalHorizontalPadding
+			listHeight := bodyHeight - 2 // header + spacing
+			if listWidth < 1 {
+				listWidth = 1
+			}
+			if listHeight < 1 {
+				listHeight = 1
+			}
+			m.list.SetSize(listWidth, listHeight)
 			return m, nil
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// Update list size based on new dimensions
-		helpHeight := 0
-		if m.help.View(m.keys) != "" {
-			helpHeight = lipgloss.Height(m.help.View(m.keys))
+		// Update list size based on new dimensions; reserve space for help bar even when hidden
+		reservedHelpHeight := lipgloss.Height(m.renderHelp())
+		if reservedHelpHeight == 0 {
+			// Reserve at least one line to avoid content pushing help off-screen when toggled
+			reservedHelpHeight = 1
 		}
-		bodyHeight := m.height - helpHeight
+		bodyHeight := m.height - reservedHelpHeight
 		if bodyHeight < 1 {
 			bodyHeight = 1
 		}
@@ -138,7 +212,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Set list size (account for padding and header)
 		listWidth := leftW - totalHorizontalPadding
-		// Subtract header (1 line) and margin below header (1 line)
+		// Subtract header (1) and margin below header (1)
 		listHeight := bodyHeight - 2
 		if listWidth < 1 {
 			listWidth = 1
@@ -260,9 +334,9 @@ func (m model) renderColumns(bodyHeight int) string {
 	// Compute widths for this frame
 	leftW, centerW, _ := computeColumnWidths(m.width)
 
-	// Left column: render list with header
+	// Left column: render list with header (single newline spacing)
 	leftHeader := renderHeader(leftTitle, leftW)
-	leftContent := leftHeader + "\n\n" + m.list.View()
+	leftContent := leftHeader + "\n" + m.list.View()
 
 	// Center placeholder content with headers (headers sized to container content width)
 	centerHeader := renderHeader(centerTitle, centerW)
@@ -298,6 +372,7 @@ func (m model) renderHelp() string {
 	if m.width <= 0 {
 		return m.help.View(m.keys)
 	}
+	// Expand help when '?' is toggled via k.ToggleHelp; we already flip m.help.ShowAll there
 	return lipgloss.NewStyle().Width(m.width).Render(m.help.View(m.keys))
 }
 
