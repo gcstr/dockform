@@ -1,4 +1,4 @@
-package cli
+package dashboardcmd
 
 import (
 	"fmt"
@@ -272,8 +272,8 @@ func renderHeader(title string, containerWidth int) string {
 	return result
 }
 
-// newDashboardCmd creates the `dockform dashboard` command.
-func newDashboardCmd() *cobra.Command {
+// New creates the `dockform dashboard` command.
+func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dashboard",
 		Short: "Launch the Dockform dashboard (fullscreen TUI)",
