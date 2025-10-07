@@ -7,13 +7,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/components"
+	"github.com/gcstr/dockform/internal/cli/dashboardcmd/theme"
 	"github.com/spf13/cobra"
 )
 
-var (
-	// appStyle fills the entire alt screen with a uniform background
-	appBgHex = "#201F26"
-)
+// appStyle fills the entire alt screen with a uniform background
 
 // keyMap defines the key bindings for the dashboard.
 type keyMap struct {
@@ -107,7 +105,7 @@ func newModel() model {
 
 func (m model) Init() tea.Cmd {
 	// v2: set terminal background color; Bubble Tea will reset on close.
-	return tea.SetBackgroundColor(lipgloss.Color(appBgHex))
+	return tea.SetBackgroundColor(theme.BgBase)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -184,7 +182,7 @@ func (m model) View() string {
 
 	// Fill the entire screen with the background color and render content.
 	return lipgloss.NewStyle().
-		Background(lipgloss.Color(appBgHex)).
+		Background(theme.BgBase).
 		Width(m.width).
 		Height(m.height).
 		Render(content)
