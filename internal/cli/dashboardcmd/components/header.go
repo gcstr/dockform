@@ -45,3 +45,39 @@ func RenderHeader(title string, containerWidth int, totalHorizontalPadding int) 
 
 	return result
 }
+
+// RenderHeaderActive renders the same header but highlights the title section
+// with the primary color to denote focus/selection.
+func RenderHeaderActive(title string, containerWidth int, totalHorizontalPadding int) string {
+	// Account for horizontal padding inside the container
+	contentWidth := containerWidth - totalHorizontalPadding
+	if contentWidth <= 0 {
+		return ""
+	}
+	// Build the base: "◇ Title "
+	base := fmt.Sprintf("◇ %s ", title)
+	baseWidth := lipgloss.Width(base)
+
+	// Calculate how many slashes we need to fill the exact width
+	slashCount := contentWidth - baseWidth
+	if slashCount < 0 {
+		// If title is too long, truncate the whole thing, style the title
+		baseStyled := lipgloss.NewStyle().Foreground(theme.Primary).Render(base)
+		return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(baseStyled)
+	}
+
+	// Build slashes
+	slashes := strings.Repeat("/", slashCount)
+	// Style parts (entire header active in Primary)
+	baseStyled := lipgloss.NewStyle().Foreground(theme.Primary).Render(base)
+	slashesStyled := lipgloss.NewStyle().Foreground(theme.Primary).Render(slashes)
+	result := baseStyled + slashesStyled
+
+	// Force truncate at exact width to prevent any wrapping
+	if lipgloss.Width(result) > contentWidth {
+		// Truncate using lipgloss utilities
+		return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(result)
+	}
+
+	return result
+}

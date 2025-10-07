@@ -1,6 +1,8 @@
 package dashboardcmd
 
 import (
+	"os"
+
 	"github.com/charmbracelet/bubbles/v2/help"
 	"github.com/charmbracelet/bubbles/v2/key"
 	"github.com/charmbracelet/bubbles/v2/list"
@@ -22,6 +24,7 @@ type keyMap struct {
 	MoveDown   key.Binding
 	NextPage   key.Binding
 	PrevPage   key.Binding
+	CyclePane  key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -49,6 +52,10 @@ func newKeyMap() keyMap {
 		PrevPage: key.NewBinding(
 			key.WithKeys("left", "h", "pgup"),
 			key.WithHelp("←/h/pgup", "prev page"),
+		),
+		CyclePane: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "next pane"),
 		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
@@ -89,7 +96,7 @@ const (
 	// Overheads per column: paddings used in renderColumns
 	// box has Padding(0,1). We now avoid using margins to prevent unstyled gaps.
 	leftOverhead   = 2 // padding(2)
-	centerOverhead = 2 // padding(2)
+	centerOverhead = 4 // padding(2) + extra center horizontal padding(2)
 	rightOverhead  = 2 // padding(2)
 )
 
@@ -98,11 +105,13 @@ type model struct {
 	width  int
 	height int
 
-	keys keyMap
-	help help.Model
-	list list.Model
+	keys      keyMap
+	help      help.Model
+	list      list.Model
+	logsPager components.LogsPager
 
-	quitting bool
+	quitting   bool
+	activePane int
 }
 
 func newModel() model {
@@ -149,11 +158,21 @@ func newModel() model {
 	h.Styles.FullDesc = muted
 	h.Styles.FullSeparator = muted
 
+	// Load logs content for the center pager
+	logsContent, _ := os.ReadFile("internal/cli/dashboardcmd/logs.log")
+
 	return model{
-		keys: newKeyMap(),
-		help: h,
-		list: projectList,
-	}
+		keys:      newKeyMap(),
+		help:      h,
+		list:      projectList,
+		logsPager: components.NewLogsPager(),
+	}.withLogs(string(logsContent))
+}
+
+func (m model) withLogs(content string) model {
+	// Store content into pager at start; actual size will be set on first WindowSizeMsg
+	m.logsPager.SetContent(content)
+	return m
 }
 
 func (m model) Init() tea.Cmd {
@@ -170,6 +189,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Quit):
 			m.quitting = true
 			return m, tea.Quit
+		case key.Matches(msg, m.keys.CyclePane):
+			m.activePane = (m.activePane + 1) % 2 // cycle between left(0) and center(1)
+			return m, nil
 		case key.Matches(msg, m.keys.ToggleHelp):
 			m.help.ShowAll = !m.help.ShowAll
 			// Recompute list size to account for new help height so the help bar
@@ -182,7 +204,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if bodyHeight < 1 {
 				bodyHeight = 1
 			}
-			leftW, _, _ := computeColumnWidths(m.width)
+			leftW, centerW, _ := computeColumnWidths(m.width)
 			listWidth := leftW - totalHorizontalPadding
 			listHeight := bodyHeight - 2 // header + spacing
 			if listWidth < 1 {
@@ -192,6 +214,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				listHeight = 1
 			}
 			m.list.SetSize(listWidth, listHeight)
+			// Also resize the center pager accounting for header (1) + spacer (1)
+			m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, bodyHeight-2))
 			return m, nil
 		}
 	case tea.WindowSizeMsg:
@@ -208,7 +232,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if bodyHeight < 1 {
 			bodyHeight = 1
 		}
-		leftW, _, _ := computeColumnWidths(m.width)
+		leftW, centerW, _ := computeColumnWidths(m.width)
 
 		// Set list size (account for padding and header)
 		listWidth := leftW - totalHorizontalPadding
@@ -221,12 +245,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			listHeight = 1
 		}
 		m.list.SetSize(listWidth, listHeight)
+		// Size the center pager: subtract header (1) + spacer (1)
+		m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, bodyHeight-2))
 		return m, nil
 	}
 
-	// Update the list
-	m.list, cmd = m.list.Update(msg)
-	return m, cmd
+	// Update only the active pane so keystrokes are captured by one component
+	var cmd2 tea.Cmd
+	switch m.activePane {
+	case 0:
+		// Disable list's escape quit keybinding; keep only q/ctrl+c at app level
+		m.list.DisableQuitKeybindings()
+		m.list, cmd = m.list.Update(msg)
+	case 1:
+		m.logsPager, cmd2 = m.logsPager.Update(msg)
+	}
+	return m, tea.Batch(cmd, cmd2)
 }
 
 func (m model) View() string {
@@ -246,13 +280,11 @@ func (m model) View() string {
 	}
 	columns := m.renderColumns(bodyHeight)
 
-	// Join with help if present
-	var content string
+	// Always reserve a line for help; when collapsed, render an empty line of the same style
 	if helpBar == "" {
-		content = columns
-	} else {
-		content = lipgloss.JoinVertical(lipgloss.Left, columns, helpBar)
+		helpBar = lipgloss.NewStyle().Width(m.width).Render("")
 	}
+	content := lipgloss.JoinVertical(lipgloss.Left, columns, helpBar)
 
 	// Fill the entire screen with the background color and render content.
 	return lipgloss.NewStyle().
@@ -322,25 +354,38 @@ func (m model) renderColumns(bodyHeight int) string {
 	if innerHeight < 0 {
 		innerHeight = 0
 	}
-	leftStyle := box.Align(lipgloss.Left).Height(innerHeight)
-	centerStyle := box.Align(lipgloss.Left).Height(innerHeight)
-	// Right column intentionally does not set Height, so it only grows to its content
-	rightStyle := box.Align(lipgloss.Left)
+	leftStyle := box.Align(lipgloss.Left).Height(innerHeight).MaxHeight(innerHeight)
+	centerStyle := box.Align(lipgloss.Left).Padding(0, paddingHorizontal+1).Height(innerHeight).MaxHeight(innerHeight)
+	// Right column: clamp to available height to avoid pushing help off-screen
+	rightStyle := box.Align(lipgloss.Left).Height(innerHeight).MaxHeight(innerHeight)
 
 	// Titles (used for header titles)
-	leftTitle := "Projects"
-	centerTitle := "Center"
+	leftTitle := "Stacks"
+	centerTitle := "Logs"
 
 	// Compute widths for this frame
 	leftW, centerW, _ := computeColumnWidths(m.width)
 
-	// Left column: render list with header (single newline spacing)
-	leftHeader := renderHeader(leftTitle, leftW)
+	// Left column: render list with header (active pane highlighted)
+	var leftHeader string
+	if m.activePane == 0 {
+		leftHeader = components.RenderHeaderActive(leftTitle, leftW, totalHorizontalPadding)
+	} else {
+		leftHeader = renderHeaderWithPadding(leftTitle, leftW, totalHorizontalPadding)
+	}
 	leftContent := leftHeader + "\n" + m.list.View()
 
 	// Center placeholder content with headers (headers sized to container content width)
-	centerHeader := renderHeader(centerTitle, centerW)
-	centerContent := centerHeader + "\n\n" + "placeholder"
+	centerPadding := (paddingHorizontal + 1) * 2
+	var centerHeader string
+	if m.activePane == 1 {
+		centerHeader = components.RenderHeaderActive(centerTitle, centerW, centerPadding)
+	} else {
+		centerHeader = renderHeaderWithPadding(centerTitle, centerW, centerPadding)
+	}
+	// Fit pager to available height in center column (header consumes one line)
+	m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, innerHeight-1))
+	centerContent := centerHeader + "\n\n" + m.logsPager.View()
 
 	// Apply widths for left and center first
 	leftView := leftStyle.Width(leftW).Render(leftContent)
@@ -356,9 +401,9 @@ func (m model) renderColumns(bodyHeight int) string {
 		remainingContent = 1
 	}
 	// Right column: three stacked rows with headers sized to remainingContent
-	r1Header := renderHeader("Row 1", remainingContent)
-	r2Header := renderHeader("Row 2", remainingContent)
-	r3Header := renderHeader("Row 3", remainingContent)
+	r1Header := renderHeaderWithPadding("Row 1", remainingContent, totalHorizontalPadding)
+	r2Header := renderHeaderWithPadding("Row 2", remainingContent, totalHorizontalPadding)
+	r3Header := renderHeaderWithPadding("Row 3", remainingContent, totalHorizontalPadding)
 	rightRow1 := r1Header + "\n\n" + "placeholder"
 	rightRow2 := r2Header + "\n\n" + "placeholder"
 	rightRow3 := r3Header + "\n\n" + "placeholder"
@@ -380,8 +425,12 @@ func (m model) renderHelp() string {
 // content width of the parent container, never wrapping. It clamps to the given width.
 // The containerWidth should be the container's content width; the function accounts for
 // horizontal padding internally.
-func renderHeader(title string, containerWidth int) string {
-	return components.RenderHeader(title, containerWidth, totalHorizontalPadding)
+// (renderHeader shim removed; use renderHeaderWithPadding instead)
+
+// renderHeaderWithPadding allows callers to pass an explicit horizontal padding
+// value so headers fill exactly the visible content width after padding changes.
+func renderHeaderWithPadding(title string, containerWidth int, horizontalPadding int) string {
+	return components.RenderHeader(title, containerWidth, horizontalPadding)
 }
 
 // New creates the `dockform dashboard` command.
