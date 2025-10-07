@@ -2,14 +2,89 @@ package dashboardcmd
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/bubbles/v2/help"
+	"github.com/charmbracelet/bubbles/v2/key"
+	"github.com/charmbracelet/bubbles/v2/list"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/spf13/cobra"
 )
+
+var (
+	// appStyle fills the entire alt screen with a uniform background
+	appBgHex = "#201F26"
+)
+
+// projectItem represents a project in the list.
+type projectItem struct {
+	title      string
+	containers []string
+	status     string
+}
+
+func (i projectItem) Title() string       { return i.title }
+func (i projectItem) Description() string { return i.status }
+func (i projectItem) FilterValue() string { return i.title }
+
+// projectDelegate is a custom delegate for rendering project items.
+type projectDelegate struct{}
+
+func (d projectDelegate) Height() int                               { return 4 }
+func (d projectDelegate) Spacing() int                              { return 1 }
+func (d projectDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
+
+func (d projectDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	i, ok := item.(projectItem)
+	if !ok {
+		return
+	}
+
+	// Build the tree structure
+	var lines []string
+
+	// Styles per requirements
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#DEDEDE")).Bold(true)
+	subStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#A6A6A6"))
+	subItalicStyle := subStyle.Italic(true)
+	// The bullet should be green while the rest of the status remains gray/italic
+	greenBullet := lipgloss.NewStyle().Foreground(lipgloss.Color("#00B341")).Render("●")
+
+	// Reduced indentation: one leading space instead of two
+	lines = append(lines, " "+titleStyle.Render(i.title))
+
+	// Add container/image lines (first container plain, second italic)
+	for idx, container := range i.containers {
+		rendered := subStyle.Render(container)
+		if idx == 1 { // make the image line italic if present
+			rendered = subItalicStyle.Render(container)
+		}
+		lines = append(lines, " ├ "+rendered)
+	}
+
+	// Add status line: green bullet + gray italic rest
+	statusText := i.status
+	if strings.HasPrefix(statusText, "●") || strings.HasPrefix(statusText, "○") {
+		// Replace the first rune with a green bullet regardless, and keep remainder
+		// Trim any leading bullet and spaces from original and re-add our styled bullet
+		remainder := strings.TrimSpace(strings.TrimLeft(statusText, "●○ "))
+		statusText = greenBullet + " " + subItalicStyle.Render(remainder)
+	} else {
+		statusText = greenBullet + " " + subItalicStyle.Render(statusText)
+	}
+	lines = append(lines, " └ "+statusText)
+
+	// Selection styling: keep colors but invert/background highlight on selection subtly
+	// Here we just bold the whole block when selected to keep it simple and readable
+	block := strings.Join(lines, "\n")
+	if index == m.Index() {
+		block = lipgloss.NewStyle().Bold(true).Render(block)
+	}
+
+	_, _ = fmt.Fprint(w, block)
+}
 
 // keyMap defines the key bindings for the dashboard.
 type keyMap struct {
@@ -44,8 +119,8 @@ func (k keyMap) FullHelp() [][]key.Binding {
 
 // layout constants
 const (
-	leftMinWidth   = 20
-	leftMaxWidth   = 30
+	leftMinWidth   = 30
+	leftMaxWidth   = 40
 	rightMinWidth  = 20
 	rightMaxWidth  = 30
 	centerMinWidth = 40
@@ -57,10 +132,10 @@ const (
 	// Total horizontal padding applied to content width (left + right)
 	totalHorizontalPadding = paddingHorizontal * 2
 
-	// Overheads per column: paddings and margins used in renderColumns
-	// box has Padding(0,1). Left/Center also have MarginRight(1).
-	leftOverhead   = 3 // padding(2) + marginRight(1)
-	centerOverhead = 3 // padding(2) + marginRight(1)
+	// Overheads per column: paddings used in renderColumns
+	// box has Padding(0,1). We now avoid using margins to prevent unstyled gaps.
+	leftOverhead   = 2 // padding(2)
+	centerOverhead = 2 // padding(2)
 	rightOverhead  = 2 // padding(2)
 )
 
@@ -71,20 +146,64 @@ type model struct {
 
 	keys keyMap
 	help help.Model
+	list list.Model
 
 	quitting bool
 }
 
 func newModel() model {
+	// Create sample project items
+	items := []list.Item{
+		projectItem{
+			title:      "Vaultwarden",
+			containers: []string{"vaultwarden", "vaultwarden/server:1.32.1"},
+			status:     "● Running - 8 hours",
+		},
+		projectItem{
+			title:      "PostgreSQL",
+			containers: []string{"postgres", "postgres:16-alpine"},
+			status:     "● Running - 2 days",
+		},
+		projectItem{
+			title:      "Redis",
+			containers: []string{"redis", "redis:7-alpine"},
+			status:     "● Running - 1 week",
+		},
+		projectItem{
+			title:      "Nginx",
+			containers: []string{"nginx", "nginx:latest"},
+			status:     "○ Stopped",
+		},
+		projectItem{
+			title:      "Traefik",
+			containers: []string{"traefik", "traefik:v3.0"},
+			status:     "● Running - 3 hours",
+		},
+	}
+
+	// Create the list with custom delegate
+	delegate := projectDelegate{}
+	projectList := list.New(items, delegate, 0, 0)
+	projectList.SetShowTitle(false)
+	projectList.SetShowStatusBar(false)
+	projectList.SetFilteringEnabled(false)
+	projectList.SetShowHelp(false)
+
 	return model{
 		keys: newKeyMap(),
 		help: help.New(),
+		list: projectList,
 	}
 }
 
-func (m model) Init() tea.Cmd { return nil }
+func (m model) Init() tea.Cmd {
+	// v2: set terminal background color; Bubble Tea will reset on close.
+	return tea.SetBackgroundColor(lipgloss.Color(appBgHex))
+}
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
@@ -98,9 +217,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+		// Update list size based on new dimensions
+		helpHeight := 0
+		if m.help.View(m.keys) != "" {
+			helpHeight = lipgloss.Height(m.help.View(m.keys))
+		}
+		bodyHeight := m.height - helpHeight
+		if bodyHeight < 1 {
+			bodyHeight = 1
+		}
+		leftW, _, _ := computeColumnWidths(m.width)
+
+		// Set list size (account for padding and header)
+		listWidth := leftW - totalHorizontalPadding
+		// Subtract header (1 line) and margin below header (1 line)
+		listHeight := bodyHeight - 2
+		if listWidth < 1 {
+			listWidth = 1
+		}
+		if listHeight < 1 {
+			listHeight = 1
+		}
+		m.list.SetSize(listWidth, listHeight)
 		return m, nil
 	}
-	return m, nil
+
+	// Update the list
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
 }
 
 func (m model) View() string {
@@ -120,10 +265,20 @@ func (m model) View() string {
 	}
 	columns := m.renderColumns(bodyHeight)
 
+	// Join with help if present
+	var content string
 	if helpBar == "" {
-		return columns
+		content = columns
+	} else {
+		content = lipgloss.JoinVertical(lipgloss.Left, columns, helpBar)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, columns, helpBar)
+
+	// Fill the entire screen with the background color and render content.
+	return lipgloss.NewStyle().
+		Background(lipgloss.Color(appBgHex)).
+		Width(m.width).
+		Height(m.height).
+		Render(content)
 }
 
 // computeColumnWidths distributes available width among left, center, right.
@@ -186,24 +341,25 @@ func (m model) renderColumns(bodyHeight int) string {
 	if innerHeight < 0 {
 		innerHeight = 0
 	}
-	leftStyle := box.Align(lipgloss.Left).MarginRight(1).Height(innerHeight)
-	centerStyle := box.Align(lipgloss.Left).MarginRight(1).Height(innerHeight)
+	leftStyle := box.Align(lipgloss.Left).Height(innerHeight)
+	centerStyle := box.Align(lipgloss.Left).Height(innerHeight)
 	// Right column intentionally does not set Height, so it only grows to its content
 	rightStyle := box.Align(lipgloss.Left)
 
 	// Titles (used for header titles)
-	leftTitle := "Left"
+	leftTitle := "Projects"
 	centerTitle := "Center"
 
 	// Compute widths for this frame
 	leftW, centerW, _ := computeColumnWidths(m.width)
 
-	// Placeholder content with headers (headers sized to container content width)
-	// Headers are plain text, pre-sized to exact width to prevent wrapping
+	// Left column: render list with header
 	leftHeader := renderHeader(leftTitle, leftW)
+	leftContent := leftHeader + "\n\n" + m.list.View()
+
+	// Center placeholder content with headers (headers sized to container content width)
 	centerHeader := renderHeader(centerTitle, centerW)
-	leftContent := leftHeader + "\n" + "placeholder"
-	centerContent := centerHeader + "\n" + "placeholder"
+	centerContent := centerHeader + "\n\n" + "placeholder"
 
 	// Apply widths for left and center first
 	leftView := leftStyle.Width(leftW).Render(leftContent)
@@ -222,9 +378,9 @@ func (m model) renderColumns(bodyHeight int) string {
 	r1Header := renderHeader("Row 1", remainingContent)
 	r2Header := renderHeader("Row 2", remainingContent)
 	r3Header := renderHeader("Row 3", remainingContent)
-	rightRow1 := r1Header + "\n" + "placeholder"
-	rightRow2 := r2Header + "\n" + "placeholder"
-	rightRow3 := r3Header + "\n" + "placeholder"
+	rightRow1 := r1Header + "\n\n" + "placeholder"
+	rightRow2 := r2Header + "\n\n" + "placeholder"
+	rightRow3 := r3Header + "\n\n" + "placeholder"
 	rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow1, rightRow2, rightRow3)
 	rightView := rightStyle.Width(remainingContent).Render(rightRows)
 
@@ -256,20 +412,24 @@ func renderHeader(title string, containerWidth int) string {
 	slashCount := contentWidth - baseWidth
 	if slashCount < 0 {
 		// If title is too long, truncate the whole thing
-		return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(base)
+		headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+		return headerStyle.Width(contentWidth).MaxWidth(contentWidth).Render(base)
 	}
 
 	// Build slashes
 	slashes := strings.Repeat("/", slashCount)
 	result := base + slashes
 
+	// Apply mid gray color to the entire header
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+
 	// Force truncate at exact width to prevent any wrapping
 	if lipgloss.Width(result) > contentWidth {
 		// Truncate using lipgloss utilities
-		return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(result)
+		return headerStyle.Width(contentWidth).MaxWidth(contentWidth).Render(result)
 	}
 
-	return result
+	return headerStyle.Render(result)
 }
 
 // New creates the `dockform dashboard` command.
