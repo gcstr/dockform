@@ -401,9 +401,9 @@ func (m model) renderColumns(bodyHeight int) string {
 		remainingContent = 1
 	}
 	// Right column: three stacked rows with headers sized to remainingContent
-	r1Header := renderHeaderWithPadding("Row 1", remainingContent, totalHorizontalPadding)
-	r2Header := renderHeaderWithPadding("Row 2", remainingContent, totalHorizontalPadding)
-	r3Header := renderHeaderWithPadding("Row 3", remainingContent, totalHorizontalPadding)
+	r1Header := renderHeaderWithPadding("Dockform", remainingContent, totalHorizontalPadding)
+	r2Header := renderHeaderWithPadding("Volumes", remainingContent, totalHorizontalPadding)
+	r3Header := renderHeaderWithPadding("Networks", remainingContent, totalHorizontalPadding)
 	rightRow1 := r1Header + "\n\n" + "placeholder"
 	rightRow2 := r2Header + "\n\n" + "placeholder"
 	rightRow3 := r3Header + "\n\n" + "placeholder"
