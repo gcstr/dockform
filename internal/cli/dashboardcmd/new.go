@@ -409,7 +409,11 @@ func (m model) renderColumns(bodyHeight int) string {
 	r1Line2 := components.RenderSimple("Host", "unix:///var/run/docker.sock")
 	r1Line3 := components.RenderSimple("Version", "v0.6.2")
 	rightRow1 := r1Header + "\n\n" + r1Line1 + "\n" + r1Line2 + "\n" + r1Line3 + "\n"
-	rightRow2 := r2Header + "\n\n" + "placeholder"
+	// Second-right container: three volumes with fake data
+	v1 := components.RenderVolume("vaultwarden", "/mnt/data/vaultwarden", "1.2GB")
+	v2 := components.RenderVolume("postgresql", "/var/lib/postgresql/data", "12.8GB")
+	v3 := components.RenderVolume("redis", "/data", "512MB")
+	rightRow2 := r2Header + "\n\n" + v1 + "\n\n" + v2 + "\n\n" + v3 + "\n"
 	rightRow3 := r3Header + "\n\n" + "placeholder"
 	rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow1, rightRow2, rightRow3)
 	rightView := rightStyle.Width(remainingContent).Render(rightRows)
