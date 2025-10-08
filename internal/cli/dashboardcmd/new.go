@@ -245,8 +245,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			listHeight = 1
 		}
 		m.list.SetSize(listWidth, listHeight)
-		// Size the center pager: subtract header (1) + spacer (1)
-		m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, bodyHeight-2))
+		// Size the center pager: subtract header (1) + spacer (1) + extra (1)
+		m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, bodyHeight-3))
 		return m, nil
 	}
 
@@ -383,8 +383,8 @@ func (m model) renderColumns(bodyHeight int) string {
 	} else {
 		centerHeader = renderHeaderWithPadding(centerTitle, centerW, centerPadding)
 	}
-	// Fit pager to available height in center column (header consumes one line)
-	m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, innerHeight-1))
+	// Fit pager to available height in center column, minus header (1), spacer (1), and one extra line
+	m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, innerHeight-3))
 	centerContent := centerHeader + "\n\n" + m.logsPager.View()
 
 	// Apply widths for left and center first
@@ -414,7 +414,11 @@ func (m model) renderColumns(bodyHeight int) string {
 	v2 := components.RenderVolume("postgresql", "/var/lib/postgresql/data", "12.8GB")
 	v3 := components.RenderVolume("redis", "/data", "512MB")
 	rightRow2 := r2Header + "\n\n" + v1 + "\n\n" + v2 + "\n\n" + v3 + "\n"
-	rightRow3 := r3Header + "\n\n" + "placeholder"
+	// Third-right container: a few networks
+	n1 := components.RenderNetwork("traefik", "bridge")
+	n2 := components.RenderNetwork("frontend", "bridge")
+	n3 := components.RenderNetwork("backend", "bridge")
+	rightRow3 := r3Header + "\n\n" + n1 + "\n" + n2 + "\n" + n3 + "\n"
 	rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow1, rightRow2, rightRow3)
 	rightView := rightStyle.Width(remainingContent).Render(rightRows)
 
