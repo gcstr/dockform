@@ -8,6 +8,8 @@ import (
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/theme"
 )
 
+var patternChar = "╱"
+
 // RenderHeader renders a single-line header like "◇ Title /////" that fills the full
 // content width of the parent container, never wrapping. It clamps to the given width.
 // The containerWidth should be the container's content width; the function accounts for
@@ -31,7 +33,7 @@ func RenderHeader(title string, containerWidth int, totalHorizontalPadding int) 
 	}
 
 	// Build slashes
-	slashes := strings.Repeat("/", slashCount)
+	slashes := strings.Repeat(patternChar, slashCount)
 	// Style parts separately
 	baseStyled := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render(base)
 	slashesStyled := lipgloss.NewStyle().Foreground(theme.FgSubtle).Render(slashes)
@@ -67,7 +69,7 @@ func RenderHeaderActive(title string, containerWidth int, totalHorizontalPadding
 	}
 
 	// Build slashes
-	slashes := strings.Repeat("/", slashCount)
+	slashes := strings.Repeat(patternChar, slashCount) // ⢔
 	// Style parts (entire header active in Primary)
 	baseStyled := lipgloss.NewStyle().Foreground(theme.Primary).Render(base)
 	slashesStyled := lipgloss.NewStyle().Foreground(theme.Primary).Render(slashes)

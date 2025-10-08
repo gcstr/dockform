@@ -1,13 +1,16 @@
 package dashboardcmd
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/help"
 	"github.com/charmbracelet/bubbles/v2/key"
 	"github.com/charmbracelet/bubbles/v2/list"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/gcstr/dockform/internal/cli/buildinfo"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/components"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/theme"
 	"github.com/spf13/cobra"
@@ -200,7 +203,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.help.View(m.keys) != "" {
 				helpHeight = lipgloss.Height(m.help.View(m.keys))
 			}
-			bodyHeight := m.height - helpHeight
+			// Account for a one-line top margin as well
+			bodyHeight := m.height - helpHeight - 1
 			if bodyHeight < 1 {
 				bodyHeight = 1
 			}
@@ -228,7 +232,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Reserve at least one line to avoid content pushing help off-screen when toggled
 			reservedHelpHeight = 1
 		}
-		bodyHeight := m.height - reservedHelpHeight
+		// Account for a one-line top margin as well
+		bodyHeight := m.height - reservedHelpHeight - 1
 		if bodyHeight < 1 {
 			bodyHeight = 1
 		}
@@ -274,7 +279,8 @@ func (m model) View() string {
 	if helpBar != "" {
 		helpHeight = lipgloss.Height(helpBar)
 	}
-	bodyHeight := m.height - helpHeight
+	// Account for a one-line top margin as well
+	bodyHeight := m.height - helpHeight - 1
 	if bodyHeight < 1 {
 		bodyHeight = 1
 	}
@@ -284,7 +290,8 @@ func (m model) View() string {
 	if helpBar == "" {
 		helpBar = lipgloss.NewStyle().Width(m.width).Render("")
 	}
-	content := lipgloss.JoinVertical(lipgloss.Left, columns, helpBar)
+	// Prepend one blank line as the top margin
+	content := lipgloss.JoinVertical(lipgloss.Left, "", columns, helpBar)
 
 	// Fill the entire screen with the background color and render content.
 	return lipgloss.NewStyle().
@@ -401,14 +408,16 @@ func (m model) renderColumns(bodyHeight int) string {
 		remainingContent = 1
 	}
 	// Right column: three stacked rows with headers sized to remainingContent
-	r1Header := renderHeaderWithPadding("Dockform", remainingContent, totalHorizontalPadding)
+	r1Header := renderHeaderWithPadding("Docker", remainingContent, totalHorizontalPadding)
 	r2Header := renderHeaderWithPadding("Volumes", remainingContent, totalHorizontalPadding)
 	r3Header := renderHeaderWithPadding("Networks", remainingContent, totalHorizontalPadding)
-	// Top-right container: three simple items and a trailing blank line as margin
+	// Top-right container: dynamic banner (recomputed per width) and info lines
+	bannerWidth := max(1, remainingContent-totalHorizontalPadding)
+	banner := renderSlashBanner(bannerWidth, fmt.Sprintf("dockform %s", buildinfo.Version()))
 	r1Line1 := components.RenderSimple("Context", "default")
 	r1Line2 := components.RenderSimple("Host", "unix:///var/run/docker.sock")
 	r1Line3 := components.RenderSimple("Version", "v0.6.2")
-	rightRow1 := r1Header + "\n\n" + r1Line1 + "\n" + r1Line2 + "\n" + r1Line3 + "\n"
+	rightRow1 := banner + "\n\n" + r1Header + "\n\n" + r1Line1 + "\n" + r1Line2 + "\n" + r1Line3 + "\n"
 	// Second-right container: three volumes with fake data
 	v1 := components.RenderVolume("vaultwarden", "/mnt/data/vaultwarden", "1.2GB")
 	v2 := components.RenderVolume("postgresql", "/var/lib/postgresql/data", "12.8GB")
@@ -443,6 +452,43 @@ func (m model) renderHelp() string {
 // value so headers fill exactly the visible content width after padding changes.
 func renderHeaderWithPadding(title string, containerWidth int, horizontalPadding int) string {
 	return components.RenderHeader(title, containerWidth, horizontalPadding)
+}
+
+// renderSlashBanner builds a three-line banner with a centered middle line:
+//
+// ╱╱╱╱╱╱╱╱╱╱╱
+// ╱╱╱ title ╱╱╱
+// ╱╱╱╱╱╱╱╱╱╱╱
+func renderSlashBanner(width int, title string) string {
+	if width < 1 {
+		width = 1
+	}
+	repeat := func(n int) string {
+		if n < 0 {
+			n = 0
+		}
+		return strings.Repeat("╱", n)
+	}
+	// Top and bottom full lines (Primary)
+	slashStyle := lipgloss.NewStyle().Foreground(theme.Primary)
+	top := slashStyle.Render(repeat(width))
+	bottom := slashStyle.Render(repeat(width))
+
+	// Middle: surround title with spaces and slashes; clamp to width
+	rawCore := " " + title + " "
+	coreStyled := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render(rawCore)
+	coreW := lipgloss.Width(rawCore) // visible width (ignore ANSI codes)
+	if coreW >= width {
+		middle := lipgloss.NewStyle().Width(width).MaxWidth(width).Render(coreStyled)
+		return top + "\n" + middle + "\n" + bottom
+	}
+	remain := width - coreW
+	left := remain / 2
+	right := remain - left
+	leftSlashes := slashStyle.Render(repeat(left))
+	rightSlashes := slashStyle.Render(repeat(right))
+	middle := leftSlashes + coreStyled + rightSlashes
+	return top + "\n" + middle + "\n" + bottom
 }
 
 // New creates the `dockform dashboard` command.
