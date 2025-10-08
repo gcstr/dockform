@@ -11,7 +11,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/gcstr/dockform/internal/cli/buildinfo"
+	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/components"
+	"github.com/gcstr/dockform/internal/cli/dashboardcmd/data"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/theme"
 	"github.com/spf13/cobra"
 )
@@ -117,22 +119,52 @@ type model struct {
 	activePane int
 }
 
-func newModel() model {
-	// Create sample project items
-	items := []list.Item{
-		components.StackItem{TitleText: "Vaultwarden", Containers: []string{"vaultwarden", "vaultwarden/server:1.32.1"}, Status: "● Running - 8 hours"},
-		components.StackItem{TitleText: "PostgreSQL", Containers: []string{"postgres", "postgres:16-alpine"}, Status: "● Running - 2 days"},
-		components.StackItem{TitleText: "Redis", Containers: []string{"redis", "redis:7-alpine"}, Status: "● Running - 1 week"},
-		components.StackItem{TitleText: "Nginx", Containers: []string{"nginx", "nginx:latest"}, Status: "○ Stopped"},
-		components.StackItem{TitleText: "Traefik", Containers: []string{"traefik", "traefik:v3.0"}, Status: "● Running - 3 hours"},
-		components.StackItem{TitleText: "Vaultwarden", Containers: []string{"vaultwarden", "vaultwarden/server:1.32.1"}, Status: "● Running - 8 hours"},
-		components.StackItem{TitleText: "PostgreSQL", Containers: []string{"postgres", "postgres:16-alpine"}, Status: "● Running - 2 days"},
-		components.StackItem{TitleText: "Redis", Containers: []string{"redis", "redis:7-alpine"}, Status: "● Running - 1 week"},
-		components.StackItem{TitleText: "Nginx", Containers: []string{"nginx", "nginx:latest"}, Status: "○ Stopped"},
-		components.StackItem{TitleText: "Traefik", Containers: []string{"traefik", "traefik:v3.0"}, Status: "● Running - 3 hours"},
+func stackItemsFromSummaries(summaries []data.StackSummary) []list.Item {
+	items := make([]list.Item, 0)
+	for _, summary := range summaries {
+		if len(summary.Services) == 0 {
+			items = append(items, components.StackItem{
+				TitleText:  summary.Name,
+				Containers: []string{"(no services)"},
+				Status:     "○ no services",
+				FilterText: summary.Name,
+			})
+			continue
+		}
+		for _, svc := range summary.Services {
+			containers := presentServiceLines(svc)
+			status := renderServiceStatus(svc)
+			filter := buildFilterValue(summary.Name, svc)
+			items = append(items, components.StackItem{
+				TitleText:  summary.Name,
+				Containers: containers,
+				Status:     status,
+				FilterText: filter,
+			})
+		}
 	}
+	return items
+}
 
-	// Create the list with custom delegate
+func presentServiceLines(svc data.ServiceSummary) []string {
+	meta := svc.Service
+	if svc.ContainerName != "" && svc.ContainerName != svc.Service {
+		meta = fmt.Sprintf("%s (container: %s)", svc.Service, svc.ContainerName)
+	}
+	return []string{meta, svc.Image}
+}
+
+func renderServiceStatus(_ data.ServiceSummary) string {
+	return "○ status unknown"
+}
+
+func buildFilterValue(stackName string, svc data.ServiceSummary) string {
+	pieces := []string{stackName, svc.Service, svc.ContainerName, svc.Image}
+	return strings.TrimSpace(strings.Join(pieces, " "))
+}
+
+func newModel(stacks []data.StackSummary) model {
+	items := stackItemsFromSummaries(stacks)
 	delegate := components.StacksDelegate{}
 	projectList := list.New(items, delegate, 0, 0)
 	projectList.SetShowTitle(false)
@@ -497,8 +529,22 @@ func New() *cobra.Command {
 		Use:   "dashboard",
 		Short: "Launch the Dockform dashboard (fullscreen TUI)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p := tea.NewProgram(newModel(), tea.WithAltScreen())
-			_, err := p.Run()
+			cliCtx, err := common.SetupCLIContext(cmd)
+			if err != nil {
+				return err
+			}
+
+			loader, err := data.NewLoader(cliCtx.Config, cliCtx.Docker)
+			if err != nil {
+				return err
+			}
+			stacks, err := loader.StackSummaries(cliCtx.Ctx)
+			if err != nil {
+				return err
+			}
+
+			p := tea.NewProgram(newModel(stacks), tea.WithAltScreen())
+			_, err = p.Run()
 			return err
 		},
 	}

@@ -16,11 +16,17 @@ type StackItem struct {
 	TitleText  string
 	Containers []string
 	Status     string
+	FilterText string
 }
 
 func (i StackItem) Title() string       { return i.TitleText }
 func (i StackItem) Description() string { return i.Status }
-func (i StackItem) FilterValue() string { return i.TitleText }
+func (i StackItem) FilterValue() string {
+	if i.FilterText != "" {
+		return i.FilterText
+	}
+	return i.TitleText
+}
 
 // StacksDelegate renders stack items with tree-like formatting.
 type StacksDelegate struct{}
@@ -49,7 +55,7 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 
 	for idx, container := range i.Containers {
 		rendered := textStyle.Render(container)
-		if idx == 1 {
+		if idx%2 == 1 {
 			rendered = textItalicStyle.Render(container)
 		}
 		bodyLines = append(bodyLines, treeStyle.Render("├ ")+rendered)
@@ -64,7 +70,8 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 	}
 	renderedStatus := treeStyle.Render("└ ") + statusText
 
-	lines := fitLinesToHeight(bodyLines, renderedStatus, d.Height())
+	width := m.Width()
+	lines := fitLinesToHeight(bodyLines, renderedStatus, d.Height(), width)
 	block := strings.Join(lines, "\n")
 	if index == m.Index() {
 		// Selected state: all text becomes FgBase, and the title becomes Primary
@@ -79,7 +86,7 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 		// containers
 		for idx, container := range i.Containers {
 			rendered := selectedText.Render(container)
-			if idx == 1 {
+			if idx%2 == 1 {
 				rendered = selectedItalic.Render(container)
 			}
 			selectedBody = append(selectedBody, selectedTree.Render("├ ")+rendered)
@@ -95,7 +102,7 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 		// Keep the bullet green for status while the text is FgBase
 		greenBullet := lipgloss.NewStyle().Foreground(theme.Success).Render("●")
 		selectedRenderedStatus := selectedTree.Render("└ ") + greenBullet + " " + selectedItalic.Render(statusText)
-		selectedLines := fitLinesToHeight(selectedBody, selectedRenderedStatus, d.Height())
+		selectedLines := fitLinesToHeight(selectedBody, selectedRenderedStatus, d.Height(), width)
 		block = lipgloss.NewStyle().Bold(true).Render(strings.Join(selectedLines, "\n"))
 	}
 
@@ -105,10 +112,10 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 // fitLinesToHeight ensures the rendered block has exactly h lines.
 // It takes body lines (title + containers) and a final status line, and
 // returns a slice of exactly h lines with the status as the last line.
-func fitLinesToHeight(body []string, statusLine string, h int) []string {
+func fitLinesToHeight(body []string, statusLine string, h int, width int) []string {
 	if h <= 1 {
 		// edge case: at least render status
-		return []string{statusLine}
+		return []string{clampLine(statusLine, width)}
 	}
 	result := make([]string, 0, h)
 	// number of body lines we can show
@@ -124,5 +131,15 @@ func fitLinesToHeight(body []string, statusLine string, h int) []string {
 	}
 	// always put status as the last line
 	result = append(result, statusLine)
+	for idx, line := range result {
+		result[idx] = clampLine(line, width)
+	}
 	return result
+}
+
+func clampLine(line string, width int) string {
+	if width <= 0 {
+		return line
+	}
+	return lipgloss.NewStyle().Width(width).MaxWidth(width).Render(line)
 }

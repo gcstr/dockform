@@ -11,8 +11,9 @@ type ComposePort struct {
 }
 
 type ComposeService struct {
-	Image string        `json:"image" yaml:"image"`
-	Ports []ComposePort `json:"ports" yaml:"ports"`
+	Image         string        `json:"image" yaml:"image"`
+	ContainerName string        `json:"container_name" yaml:"container_name"`
+	Ports         []ComposePort `json:"ports" yaml:"ports"`
 }
 
 // ComposePsItem is a subset of fields from `docker compose ps --format json`.
