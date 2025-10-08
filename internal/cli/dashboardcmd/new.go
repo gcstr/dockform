@@ -404,7 +404,11 @@ func (m model) renderColumns(bodyHeight int) string {
 	r1Header := renderHeaderWithPadding("Dockform", remainingContent, totalHorizontalPadding)
 	r2Header := renderHeaderWithPadding("Volumes", remainingContent, totalHorizontalPadding)
 	r3Header := renderHeaderWithPadding("Networks", remainingContent, totalHorizontalPadding)
-	rightRow1 := r1Header + "\n\n" + "placeholder"
+	// Top-right container: three simple items and a trailing blank line as margin
+	r1Line1 := components.RenderSimple("Context", "default")
+	r1Line2 := components.RenderSimple("Host", "unix:///var/run/docker.sock")
+	r1Line3 := components.RenderSimple("Version", "v0.6.2")
+	rightRow1 := r1Header + "\n\n" + r1Line1 + "\n" + r1Line2 + "\n" + r1Line3 + "\n"
 	rightRow2 := r2Header + "\n\n" + "placeholder"
 	rightRow3 := r3Header + "\n\n" + "placeholder"
 	rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow1, rightRow2, rightRow3)
