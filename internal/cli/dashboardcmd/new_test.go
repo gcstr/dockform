@@ -11,12 +11,14 @@ import (
 )
 
 func TestPresentServiceLinesIncludesContainer(t *testing.T) {
+	// With the new UI, presentServiceLines returns only the service and image; the
+	// delegate chooses to display the container name when available.
 	lines := presentServiceLines(data.ServiceSummary{Service: "web", ContainerName: "web-prod", Image: "nginx:alpine"})
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d", len(lines))
 	}
-	if !strings.Contains(lines[0], "web") || !strings.Contains(lines[0], "web-prod") {
-		t.Fatalf("expected metadata line to include service and container, got %q", lines[0])
+	if lines[0] != "web" {
+		t.Fatalf("expected first line to be service only, got %q", lines[0])
 	}
 	if lines[1] != "nginx:alpine" {
 		t.Fatalf("expected image line to be raw image name, got %q", lines[1])

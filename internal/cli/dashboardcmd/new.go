@@ -125,6 +125,9 @@ type model struct {
 	selectedName   string
 	logsBuf        []string
 	logLines       chan string
+	// debounce
+	pendingSelName string
+	debounceTimer  *time.Timer
 
 	quitting   bool
 	activePane int
@@ -234,6 +237,7 @@ func (m model) Init() tea.Cmd {
 		tea.SetBackgroundColor(theme.BgBase),
 		m.tickStatuses(),
 		m.tickLogs(),
+		m.startInitialLogsCmd(),
 	)
 }
 
@@ -292,6 +296,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logsTickMsg:
 		m = m.withFlushedLogs()
 		return m, m.tickLogs()
+	case startLogsFor:
+		if strings.TrimSpace(msg.name) == "" {
+			return m, nil
+		}
+		if m.pendingSelName != "" && msg.name != m.pendingSelName {
+			return m, nil
+		}
+		if m.logCancel != nil {
+			m.logCancel()
+			m.logCancel = nil
+		}
+		m.selectedName = msg.name
+		m.logsBuf = m.logsBuf[:0]
+		m.logsPager.SetContent("")
+		return m, m.streamLogsCmd(msg.name)
 	case logStreamStartedMsg:
 		// store cancel func for current stream
 		m.logCancel = msg.cancel
@@ -373,9 +392,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		oldIndex := m.list.Index()
 		m.list, cmd = m.list.Update(msg)
 		if m.list.Index() != oldIndex {
-			var cmdSel tea.Cmd
-			m, cmdSel = m.onSelectionChanged()
-			return m, cmdSel
+			// Debounce selection: delay starting logs to avoid rapid restarts during fast navigation
+			it, _ := m.list.SelectedItem().(components.StackItem)
+			m.pendingSelName = strings.TrimSpace(it.ContainerName)
+			if m.debounceTimer != nil {
+				m.debounceTimer.Stop()
+			}
+			name := m.pendingSelName
+			m.debounceTimer = time.AfterFunc(200*time.Millisecond, func() {
+				// Schedule a message to actually start logs for the pending selection
+				m.logLines <- "" // wake up tick; we’ll rely on tick to refresh view
+			})
+			// Return a command to process the debounced selection in the next update cycle
+			return m, func() tea.Msg {
+				time.Sleep(220 * time.Millisecond)
+				return startLogsFor{name: name}
+			}
 		}
 	case 1:
 		m.logsPager, cmd2 = m.logsPager.Update(msg)
@@ -394,6 +426,24 @@ func (m model) tickLogs() tea.Cmd {
 
 type statusTickMsg struct{}
 type logsTickMsg struct{}
+type startLogsFor struct{ name string }
+
+// startInitialLogsCmd schedules a one-shot start of logs for the initially selected item (if any)
+func (m model) startInitialLogsCmd() tea.Cmd {
+	return func() tea.Msg {
+		it, ok := m.list.SelectedItem().(components.StackItem)
+		if !ok {
+			return nil
+		}
+		name := strings.TrimSpace(it.ContainerName)
+		if name == "" {
+			return nil
+		}
+		// Use same debounced path for consistency
+		time.Sleep(150 * time.Millisecond)
+		return startLogsFor{name: name}
+	}
+}
 
 // refreshStatusesCmd queries docker for current statuses and updates model via a message
 func (m model) refreshStatusesCmd() tea.Cmd {
@@ -442,25 +492,7 @@ func (m model) refreshStatusesCmd() tea.Cmd {
 type statusesMsg struct{ statuses map[data.Key]data.Status }
 
 // onSelectionChanged starts a logs stream for the newly selected item.
-func (m *model) onSelectionChanged() (model, tea.Cmd) {
-	it, ok := m.list.SelectedItem().(components.StackItem)
-	if !ok {
-		return *m, nil
-	}
-	containerName := strings.TrimSpace(it.ContainerName)
-	if containerName == "" {
-		return *m, nil
-	}
-	// cancel previous
-	if m.logCancel != nil {
-		m.logCancel()
-		m.logCancel = nil
-	}
-	m.selectedName = containerName
-	m.logsBuf = m.logsBuf[:0]
-	m.logsPager.SetContent("")
-	return *m, m.streamLogsCmd(containerName)
-}
+// onSelectionChanged was replaced by a debounced start using startLogsFor messages
 
 // streamLogsCmd starts a docker logs --follow stream and feeds lines into the pager.
 type logStreamStartedMsg struct{ cancel context.CancelFunc }

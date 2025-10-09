@@ -24,6 +24,8 @@ func (p *LogsPager) SetSize(width, height int) {
 
 func (p *LogsPager) SetContent(content string) {
 	p.vp.SetContent(content)
+	// Always keep the viewport scrolled to the bottom when content changes
+	p.vp.GotoBottom()
 }
 
 func (p LogsPager) Update(msg tea.Msg) (LogsPager, tea.Cmd) {
