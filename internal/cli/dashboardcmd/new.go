@@ -3,7 +3,6 @@ package dashboardcmd
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -683,30 +682,54 @@ func (m model) renderColumns(bodyHeight int) string {
 		remainingContent = 1
 	}
 	// Right column: three stacked rows with headers sized to remainingContent
-	r1Header := renderHeaderWithPadding("Docker", remainingContent, totalHorizontalPadding, "slash")
 	r2Header := renderHeaderWithPadding("Volumes", remainingContent, totalHorizontalPadding, "slash")
 	r3Header := renderHeaderWithPadding("Networks", remainingContent, totalHorizontalPadding, "slash")
-	// Top-right container: dynamic banner (recomputed per width) and info lines
-	bannerWidth := max(1, remainingContent-totalHorizontalPadding)
-	banner := renderSlashBanner(bannerWidth, fmt.Sprintf("dockform %s", buildinfo.Version()))
-	r1Line1 := components.RenderSimple("Context", "default")
-	r1Line2 := components.RenderSimple("Host", "unix:///var/run/docker.sock")
-	r1Line3 := components.RenderSimple("Version", "v0.6.2")
-	rightRow1 := banner + "\n\n" + r1Header + "\n\n" + r1Line1 + "\n" + r1Line2 + "\n" + r1Line3 + "\n"
-	// Second-right container: three volumes with fake data
-	v1 := components.RenderVolume("vaultwarden", "/mnt/data/vaultwarden", "1.2GB")
-	v2 := components.RenderVolume("postgresql", "/var/lib/postgresql/data", "12.8GB")
-	v3 := components.RenderVolume("redis", "/data", "512MB")
-	rightRow2 := r2Header + "\n\n" + v1 + "\n\n" + v2 + "\n\n" + v3 + "\n"
-	// Third-right container: a few networks
-	n1 := components.RenderNetwork("traefik", "bridge")
-	n2 := components.RenderNetwork("frontend", "bridge")
-	n3 := components.RenderNetwork("backend", "bridge")
-	rightRow3 := r3Header + "\n\n" + n1 + "\n" + n2 + "\n" + n3 + "\n"
-	rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow1, rightRow2, rightRow3)
-	rightView := rightStyle.Width(remainingContent).Render(rightRows)
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, leftView, centerView, rightView)
+	// Top-right: gradient header "◇ Dockform /////" replacing the previous banner
+	{
+		contentWidth := remainingContent - totalHorizontalPadding
+		if contentWidth < 1 {
+			contentWidth = 1
+		}
+		base := "◇ Dockform "
+		baseWidth := lipgloss.Width(base)
+		slashCount := contentWidth - baseWidth
+		var raw string
+		if slashCount < 0 {
+			// Clamp base to available width
+			runes := []rune(base)
+			if contentWidth < len(runes) {
+				raw = string(runes[:contentWidth])
+			} else {
+				raw = base
+			}
+		} else {
+			raw = base + strings.Repeat("╱", slashCount)
+		}
+		// Apply gradient from #5EC6F6 to #376FE9
+		grad := components.RenderGradientText(raw, "#5EC6F6", "#376FE9")
+		// Ensure the rendered line clamps to the visible width
+		dockHeader := lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(grad)
+
+		r1Line1 := components.RenderSimple("Context", "default")
+		r1Line2 := components.RenderSimple("Host", "unix:///var/run/docker.sock")
+		r1Line3 := components.RenderSimple("Version", buildinfo.Version())
+		rightRow1 := dockHeader + "\n\n" + r1Line1 + "\n" + r1Line2 + "\n" + r1Line3 + "\n"
+
+		// Assemble right column with updated top section
+		v1 := components.RenderVolume("vaultwarden", "/mnt/data/vaultwarden", "1.2GB")
+		v2 := components.RenderVolume("postgresql", "/var/lib/postgresql/data", "12.8GB")
+		v3 := components.RenderVolume("redis", "/data", "512MB")
+		rightRow2 := r2Header + "\n\n" + v1 + "\n\n" + v2 + "\n\n" + v3 + "\n"
+		n1 := components.RenderNetwork("traefik", "bridge")
+		n2 := components.RenderNetwork("frontend", "bridge")
+		n3 := components.RenderNetwork("backend", "bridge")
+		rightRow3 := r3Header + "\n\n" + n1 + "\n" + n2 + "\n" + n3 + "\n"
+		rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow1, rightRow2, rightRow3)
+		rightView := rightStyle.Width(remainingContent).Render(rightRows)
+
+		return lipgloss.JoinHorizontal(lipgloss.Top, leftView, centerView, rightView)
+	}
 }
 
 func (m model) renderHelp() string {

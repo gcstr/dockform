@@ -9,13 +9,14 @@ import (
 )
 
 func patternChar(pattern string) string {
-	if pattern == "slash" {
+	switch pattern {
+	case "slash":
 		return "╱"
-	} else if pattern == "dash" {
+	case "dash":
 		return "━"
+	default:
+		return pattern
 	}
-
-	return pattern
 }
 
 // RenderHeader renders a single-line header like "◇ Title /////" that fills the full
