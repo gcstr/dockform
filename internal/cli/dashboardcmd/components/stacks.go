@@ -13,10 +13,12 @@ import (
 
 // StackItem represents an item in the stacks list (formerly projectItem).
 type StackItem struct {
-	TitleText  string
-	Containers []string
-	Status     string
-	FilterText string
+	TitleText     string
+	Service       string
+	ContainerName string
+	Containers    []string
+	Status        string
+	FilterText    string
 }
 
 func (i StackItem) Title() string       { return i.TitleText }
@@ -48,12 +50,25 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 	treeStyle := lipgloss.NewStyle().Foreground(theme.FgBase)
 	textStyle := lipgloss.NewStyle().Foreground(theme.FgHalfMuted)
 	textItalicStyle := textStyle.Italic(true)
-	greenBullet := lipgloss.NewStyle().Foreground(theme.Success).Render("●")
+	mutedBullet := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render("●")
+	yellowBullet := lipgloss.NewStyle().Foreground(theme.Warning).Render("●")
+	redBullet := lipgloss.NewStyle().Foreground(theme.Error).Render("●")
 
-	// Reduced indentation
 	bodyLines = append(bodyLines, treeStyle.Render("")+titleStyle.Render(i.TitleText))
 
 	for idx, container := range i.Containers {
+		// For the first content line, show only the container name if available; else show the service
+		if idx == 0 {
+			display := container
+			if strings.TrimSpace(i.ContainerName) != "" {
+				display = i.ContainerName
+			} else if strings.TrimSpace(i.Service) != "" {
+				display = i.Service
+			}
+			rendered := textStyle.Render(display)
+			bodyLines = append(bodyLines, treeStyle.Render("├ ")+rendered)
+			continue
+		}
 		rendered := textStyle.Render(container)
 		if idx%2 == 1 {
 			rendered = textItalicStyle.Render(container)
@@ -62,11 +77,24 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 	}
 
 	statusText := i.Status
+	// Choose bullet color by simple prefix marker if present in Status field
+	bullet := mutedBullet
+	if strings.HasPrefix(statusText, "[warn]") {
+		statusText = strings.TrimSpace(strings.TrimPrefix(statusText, "[warn]"))
+		bullet = yellowBullet
+	} else if strings.HasPrefix(statusText, "[err]") {
+		statusText = strings.TrimSpace(strings.TrimPrefix(statusText, "[err]"))
+		bullet = redBullet
+	} else if strings.HasPrefix(statusText, "[ok]") {
+		statusText = strings.TrimSpace(strings.TrimPrefix(statusText, "[ok]"))
+		// green for OK
+		bullet = lipgloss.NewStyle().Foreground(theme.Success).Render("●")
+	}
 	if strings.HasPrefix(statusText, "●") || strings.HasPrefix(statusText, "○") {
 		remainder := strings.TrimSpace(strings.TrimLeft(statusText, "●○ "))
-		statusText = greenBullet + " " + textItalicStyle.Render(remainder)
+		statusText = bullet + " " + textItalicStyle.Render(remainder)
 	} else {
-		statusText = greenBullet + " " + textItalicStyle.Render(statusText)
+		statusText = bullet + " " + textItalicStyle.Render(statusText)
 	}
 	renderedStatus := treeStyle.Render("└ ") + statusText
 
@@ -74,7 +102,7 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 	lines := fitLinesToHeight(bodyLines, renderedStatus, d.Height(), width)
 	block := strings.Join(lines, "\n")
 	if index == m.Index() {
-		// Selected state: all text becomes FgBase, and the title becomes Primary
+		// Selected state: same content as unselected, different colors
 		selectedTree := lipgloss.NewStyle().Foreground(theme.FgBase)
 		selectedText := lipgloss.NewStyle().Foreground(theme.FgBase)
 		selectedItalic := selectedText.Italic(true)
@@ -83,25 +111,42 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 		var selectedBody []string
 		// title
 		selectedBody = append(selectedBody, selectedTree.Render("")+selectedTitle.Render(i.TitleText))
-		// containers
+		// containers: use the same display logic (ContainerName preferred)
 		for idx, container := range i.Containers {
-			rendered := selectedText.Render(container)
+			var display string
+			if idx == 0 {
+				display = container
+				if strings.TrimSpace(i.ContainerName) != "" {
+					display = i.ContainerName
+				} else if strings.TrimSpace(i.Service) != "" {
+					display = i.Service
+				}
+			} else {
+				display = container
+			}
+			rendered := selectedText.Render(display)
 			if idx%2 == 1 {
-				rendered = selectedItalic.Render(container)
+				rendered = selectedItalic.Render(display)
 			}
 			selectedBody = append(selectedBody, selectedTree.Render("├ ")+rendered)
 		}
-		// status
-		statusText := i.Status
-		if strings.HasPrefix(statusText, "●") || strings.HasPrefix(statusText, "○") {
-			remainder := strings.TrimSpace(strings.TrimLeft(statusText, "●○ "))
-			statusText = selectedText.Render(remainder)
-		} else {
-			statusText = selectedText.Render(statusText)
+		// status: same logic as unselected, but render text with selected styles
+		raw := i.Status
+		bullet := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render("●")
+		if strings.HasPrefix(raw, "[warn]") {
+			raw = strings.TrimSpace(strings.TrimPrefix(raw, "[warn]"))
+			bullet = lipgloss.NewStyle().Foreground(theme.Warning).Render("●")
+		} else if strings.HasPrefix(raw, "[err]") {
+			raw = strings.TrimSpace(strings.TrimPrefix(raw, "[err]"))
+			bullet = lipgloss.NewStyle().Foreground(theme.Error).Render("●")
+		} else if strings.HasPrefix(raw, "[ok]") {
+			raw = strings.TrimSpace(strings.TrimPrefix(raw, "[ok]"))
+			bullet = lipgloss.NewStyle().Foreground(theme.Success).Render("●")
 		}
-		// Keep the bullet green for status while the text is FgBase
-		greenBullet := lipgloss.NewStyle().Foreground(theme.Success).Render("●")
-		selectedRenderedStatus := selectedTree.Render("└ ") + greenBullet + " " + selectedItalic.Render(statusText)
+		if strings.HasPrefix(raw, "●") || strings.HasPrefix(raw, "○") {
+			raw = strings.TrimSpace(strings.TrimLeft(raw, "●○ "))
+		}
+		selectedRenderedStatus := selectedTree.Render("└ ") + bullet + " " + selectedItalic.Render(raw)
 		selectedLines := fitLinesToHeight(selectedBody, selectedRenderedStatus, d.Height(), width)
 		block = lipgloss.NewStyle().Bold(true).Render(strings.Join(selectedLines, "\n"))
 	}

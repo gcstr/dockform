@@ -1,9 +1,12 @@
 package dashboardcmd
 
 import (
+	"bufio"
+	"context"
 	"fmt"
-	"os"
+	"io"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/v2/help"
 	"github.com/charmbracelet/bubbles/v2/key"
@@ -115,6 +118,14 @@ type model struct {
 	list      list.Model
 	logsPager components.LogsPager
 
+	// live state
+	statusProvider *data.StatusProvider
+	statusByKey    map[data.Key]data.Status
+	logCancel      context.CancelFunc
+	selectedName   string
+	logsBuf        []string
+	logLines       chan string
+
 	quitting   bool
 	activePane int
 }
@@ -124,10 +135,12 @@ func stackItemsFromSummaries(summaries []data.StackSummary) []list.Item {
 	for _, summary := range summaries {
 		if len(summary.Services) == 0 {
 			items = append(items, components.StackItem{
-				TitleText:  summary.Name,
-				Containers: []string{"(no services)"},
-				Status:     "○ no services",
-				FilterText: summary.Name,
+				TitleText:     summary.Name,
+				Service:       "",
+				ContainerName: "",
+				Containers:    []string{"(no services)"},
+				Status:        "○ no services",
+				FilterText:    summary.Name,
 			})
 			continue
 		}
@@ -136,10 +149,12 @@ func stackItemsFromSummaries(summaries []data.StackSummary) []list.Item {
 			status := renderServiceStatus(svc)
 			filter := buildFilterValue(summary.Name, svc)
 			items = append(items, components.StackItem{
-				TitleText:  summary.Name,
-				Containers: containers,
-				Status:     status,
-				FilterText: filter,
+				TitleText:     summary.Name,
+				Service:       svc.Service,
+				ContainerName: svc.ContainerName,
+				Containers:    containers,
+				Status:        status,
+				FilterText:    filter,
 			})
 		}
 	}
@@ -147,11 +162,8 @@ func stackItemsFromSummaries(summaries []data.StackSummary) []list.Item {
 }
 
 func presentServiceLines(svc data.ServiceSummary) []string {
-	meta := svc.Service
-	if svc.ContainerName != "" && svc.ContainerName != svc.Service {
-		meta = fmt.Sprintf("%s (container: %s)", svc.Service, svc.ContainerName)
-	}
-	return []string{meta, svc.Image}
+	// Only show service on the first line; rendering will substitute container name if known
+	return []string{svc.Service, svc.Image}
 }
 
 func renderServiceStatus(_ data.ServiceSummary) string {
@@ -200,32 +212,90 @@ func newModel(stacks []data.StackSummary) model {
 	h.Styles.FullDesc = muted
 	h.Styles.FullSeparator = muted
 
-	// Load logs content for the center pager
-	logsContent, _ := os.ReadFile("internal/cli/dashboardcmd/logs.log")
-
 	return model{
-		keys:      newKeyMap(),
-		help:      h,
-		list:      projectList,
-		logsPager: components.NewLogsPager(),
-	}.withLogs(string(logsContent))
+		keys:        newKeyMap(),
+		help:        h,
+		list:        projectList,
+		logsPager:   components.NewLogsPager(),
+		statusByKey: make(map[data.Key]data.Status),
+		logsBuf:     make([]string, 0, 512),
+	}
 }
 
-func (m model) withLogs(content string) model {
-	// Store content into pager at start; actual size will be set on first WindowSizeMsg
-	m.logsPager.SetContent(content)
-	return m
-}
+// withLogs is no longer used; keep for reference if needed in future.
+// func (m model) withLogs(content string) model {
+//     m.logsPager.SetContent(content)
+//     return m
+// }
 
 func (m model) Init() tea.Cmd {
 	// v2: set terminal background color; Bubble Tea will reset on close.
-	return tea.SetBackgroundColor(theme.BgBase)
+	return tea.Batch(
+		tea.SetBackgroundColor(theme.BgBase),
+		m.tickStatuses(),
+		m.tickLogs(),
+	)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case statusesMsg:
+		// Merge statuses and update list item descriptions
+		if m.statusByKey == nil {
+			m.statusByKey = map[data.Key]data.Status{}
+		}
+		for k, v := range msg.statuses {
+			m.statusByKey[k] = v
+		}
+		// Rebuild list items with updated status lines
+		items := m.list.Items()
+		newItems := make([]list.Item, 0, len(items))
+		for _, it := range items {
+			si, ok := it.(components.StackItem)
+			if !ok {
+				newItems = append(newItems, it)
+				continue
+			}
+			key := data.Key{Stack: si.TitleText}
+			// The key needs the service name; derive from first container line
+			if si.Service != "" {
+				key.Service = si.Service
+			} else if len(si.Containers) > 0 {
+				key.Service = si.Containers[0]
+			}
+			if st, ok := m.statusByKey[key]; ok {
+				// Map state to color; build status line like "● Up ..."
+				colorKey, text := data.FormatStatusLine(st.State, st.StatusText)
+				prefix := ""
+				switch colorKey {
+				case "success":
+					prefix = "[ok] "
+				case "warning":
+					prefix = "[warn] "
+				default:
+					prefix = "[err] "
+				}
+				si.Status = prefix + text
+				// Update ContainerName to the live name so selection uses it
+				if strings.TrimSpace(st.ContainerName) != "" {
+					si.ContainerName = st.ContainerName
+				}
+			}
+			newItems = append(newItems, si)
+		}
+		m.list.SetItems(newItems)
+		return m, nil
+	case statusTickMsg:
+		return m, m.refreshStatusesCmd()
+	case logsTickMsg:
+		m = m.withFlushedLogs()
+		return m, m.tickLogs()
+	case logStreamStartedMsg:
+		// store cancel func for current stream
+		m.logCancel = msg.cancel
+		return m, nil
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
@@ -300,11 +370,145 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case 0:
 		// Disable list's escape quit keybinding; keep only q/ctrl+c at app level
 		m.list.DisableQuitKeybindings()
+		oldIndex := m.list.Index()
 		m.list, cmd = m.list.Update(msg)
+		if m.list.Index() != oldIndex {
+			var cmdSel tea.Cmd
+			m, cmdSel = m.onSelectionChanged()
+			return m, cmdSel
+		}
 	case 1:
 		m.logsPager, cmd2 = m.logsPager.Update(msg)
 	}
 	return m, tea.Batch(cmd, cmd2)
+}
+
+// periodic status refresh
+func (m model) tickStatuses() tea.Cmd {
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return statusTickMsg{} })
+}
+
+func (m model) tickLogs() tea.Cmd {
+	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg { return logsTickMsg{} })
+}
+
+type statusTickMsg struct{}
+type logsTickMsg struct{}
+
+// refreshStatusesCmd queries docker for current statuses and updates model via a message
+func (m model) refreshStatusesCmd() tea.Cmd {
+	if m.statusProvider == nil {
+		return m.tickStatuses()
+	}
+	// capture current items for background
+	items := m.list.Items()
+	return tea.Sequence(
+		func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			stackMap := map[string][]data.ServiceSummary{}
+			for _, it := range items {
+				si, ok := it.(components.StackItem)
+				if !ok {
+					continue
+				}
+				if len(si.Containers) == 0 {
+					continue
+				}
+				service := si.Containers[0]
+				cname := ""
+				if strings.Contains(service, "(container:") {
+					parts := strings.Split(service, "(container:")
+					service = strings.TrimSpace(parts[0])
+					seg := strings.TrimSpace(strings.TrimSuffix(parts[1], ")"))
+					cname = seg
+				}
+				stackMap[si.TitleText] = append(stackMap[si.TitleText], data.ServiceSummary{Service: service, ContainerName: cname})
+			}
+			stacks := make([]data.StackSummary, 0, len(stackMap))
+			for name, svcs := range stackMap {
+				stacks = append(stacks, data.StackSummary{Name: name, Services: svcs})
+			}
+			statuses, err := m.statusProvider.FetchAll(ctx, stacks)
+			if err == nil {
+				return statusesMsg{statuses: statuses}
+			}
+			return nil
+		},
+		m.tickStatuses(),
+	)
+}
+
+type statusesMsg struct{ statuses map[data.Key]data.Status }
+
+// onSelectionChanged starts a logs stream for the newly selected item.
+func (m *model) onSelectionChanged() (model, tea.Cmd) {
+	it, ok := m.list.SelectedItem().(components.StackItem)
+	if !ok {
+		return *m, nil
+	}
+	containerName := strings.TrimSpace(it.ContainerName)
+	if containerName == "" {
+		return *m, nil
+	}
+	// cancel previous
+	if m.logCancel != nil {
+		m.logCancel()
+		m.logCancel = nil
+	}
+	m.selectedName = containerName
+	m.logsBuf = m.logsBuf[:0]
+	m.logsPager.SetContent("")
+	return *m, m.streamLogsCmd(containerName)
+}
+
+// streamLogsCmd starts a docker logs --follow stream and feeds lines into the pager.
+type logStreamStartedMsg struct{ cancel context.CancelFunc }
+
+func (m *model) streamLogsCmd(name string) tea.Cmd {
+	if m.statusProvider == nil {
+		return nil
+	}
+	pr, pw := io.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	// reader goroutine -> emit msgs to update the pager content
+	if m.logLines == nil {
+		m.logLines = make(chan string, 256)
+	}
+	go func() {
+		sc := bufio.NewScanner(pr)
+		for sc.Scan() {
+			m.logLines <- sc.Text()
+		}
+	}()
+	// writer command goroutine
+	go func() {
+		// Use underlying docker client via statusProvider
+		_ = m.statusProvider.Docker().StreamContainerLogs(ctx, name, 300, "", pw)
+		_ = pw.Close()
+	}()
+	return func() tea.Msg { return logStreamStartedMsg{cancel: cancel} }
+}
+
+func (m *model) withFlushedLogs() model {
+	drained := false
+	for m.logLines != nil {
+		select {
+		case ln := <-m.logLines:
+			m.logsBuf = append(m.logsBuf, ln)
+			if len(m.logsBuf) > 1000 {
+				m.logsBuf = m.logsBuf[len(m.logsBuf)-1000:]
+			}
+			drained = true
+		default:
+			goto done
+		}
+	}
+done:
+	if drained {
+		m.logsPager.SetContent(strings.Join(m.logsBuf, "\n"))
+	}
+	return *m
 }
 
 func (m model) View() string {
@@ -550,7 +754,11 @@ func New() *cobra.Command {
 				return err
 			}
 
-			p := tea.NewProgram(newModel(stacks), tea.WithAltScreen())
+			m := newModel(stacks)
+			// wire status provider with identifier for filtering
+			m.statusProvider = data.NewStatusProvider(cliCtx.Docker, cliCtx.Config.Docker.Identifier)
+
+			p := tea.NewProgram(m, tea.WithAltScreen())
 			_, err = p.Run()
 			return err
 		},
