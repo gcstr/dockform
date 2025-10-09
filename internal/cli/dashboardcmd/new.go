@@ -651,9 +651,9 @@ func (m model) renderColumns(bodyHeight int) string {
 	// Left column: render list with header (active pane highlighted)
 	var leftHeader string
 	if m.activePane == 0 {
-		leftHeader = components.RenderHeaderActive(leftTitle, leftW, totalHorizontalPadding)
+		leftHeader = components.RenderHeaderActive(leftTitle, leftW, totalHorizontalPadding, "dash")
 	} else {
-		leftHeader = renderHeaderWithPadding(leftTitle, leftW, totalHorizontalPadding)
+		leftHeader = renderHeaderWithPadding(leftTitle, leftW, totalHorizontalPadding, "dash")
 	}
 	leftContent := leftHeader + "\n" + m.list.View()
 
@@ -661,9 +661,9 @@ func (m model) renderColumns(bodyHeight int) string {
 	centerPadding := (paddingHorizontal + 1) * 2
 	var centerHeader string
 	if m.activePane == 1 {
-		centerHeader = components.RenderHeaderActive(centerTitle, centerW, centerPadding)
+		centerHeader = components.RenderHeaderActive(centerTitle, centerW, centerPadding, "dash")
 	} else {
-		centerHeader = renderHeaderWithPadding(centerTitle, centerW, centerPadding)
+		centerHeader = renderHeaderWithPadding(centerTitle, centerW, centerPadding, "dash")
 	}
 	// Fit pager to available height in center column, minus header (1), spacer (1), and one extra line
 	m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, innerHeight-3))
@@ -683,9 +683,9 @@ func (m model) renderColumns(bodyHeight int) string {
 		remainingContent = 1
 	}
 	// Right column: three stacked rows with headers sized to remainingContent
-	r1Header := renderHeaderWithPadding("Docker", remainingContent, totalHorizontalPadding)
-	r2Header := renderHeaderWithPadding("Volumes", remainingContent, totalHorizontalPadding)
-	r3Header := renderHeaderWithPadding("Networks", remainingContent, totalHorizontalPadding)
+	r1Header := renderHeaderWithPadding("Docker", remainingContent, totalHorizontalPadding, "slash")
+	r2Header := renderHeaderWithPadding("Volumes", remainingContent, totalHorizontalPadding, "slash")
+	r3Header := renderHeaderWithPadding("Networks", remainingContent, totalHorizontalPadding, "slash")
 	// Top-right container: dynamic banner (recomputed per width) and info lines
 	bannerWidth := max(1, remainingContent-totalHorizontalPadding)
 	banner := renderSlashBanner(bannerWidth, fmt.Sprintf("dockform %s", buildinfo.Version()))
@@ -725,8 +725,8 @@ func (m model) renderHelp() string {
 
 // renderHeaderWithPadding allows callers to pass an explicit horizontal padding
 // value so headers fill exactly the visible content width after padding changes.
-func renderHeaderWithPadding(title string, containerWidth int, horizontalPadding int) string {
-	return components.RenderHeader(title, containerWidth, horizontalPadding)
+func renderHeaderWithPadding(title string, containerWidth int, horizontalPadding int, pattern string) string {
+	return components.RenderHeader(title, containerWidth, horizontalPadding, pattern)
 }
 
 // renderSlashBanner builds a three-line banner with a centered middle line:

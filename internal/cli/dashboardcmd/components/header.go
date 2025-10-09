@@ -8,13 +8,23 @@ import (
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/theme"
 )
 
-var patternChar = "╱"
+func patternChar(pattern string) string {
+	if pattern == "slash" {
+		return "╱"
+	} else if pattern == "dash" {
+		return "━"
+	}
+
+	return pattern
+}
 
 // RenderHeader renders a single-line header like "◇ Title /////" that fills the full
 // content width of the parent container, never wrapping. It clamps to the given width.
 // The containerWidth should be the container's content width; the function accounts for
 // horizontal padding via the totalHorizontalPadding value passed by the caller.
-func RenderHeader(title string, containerWidth int, totalHorizontalPadding int) string {
+func RenderHeader(title string, containerWidth int, totalHorizontalPadding int, pattern string) string {
+	patternChar := patternChar(pattern)
+
 	// Account for horizontal padding inside the container
 	contentWidth := containerWidth - totalHorizontalPadding
 	if contentWidth <= 0 {
@@ -50,7 +60,9 @@ func RenderHeader(title string, containerWidth int, totalHorizontalPadding int) 
 
 // RenderHeaderActive renders the same header but highlights the title section
 // with the primary color to denote focus/selection.
-func RenderHeaderActive(title string, containerWidth int, totalHorizontalPadding int) string {
+func RenderHeaderActive(title string, containerWidth int, totalHorizontalPadding int, pattern string) string {
+	patternChar := patternChar(pattern)
+
 	// Account for horizontal padding inside the container
 	contentWidth := containerWidth - totalHorizontalPadding
 	if contentWidth <= 0 {

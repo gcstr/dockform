@@ -21,7 +21,7 @@ func TestRenderHeaderFitsWidth(t *testing.T) {
 		padding = 2
 	)
 
-	got := RenderHeader(title, width, padding)
+	got := RenderHeader(title, width, padding, "slash")
 	contentWidth := width - padding
 	if w := lipgloss.Width(got); w != contentWidth {
 		t.Fatalf("expected width %d, got %d", contentWidth, w)
@@ -30,13 +30,13 @@ func TestRenderHeaderFitsWidth(t *testing.T) {
 	if !strings.HasPrefix(plain, "◇ "+title) {
 		t.Fatalf("expected header to start with title, got %q", plain)
 	}
-	if !strings.Contains(plain, patternChar) {
-		t.Fatalf("expected filler pattern %q in %q", patternChar, plain)
+	if !strings.Contains(plain, "╱") {
+		t.Fatalf("expected filler pattern %q in %q", "╱", plain)
 	}
 }
 
 func TestRenderHeaderTruncatesLongTitle(t *testing.T) {
-	got := RenderHeader("Super long title that surely exceeds the width", 12, 2)
+	got := RenderHeader("Super long title that surely exceeds the width", 12, 2, "slash")
 	if got == "" {
 		t.Fatalf("expected truncated header, got empty string")
 	}
@@ -46,8 +46,8 @@ func TestRenderHeaderTruncatesLongTitle(t *testing.T) {
 }
 
 func TestRenderHeaderActiveDiffers(t *testing.T) {
-	inactive := RenderHeader("Stacks", 26, 2)
-	active := RenderHeaderActive("Stacks", 26, 2)
+	inactive := RenderHeader("Stacks", 26, 2, "slash")
+	active := RenderHeaderActive("Stacks", 26, 2, "slash")
 	if inactive == active {
 		t.Fatalf("expected active header to differ from inactive one")
 	}
