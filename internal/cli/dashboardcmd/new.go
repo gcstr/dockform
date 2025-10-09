@@ -159,8 +159,15 @@ func renderServiceStatus(_ data.ServiceSummary) string {
 }
 
 func buildFilterValue(stackName string, svc data.ServiceSummary) string {
-	pieces := []string{stackName, svc.Service, svc.ContainerName, svc.Image}
-	return strings.TrimSpace(strings.Join(pieces, " "))
+	parts := []string{}
+	for _, piece := range []string{stackName, svc.Service, svc.ContainerName, svc.Image} {
+		p := strings.TrimSpace(piece)
+		if p == "" {
+			continue
+		}
+		parts = append(parts, p)
+	}
+	return strings.Join(parts, " ")
 }
 
 func newModel(stacks []data.StackSummary) model {
