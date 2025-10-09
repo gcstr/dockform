@@ -682,39 +682,44 @@ func (m model) renderColumns(bodyHeight int) string {
 		remainingContent = 1
 	}
 	// Right column: three stacked rows with headers sized to remainingContent
-	r2Header := renderHeaderWithPadding("Volumes", remainingContent, totalHorizontalPadding, "slash")
-	r3Header := renderHeaderWithPadding("Networks", remainingContent, totalHorizontalPadding, "slash")
-
-	// Top-right: gradient header "◇ Dockform /////" replacing the previous banner
+	// Build gradient headers for right column sections that were previously gray
 	{
 		contentWidth := remainingContent - totalHorizontalPadding
 		if contentWidth < 1 {
 			contentWidth = 1
 		}
-		base := "◇ Dockform "
-		baseWidth := lipgloss.Width(base)
-		slashCount := contentWidth - baseWidth
-		var raw string
-		if slashCount < 0 {
-			// Clamp base to available width
-			runes := []rune(base)
-			if contentWidth < len(runes) {
-				raw = string(runes[:contentWidth])
+		buildGradHeader := func(title string) string {
+			base := "◇ " + title + " "
+			baseWidth := lipgloss.Width(base)
+			slashCount := contentWidth - baseWidth
+			var raw string
+			if slashCount < 0 {
+				// Clamp base to available width
+				runes := []rune(base)
+				if contentWidth < len(runes) {
+					raw = string(runes[:contentWidth])
+				} else {
+					raw = base
+				}
 			} else {
-				raw = base
+				raw = base + strings.Repeat("╱", slashCount)
 			}
-		} else {
-			raw = base + strings.Repeat("╱", slashCount)
+			grad := components.RenderGradientText(raw, "#5EC6F6", "#376FE9")
+			return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(grad)
 		}
-		// Apply gradient from #5EC6F6 to #376FE9
-		grad := components.RenderGradientText(raw, "#5EC6F6", "#376FE9")
-		// Ensure the rendered line clamps to the visible width
-		dockHeader := lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(grad)
+		r1Header := buildGradHeader("Docker")
+		r2Header := buildGradHeader("Volumes")
+		r3Header := buildGradHeader("Networks")
+
+		r0Line0 := components.RenderGradientText("DOCKFORM v0.6.3", "#5EC6F6", "#376FE9")
+		r0Line1 := components.RenderSimple("Identifier", "homelab")
+		r0Line2 := components.RenderSimple("Manifest", ".../dockform/manifest.yaml")
+		rightRow0 := r0Line0 + "\n\n" + r0Line1 + "\n" + r0Line2 + "\n"
 
 		r1Line1 := components.RenderSimple("Context", "default")
 		r1Line2 := components.RenderSimple("Host", "unix:///var/run/docker.sock")
 		r1Line3 := components.RenderSimple("Version", buildinfo.Version())
-		rightRow1 := dockHeader + "\n\n" + r1Line1 + "\n" + r1Line2 + "\n" + r1Line3 + "\n"
+		rightRow1 := r1Header + "\n\n" + r1Line1 + "\n" + r1Line2 + "\n" + r1Line3 + "\n"
 
 		// Assemble right column with updated top section
 		v1 := components.RenderVolume("vaultwarden", "/mnt/data/vaultwarden", "1.2GB")
@@ -725,7 +730,7 @@ func (m model) renderColumns(bodyHeight int) string {
 		n2 := components.RenderNetwork("frontend", "bridge")
 		n3 := components.RenderNetwork("backend", "bridge")
 		rightRow3 := r3Header + "\n\n" + n1 + "\n" + n2 + "\n" + n3 + "\n"
-		rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow1, rightRow2, rightRow3)
+		rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow0, rightRow1, rightRow2, rightRow3)
 		rightView := rightStyle.Width(remainingContent).Render(rightRows)
 
 		return lipgloss.JoinHorizontal(lipgloss.Top, leftView, centerView, rightView)
