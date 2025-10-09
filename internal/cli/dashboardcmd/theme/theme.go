@@ -7,7 +7,7 @@ var (
 	FgBase      = lipgloss.Color("#C8D3F5")
 	FgHalfMuted = lipgloss.Color("#828BB8")
 	FgMuted     = lipgloss.Color("#444A73")
-	FgSubtle    = lipgloss.Color("#464C76")
+	FgSubtle    = lipgloss.Color("#313657")
 	FgSelected  = lipgloss.Color("#F1EFEF")
 )
 

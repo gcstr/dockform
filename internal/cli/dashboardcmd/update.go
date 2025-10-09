@@ -1,0 +1,242 @@
+package dashboardcmd
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/v2/key"
+	"github.com/charmbracelet/bubbles/v2/list"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/gcstr/dockform/internal/cli/dashboardcmd/components"
+	"github.com/gcstr/dockform/internal/cli/dashboardcmd/data"
+	"github.com/gcstr/dockform/internal/cli/dashboardcmd/theme"
+)
+
+func (m model) Init() tea.Cmd {
+	// v2: set terminal background color; Bubble Tea will reset on close.
+	return tea.Batch(
+		tea.SetBackgroundColor(theme.BgBase),
+		m.tickStatuses(),
+		m.tickLogs(),
+		m.startInitialLogsCmd(),
+	)
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case statusesMsg:
+		if m.statusByKey == nil {
+			m.statusByKey = map[data.Key]data.Status{}
+		}
+		for k, v := range msg.statuses {
+			m.statusByKey[k] = v
+		}
+		items := m.list.Items()
+		newItems := make([]list.Item, 0, len(items))
+		for _, it := range items {
+			si, ok := it.(components.StackItem)
+			if !ok {
+				newItems = append(newItems, it)
+				continue
+			}
+			key := data.Key{Stack: si.TitleText}
+			if si.Service != "" {
+				key.Service = si.Service
+			} else if len(si.Containers) > 0 {
+				key.Service = si.Containers[0]
+			}
+			if st, ok := m.statusByKey[key]; ok {
+				colorKey, text := data.FormatStatusLine(st.State, st.StatusText)
+				prefix := ""
+				switch colorKey {
+				case "success":
+					prefix = "[ok] "
+				case "warning":
+					prefix = "[warn] "
+				default:
+					prefix = "[err] "
+				}
+				si.Status = prefix + text
+				if strings.TrimSpace(st.ContainerName) != "" {
+					si.ContainerName = st.ContainerName
+				}
+			}
+			newItems = append(newItems, si)
+		}
+		m.list.SetItems(newItems)
+		return m, nil
+	case statusTickMsg:
+		return m, m.refreshStatusesCmd()
+	case logsTickMsg:
+		m = m.withFlushedLogs()
+		return m, m.tickLogs()
+	case startLogsFor:
+		if strings.TrimSpace(msg.name) == "" {
+			return m, nil
+		}
+		if m.pendingSelName != "" && msg.name != m.pendingSelName {
+			return m, nil
+		}
+		if m.logCancel != nil {
+			m.logCancel()
+			m.logCancel = nil
+		}
+		m.selectedName = msg.name
+		m.logsBuf = m.logsBuf[:0]
+		m.logsPager.SetContent("")
+		return m, m.streamLogsCmd(msg.name)
+	case logStreamStartedMsg:
+		m.logCancel = msg.cancel
+		return m, nil
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Quit):
+			m.quitting = true
+			return m, tea.Quit
+		case key.Matches(msg, m.keys.CyclePane):
+			m.activePane = (m.activePane + 1) % 2
+			return m, nil
+		case key.Matches(msg, m.keys.ToggleHelp):
+			m.help.ShowAll = !m.help.ShowAll
+			helpHeight := 0
+			if m.help.View(m.keys) != "" {
+				helpHeight = lipgloss.Height(m.help.View(m.keys))
+			}
+			bodyHeight := m.height - helpHeight - 1
+			if bodyHeight < 1 {
+				bodyHeight = 1
+			}
+			leftW, centerW, _ := computeColumnWidths(m.width)
+			listWidth := leftW - totalHorizontalPadding
+			listHeight := bodyHeight - 2
+			if listWidth < 1 {
+				listWidth = 1
+			}
+			if listHeight < 1 {
+				listHeight = 1
+			}
+			m.list.SetSize(listWidth, listHeight)
+			m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, bodyHeight-2))
+			return m, nil
+		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
+		reservedHelpHeight := lipgloss.Height(m.renderHelp())
+		if reservedHelpHeight == 0 {
+			reservedHelpHeight = 1
+		}
+		bodyHeight := m.height - reservedHelpHeight - 1
+		if bodyHeight < 1 {
+			bodyHeight = 1
+		}
+		leftW, centerW, _ := computeColumnWidths(m.width)
+
+		listWidth := leftW - totalHorizontalPadding
+		listHeight := bodyHeight - 2
+		if listWidth < 1 {
+			listWidth = 1
+		}
+		if listHeight < 1 {
+			listHeight = 1
+		}
+		m.list.SetSize(listWidth, listHeight)
+		m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, bodyHeight-3))
+		return m, nil
+	}
+
+	var cmd2 tea.Cmd
+	switch m.activePane {
+	case 0:
+		m.list.DisableQuitKeybindings()
+		oldIndex := m.list.Index()
+		m.list, cmd = m.list.Update(msg)
+		if m.list.Index() != oldIndex {
+			it, _ := m.list.SelectedItem().(components.StackItem)
+			m.pendingSelName = strings.TrimSpace(it.ContainerName)
+			if m.debounceTimer != nil {
+				m.debounceTimer.Stop()
+			}
+			name := m.pendingSelName
+			m.debounceTimer = time.AfterFunc(200*time.Millisecond, func() {
+				m.logLines <- ""
+			})
+			return m, func() tea.Msg {
+				time.Sleep(220 * time.Millisecond)
+				return startLogsFor{name: name}
+			}
+		}
+	case 1:
+		m.logsPager, cmd2 = m.logsPager.Update(msg)
+	}
+	return m, tea.Batch(cmd, cmd2)
+}
+
+func (m model) tickStatuses() tea.Cmd {
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return statusTickMsg{} })
+}
+
+type statusTickMsg struct{}
+type statusesMsg struct{ statuses map[data.Key]data.Status }
+
+func (m model) startInitialLogsCmd() tea.Cmd {
+	return func() tea.Msg {
+		it, ok := m.list.SelectedItem().(components.StackItem)
+		if !ok {
+			return nil
+		}
+		name := strings.TrimSpace(it.ContainerName)
+		if name == "" {
+			return nil
+		}
+		time.Sleep(150 * time.Millisecond)
+		return startLogsFor{name: name}
+	}
+}
+
+func (m model) refreshStatusesCmd() tea.Cmd {
+	if m.statusProvider == nil {
+		return m.tickStatuses()
+	}
+	items := m.list.Items()
+	return tea.Sequence(
+		func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			stackMap := map[string][]data.ServiceSummary{}
+			for _, it := range items {
+				si, ok := it.(components.StackItem)
+				if !ok {
+					continue
+				}
+				if len(si.Containers) == 0 {
+					continue
+				}
+				service := si.Containers[0]
+				cname := ""
+				if strings.Contains(service, "(container:") {
+					parts := strings.Split(service, "(container:")
+					service = strings.TrimSpace(parts[0])
+					seg := strings.TrimSpace(strings.TrimSuffix(parts[1], ")"))
+					cname = seg
+				}
+				stackMap[si.TitleText] = append(stackMap[si.TitleText], data.ServiceSummary{Service: service, ContainerName: cname})
+			}
+			stacks := make([]data.StackSummary, 0, len(stackMap))
+			for name, svcs := range stackMap {
+				stacks = append(stacks, data.StackSummary{Name: name, Services: svcs})
+			}
+			statuses, err := m.statusProvider.FetchAll(ctx, stacks)
+			if err == nil {
+				return statusesMsg{statuses: statuses}
+			}
+			return nil
+		},
+		m.tickStatuses(),
+	)
+}
