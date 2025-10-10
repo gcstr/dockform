@@ -28,6 +28,7 @@ type model struct {
 
 	ctx          context.Context
 	dockerClient *dockercli.Client
+	stacks       []data.StackSummary
 	volumes      []dockercli.VolumeSummary
 	networks     []dockercli.NetworkSummary
 
@@ -46,6 +47,9 @@ type model struct {
 	// debounce
 	pendingSelName string
 	debounceTimer  *time.Timer
+
+	// cached UI strings by key (e.g., right-column gradient headers)
+	headerCache map[string]string
 
 	quitting   bool
 	activePane int
@@ -90,6 +94,7 @@ func newModel(ctx context.Context, docker *dockercli.Client, stacks []data.Stack
 		manifestPath:  strings.TrimSpace(manifestPath),
 		ctx:           ctx,
 		dockerClient:  docker,
+		stacks:        stacks,
 		volumes:       nil,
 		networks:      nil,
 		keys:          newKeyMap(),
@@ -98,6 +103,7 @@ func newModel(ctx context.Context, docker *dockercli.Client, stacks []data.Stack
 		logsPager:     components.NewLogsPager(),
 		statusByKey:   make(map[data.Key]data.Status),
 		logsBuf:       make([]string, 0, 512),
+		headerCache:   make(map[string]string),
 	}
 }
 
