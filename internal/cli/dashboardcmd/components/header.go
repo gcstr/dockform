@@ -24,7 +24,7 @@ func patternChar(pattern string) string {
 // The containerWidth should be the container's content width; the function accounts for
 // horizontal padding via the totalHorizontalPadding value passed by the caller.
 func RenderHeader(title string, containerWidth int, totalHorizontalPadding int, pattern string) string {
-	patternChar := patternChar(pattern)
+    pc := patternChar(pattern)
 
 	// Account for horizontal padding inside the container
 	contentWidth := containerWidth - totalHorizontalPadding
@@ -33,7 +33,7 @@ func RenderHeader(title string, containerWidth int, totalHorizontalPadding int, 
 	}
 	// If no title, fill the entire line with the pattern character
 	if strings.TrimSpace(title) == "" {
-		slashes := strings.Repeat(patternChar, contentWidth)
+        slashes := strings.Repeat(pc, contentWidth)
 		slashesStyled := lipgloss.NewStyle().Foreground(theme.FgSubtle).Render(slashes)
 		if lipgloss.Width(slashesStyled) > contentWidth {
 			return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(slashesStyled)
@@ -53,7 +53,7 @@ func RenderHeader(title string, containerWidth int, totalHorizontalPadding int, 
 	}
 
 	// Build slashes
-	slashes := strings.Repeat(patternChar, slashCount)
+    slashes := strings.Repeat(pc, slashCount)
 	// Style parts separately
 	baseStyled := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render(base)
 	slashesStyled := lipgloss.NewStyle().Foreground(theme.FgSubtle).Render(slashes)
@@ -71,7 +71,7 @@ func RenderHeader(title string, containerWidth int, totalHorizontalPadding int, 
 // RenderHeaderActive renders the same header but highlights the title section
 // with the primary color to denote focus/selection.
 func RenderHeaderActive(title string, containerWidth int, totalHorizontalPadding int, pattern string) string {
-	patternChar := patternChar(pattern)
+    pc := patternChar(pattern)
 
 	// Account for horizontal padding inside the container
 	contentWidth := containerWidth - totalHorizontalPadding
@@ -80,7 +80,7 @@ func RenderHeaderActive(title string, containerWidth int, totalHorizontalPadding
 	}
 	// If no title, fill the entire line with the pattern character using gradient
 	if strings.TrimSpace(title) == "" {
-		raw := strings.Repeat(patternChar, contentWidth)
+        raw := strings.Repeat(pc, contentWidth)
 		grad := RenderGradientText(raw, "#5EC6F6", "#376FE9")
 		if lipgloss.Width(grad) > contentWidth {
 			return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(grad)
@@ -105,7 +105,7 @@ func RenderHeaderActive(title string, containerWidth int, totalHorizontalPadding
 	}
 
 	// Build slashes
-	slashes := strings.Repeat(patternChar, slashCount)
+    slashes := strings.Repeat(pc, slashCount)
 	// Apply gradient across entire header text
 	raw := base + slashes
 	result := RenderGradientText(raw, "#5EC6F6", "#376FE9")

@@ -51,19 +51,7 @@ func New() *cobra.Command {
 	return cmd
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
+// min and max moved to util.go for reuse in the package
 
 var manifestFilenames = []string{"dockform.yml", "dockform.yaml", "Dockform.yml", "Dockform.yaml"}
 
