@@ -64,7 +64,7 @@ func TestRenderSimple(t *testing.T) {
 }
 
 func TestRenderVolumeStructure(t *testing.T) {
-	got := RenderVolume("vault", "/mnt/data", "1.2GB")
+	got := RenderVolume("vault", "/mnt/data", "1.2GB", false)
 	plain := stripANSI(got)
 	lines := strings.Split(plain, "\n")
 	if len(lines) != 3 {
@@ -82,7 +82,7 @@ func TestRenderVolumeStructure(t *testing.T) {
 }
 
 func TestRenderNetwork(t *testing.T) {
-	got := RenderNetwork("frontend", "bridge")
+	got := RenderNetwork("frontend", "bridge", false)
 	plain := stripANSI(got)
 	if plain != "frontend - bridge" {
 		t.Fatalf("unexpected plain network output %q", plain)

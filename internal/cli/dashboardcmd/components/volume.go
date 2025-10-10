@@ -15,7 +15,8 @@ import (
 //
 // Colors follow the same pattern used in stack list items: title and tree in
 // theme.FgBase; secondary text in theme.FgHalfMuted; the final line is italic.
-func RenderVolume(name, mountPath, detail string) string {
+func RenderVolume(name, mountPath, detail string, highlight bool) string {
+	_ = highlight
 	titleStyle := lipgloss.NewStyle().Foreground(theme.FgBase).Bold(true)
 	treeStyle := lipgloss.NewStyle().Foreground(theme.FgBase)
 	textStyle := lipgloss.NewStyle().Foreground(theme.FgHalfMuted)

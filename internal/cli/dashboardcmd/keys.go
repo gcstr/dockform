@@ -12,6 +12,7 @@ type keyMap struct {
 	NextPage   key.Binding
 	PrevPage   key.Binding
 	CyclePane  key.Binding
+	Select     key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -44,6 +45,10 @@ func newKeyMap() keyMap {
 			key.WithKeys("tab"),
 			key.WithHelp("tab", "next pane"),
 		),
+		Select: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "focus logs"),
+		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", "quit"),
@@ -61,6 +66,6 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.MoveUp, k.MoveDown, k.NextPage, k.PrevPage}, // navigation column
-		{k.Filter, k.Quit}, // actions column
+		{k.Filter, k.Select, k.CyclePane, k.Quit},      // actions column
 	}
 }

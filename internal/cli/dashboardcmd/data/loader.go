@@ -41,6 +41,8 @@ type ServiceSummary struct {
 	Service       string
 	ContainerName string
 	Image         string
+	Networks      []string
+	Volumes       []string
 }
 
 // StackSummaries resolves compose metadata for each manifest stack.
@@ -95,7 +97,26 @@ func (l *Loader) loadServices(ctx context.Context, stackName string, stack manif
 			image = "(no image)"
 		}
 		containerName := strings.TrimSpace(svc.ContainerName)
-		services = append(services, ServiceSummary{Service: serviceName, ContainerName: containerName, Image: image})
+		networks := make([]string, 0, len(svc.Networks))
+		for _, n := range svc.Networks {
+			n = strings.TrimSpace(n)
+			if n == "" {
+				continue
+			}
+			networks = append(networks, n)
+		}
+		volumes := make([]string, 0, len(svc.Volumes))
+		for _, v := range svc.Volumes {
+			if strings.TrimSpace(v.Type) != "volume" {
+				continue
+			}
+			source := strings.TrimSpace(v.Source)
+			if source == "" {
+				continue
+			}
+			volumes = append(volumes, source)
+		}
+		services = append(services, ServiceSummary{Service: serviceName, ContainerName: containerName, Image: image, Networks: networks, Volumes: volumes})
 	}
 
 	sort.Slice(services, func(i, j int) bool {

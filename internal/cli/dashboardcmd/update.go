@@ -131,6 +131,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.CyclePane):
 			m.activePane = (m.activePane + 1) % 2
 			return m, nil
+		case key.Matches(msg, m.keys.Select):
+			if m.activePane == 0 {
+				name := strings.TrimSpace(m.selectedContainerName())
+				current := strings.TrimSpace(m.selectedName)
+				m.activePane = 1
+				if name != "" && name != current {
+					return m, tea.Batch(func() tea.Msg { return startLogsFor{name: name} })
+				}
+				return m, nil
+			}
+			return m, nil
 		case key.Matches(msg, m.keys.ToggleHelp):
 			m.help.ShowAll = !m.help.ShowAll
 			helpHeight := 0

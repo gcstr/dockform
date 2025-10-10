@@ -2,6 +2,7 @@ package dashboardcmd
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,11 +27,13 @@ type model struct {
 	engineVersion string
 	manifestPath  string
 
-	ctx          context.Context
-	dockerClient *dockercli.Client
-	stacks       []data.StackSummary
-	volumes      []dockercli.VolumeSummary
-	networks     []dockercli.NetworkSummary
+	ctx               context.Context
+	dockerClient      *dockercli.Client
+	stacks            []data.StackSummary
+	volumes           []dockercli.VolumeSummary
+	networks          []dockercli.NetworkSummary
+	containerNetworks map[string][]string
+	containerVolumes  map[string][]string
 
 	keys      keyMap
 	help      help.Model
@@ -87,25 +90,31 @@ func newModel(ctx context.Context, docker *dockercli.Client, stacks []data.Stack
 	h.Styles.FullDesc = muted
 	h.Styles.FullSeparator = muted
 
+	containerNetworks := make(map[string][]string)
+	containerVolumes := make(map[string][]string)
+	buildAttachmentMaps(stacks, containerNetworks, containerVolumes)
+
 	return model{
-		version:       strings.TrimSpace(version),
-		identifier:    strings.TrimSpace(identifier),
-		contextName:   strings.TrimSpace(contextName),
-		dockerHost:    strings.TrimSpace(dockerHost),
-		engineVersion: strings.TrimSpace(engineVersion),
-		manifestPath:  strings.TrimSpace(manifestPath),
-		ctx:           ctx,
-		dockerClient:  docker,
-		stacks:        stacks,
-		volumes:       nil,
-		networks:      nil,
-		keys:          newKeyMap(),
-		help:          h,
-		list:          projectList,
-		logsPager:     components.NewLogsPager(),
-		statusByKey:   make(map[data.Key]data.Status),
-		logsBuf:       make([]string, 0, 512),
-		headerCache:   make(map[string]string),
+		version:           strings.TrimSpace(version),
+		identifier:        strings.TrimSpace(identifier),
+		contextName:       strings.TrimSpace(contextName),
+		dockerHost:        strings.TrimSpace(dockerHost),
+		engineVersion:     strings.TrimSpace(engineVersion),
+		manifestPath:      strings.TrimSpace(manifestPath),
+		ctx:               ctx,
+		dockerClient:      docker,
+		stacks:            stacks,
+		volumes:           nil,
+		networks:          nil,
+		containerNetworks: containerNetworks,
+		containerVolumes:  containerVolumes,
+		keys:              newKeyMap(),
+		help:              h,
+		list:              projectList,
+		logsPager:         components.NewLogsPager(),
+		statusByKey:       make(map[data.Key]data.Status),
+		logsBuf:           make([]string, 0, 512),
+		headerCache:       make(map[string]string),
 	}
 }
 
@@ -159,4 +168,127 @@ func buildFilterValue(stackName string, svc data.ServiceSummary) string {
 		parts = append(parts, p)
 	}
 	return strings.Join(parts, " ")
+}
+
+func buildAttachmentMaps(stacks []data.StackSummary, networks map[string][]string, volumes map[string][]string) {
+	for _, stack := range stacks {
+		for _, svc := range stack.Services {
+			keys := serviceKeys(svc)
+			if len(keys) == 0 {
+				continue
+			}
+			nets := uniqueSortedStrings(svc.Networks)
+			vols := uniqueSortedStrings(svc.Volumes)
+			for _, key := range keys {
+				if len(nets) > 0 {
+					networks[key] = mergeStringValues(networks[key], nets)
+				}
+				if len(vols) > 0 {
+					volumes[key] = mergeStringValues(volumes[key], vols)
+				}
+			}
+		}
+	}
+}
+
+func serviceKeys(svc data.ServiceSummary) []string {
+	keys := []string{}
+	if name := strings.TrimSpace(svc.ContainerName); name != "" {
+		keys = append(keys, name)
+	}
+	if svcName := strings.TrimSpace(svc.Service); svcName != "" {
+		keys = append(keys, svcName)
+	}
+	return keys
+}
+
+func mergeStringValues(existing []string, incoming []string) []string {
+	combined := append(existing, incoming...)
+	return uniqueSortedStrings(combined)
+}
+
+func uniqueSortedStrings(vals []string) []string {
+	seen := make(map[string]struct{}, len(vals))
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (m model) selectedKeys() (string, string) {
+	item, ok := m.list.SelectedItem().(components.StackItem)
+	if !ok {
+		return "", ""
+	}
+	primary := strings.TrimSpace(item.ContainerName)
+	secondary := strings.TrimSpace(item.Service)
+	return primary, secondary
+}
+
+func (m model) selectedVolumeNames() []string {
+	primary, secondary := m.selectedKeys()
+	if vols := m.containerVolumes[strings.TrimSpace(primary)]; len(vols) > 0 {
+		return vols
+	}
+	if secondary != "" && secondary != primary {
+		if vols := m.containerVolumes[secondary]; len(vols) > 0 {
+			return vols
+		}
+	}
+	return nil
+}
+
+func (m model) selectedNetworkNames() []string {
+	primary, secondary := m.selectedKeys()
+	if nets := m.containerNetworks[strings.TrimSpace(primary)]; len(nets) > 0 {
+		return nets
+	}
+	if secondary != "" && secondary != primary {
+		if nets := m.containerNetworks[secondary]; len(nets) > 0 {
+			return nets
+		}
+	}
+	return nil
+}
+
+func (m model) selectedVolumeSet() map[string]struct{} {
+	vols := m.selectedVolumeNames()
+	if len(vols) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(vols))
+	for _, v := range vols {
+		set[v] = struct{}{}
+	}
+	return set
+}
+
+func (m model) selectedNetworkSet() map[string]struct{} {
+	nets := m.selectedNetworkNames()
+	if len(nets) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(nets))
+	for _, n := range nets {
+		set[n] = struct{}{}
+	}
+	return set
+}
+
+func (m model) selectedContainerName() string {
+	primary, secondary := m.selectedKeys()
+	if primary != "" {
+		return primary
+	}
+	return secondary
 }

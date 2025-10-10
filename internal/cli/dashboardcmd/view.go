@@ -220,36 +220,47 @@ func renderFilterPlaceholder(width int) string {
 }
 
 func (m model) renderVolumesSection(contentWidth int) string {
-	if len(m.volumes) == 0 {
-		empty := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Italic(true).Render("(no volumes)")
-		return empty
+	active := m.selectedVolumeSet()
+	if len(active) == 0 {
+		return lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Italic(true).Render("(no volumes attached)")
 	}
-	limit := min(3, len(m.volumes))
-	blocks := make([]string, 0, limit)
+	blocks := make([]string, 0, len(active))
 	lineWidth := contentWidth - 2
 	if lineWidth < 1 {
 		lineWidth = 1
 	}
-	for i := 0; i < limit; i++ {
-		vol := m.volumes[i]
+	for _, vol := range m.volumes {
 		mount := truncateRight(displayVolumeMount(vol.Mountpoint), lineWidth)
 		driver := truncateRight(displayVolumeDriver(vol.Driver), lineWidth)
-		blocks = append(blocks, components.RenderVolume(vol.Name, mount, driver))
+		nameKey := strings.TrimSpace(vol.Name)
+		if _, ok := active[nameKey]; !ok {
+			continue
+		}
+		blocks = append(blocks, components.RenderVolume(vol.Name, mount, driver, true))
+	}
+	if len(blocks) == 0 {
+		return lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Italic(true).Render("(no volumes attached)")
 	}
 	return strings.Join(blocks, "\n\n")
 }
 
 func (m model) renderNetworksSection(contentWidth int) string {
-	if len(m.networks) == 0 {
-		return lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Italic(true).Render("(no networks)")
+	active := m.selectedNetworkSet()
+	if len(active) == 0 {
+		return lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Italic(true).Render("(no networks attached)")
 	}
-	limit := min(3, len(m.networks))
-	lines := make([]string, 0, limit)
-	for i := 0; i < limit; i++ {
-		n := m.networks[i]
+	lines := make([]string, 0, len(active))
+	for _, n := range m.networks {
 		name := truncateRight(n.Name, contentWidth)
 		driver := truncateRight(displayNetworkDriver(n.Driver), contentWidth-lipgloss.Width(name)-3)
-		lines = append(lines, components.RenderNetwork(name, driver))
+		nameKey := strings.TrimSpace(n.Name)
+		if _, ok := active[nameKey]; !ok {
+			continue
+		}
+		lines = append(lines, components.RenderNetwork(name, driver, true))
+	}
+	if len(lines) == 0 {
+		return lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Italic(true).Render("(no networks attached)")
 	}
 	return strings.Join(lines, "\n")
 }
