@@ -172,7 +172,7 @@ func (m model) renderColumns(bodyHeight int) string {
 		} else {
 			raw = base + strings.Repeat("╱", slashCount)
 		}
-		grad := components.RenderGradientText(raw, "#5EC6F6", "#376FE9")
+		grad := components.RenderThemeGradient(raw)
 		rendered := lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(grad)
 		if m.headerCache != nil {
 			m.headerCache[cacheKey] = rendered
@@ -184,7 +184,7 @@ func (m model) renderColumns(bodyHeight int) string {
 	r3Header := buildGradHeader("Networks")
 
 	versionLabel := fmt.Sprintf("DOCKFORM %s", displayVersion(m.version))
-	r0Line0 := components.RenderGradientText(versionLabel, "#5EC6F6", "#376FE9")
+	r0Line0 := components.RenderThemeGradient(versionLabel)
 	r0Line1 := renderSimpleWithWidth("Identifier", displayIdentifier(m.identifier), contentWidth)
 	manifestDisplay := truncateLeft(displayManifestPath(m.manifestPath), availableValueWidth(contentWidth, "Manifest"))
 	r0Line2 := components.RenderSimple("Manifest", manifestDisplay)

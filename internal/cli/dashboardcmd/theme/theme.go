@@ -25,9 +25,17 @@ var (
 )
 
 // Colors
+const (
+	GradientStartHex = "#5EC6F6"
+	GradientEndHex   = "#376FE9"
+)
+
 var (
-	Primary   = lipgloss.Color("#4776FF")
+	Primary   = lipgloss.Color("#5EC6F6")
 	Secondary = lipgloss.Color("#FF60FF")
 	Tertiary  = lipgloss.Color("#68FFD6")
 	Accent    = lipgloss.Color("#E8FE96")
+
+	GradientStart = lipgloss.Color(GradientStartHex)
+	GradientEnd   = lipgloss.Color(GradientEndHex)
 )

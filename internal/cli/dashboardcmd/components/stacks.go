@@ -44,7 +44,6 @@ var (
 	treeStyle       = lipgloss.NewStyle().Foreground(theme.FgBase)
 	textStyle       = lipgloss.NewStyle().Foreground(theme.FgHalfMuted)
 	textItalicStyle = textStyle.Italic(true)
-	bulletMuted     = lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render("●")
 	bulletWarn      = lipgloss.NewStyle().Foreground(theme.Warning).Render("●")
 	bulletErr       = lipgloss.NewStyle().Foreground(theme.Error).Render("●")
 	bulletOk        = lipgloss.NewStyle().Foreground(theme.Success).Render("●")

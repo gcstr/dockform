@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/gcstr/dockform/internal/cli/dashboardcmd/theme"
 )
 
 // RenderGradientText colors each character of text with a gradient
@@ -35,6 +36,11 @@ func RenderGradientText(text string, startHex string, endHex string) string {
 		b.WriteString(lipgloss.NewStyle().Foreground(col).Render(string(r)))
 	}
 	return b.String()
+}
+
+// RenderThemeGradient colors each character using the dashboard gradient colors.
+func RenderThemeGradient(text string) string {
+	return RenderGradientText(text, theme.GradientStartHex, theme.GradientEndHex)
 }
 
 func hexToRGB(hex string) (int, int, int) {

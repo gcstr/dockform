@@ -81,7 +81,7 @@ func RenderHeaderActive(title string, containerWidth int, totalHorizontalPadding
 	// If no title, fill the entire line with the pattern character using gradient
 	if strings.TrimSpace(title) == "" {
 		raw := strings.Repeat(pc, contentWidth)
-		grad := RenderGradientText(raw, "#5EC6F6", "#376FE9")
+		grad := RenderThemeGradient(raw)
 		if lipgloss.Width(grad) > contentWidth {
 			return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(grad)
 		}
@@ -100,7 +100,7 @@ func RenderHeaderActive(title string, containerWidth int, totalHorizontalPadding
 		if contentWidth < len(runes) {
 			raw = string(runes[:contentWidth])
 		}
-		grad := RenderGradientText(raw, "#5EC6F6", "#376FE9")
+		grad := RenderThemeGradient(raw)
 		return lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(grad)
 	}
 
@@ -108,7 +108,7 @@ func RenderHeaderActive(title string, containerWidth int, totalHorizontalPadding
 	slashes := strings.Repeat(pc, slashCount)
 	// Apply gradient across entire header text
 	raw := base + slashes
-	result := RenderGradientText(raw, "#5EC6F6", "#376FE9")
+	result := RenderThemeGradient(raw)
 
 	// Force truncate at exact width to prevent any wrapping
 	if lipgloss.Width(result) > contentWidth {

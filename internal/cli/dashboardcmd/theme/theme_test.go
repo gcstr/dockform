@@ -36,7 +36,7 @@ func TestColorPalette(t *testing.T) {
 		"Error":       fmt.Sprint(lipgloss.Color("#EB4268")),
 		"Warning":     fmt.Sprint(lipgloss.Color("#E8FE96")),
 		"Info":        fmt.Sprint(lipgloss.Color("#00A4FF")),
-		"Primary":     fmt.Sprint(lipgloss.Color("#4776FF")),
+		"Primary":     fmt.Sprint(lipgloss.Color("#5EC6F6")),
 		"Secondary":   fmt.Sprint(lipgloss.Color("#FF60FF")),
 		"Tertiary":    fmt.Sprint(lipgloss.Color("#68FFD6")),
 		"Accent":      fmt.Sprint(lipgloss.Color("#E8FE96")),
