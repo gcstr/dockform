@@ -18,6 +18,13 @@ type model struct {
 	width  int
 	height int
 
+	version       string
+	identifier    string
+	contextName   string
+	dockerHost    string
+	engineVersion string
+	manifestPath  string
+
 	keys      keyMap
 	help      help.Model
 	list      list.Model
@@ -38,7 +45,7 @@ type model struct {
 	activePane int
 }
 
-func newModel(stacks []data.StackSummary) model {
+func newModel(stacks []data.StackSummary, version, identifier, manifestPath, contextName, dockerHost, engineVersion string) model {
 	items := stackItemsFromSummaries(stacks)
 	delegate := components.StacksDelegate{}
 	projectList := list.New(items, delegate, 0, 0)
@@ -69,12 +76,18 @@ func newModel(stacks []data.StackSummary) model {
 	h.Styles.FullSeparator = muted
 
 	return model{
-		keys:        newKeyMap(),
-		help:        h,
-		list:        projectList,
-		logsPager:   components.NewLogsPager(),
-		statusByKey: make(map[data.Key]data.Status),
-		logsBuf:     make([]string, 0, 512),
+		version:       strings.TrimSpace(version),
+		identifier:    strings.TrimSpace(identifier),
+		contextName:   strings.TrimSpace(contextName),
+		dockerHost:    strings.TrimSpace(dockerHost),
+		engineVersion: strings.TrimSpace(engineVersion),
+		manifestPath:  strings.TrimSpace(manifestPath),
+		keys:          newKeyMap(),
+		help:          h,
+		list:          projectList,
+		logsPager:     components.NewLogsPager(),
+		statusByKey:   make(map[data.Key]data.Status),
+		logsBuf:       make([]string, 0, 512),
 	}
 }
 

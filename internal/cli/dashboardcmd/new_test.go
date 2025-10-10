@@ -120,7 +120,7 @@ func TestRenderSlashBannerProducesThreeLines(t *testing.T) {
 
 func TestNewModelCreatesListWithItems(t *testing.T) {
 	summaries := []data.StackSummary{{Name: "stack", Services: []data.ServiceSummary{{Service: "svc", Image: "img"}}}}
-	m := newModel(summaries)
+	m := newModel(summaries, "1.2.3", "demo", "/tmp/dockform.yml", "default", "unix:///var/run/docker.sock", "24.0.0")
 	if m.quitting {
 		t.Fatalf("model should start non-quitting")
 	}
@@ -129,5 +129,34 @@ func TestNewModelCreatesListWithItems(t *testing.T) {
 	}
 	if got := m.list.FilterState(); got != list.Unfiltered {
 		t.Fatalf("expected list to start unfiltered, got state %v", got)
+	}
+}
+
+func TestTruncateLeftAddsEllipsis(t *testing.T) {
+	path := "/Users/example/workspace/dockform/manifest.yaml"
+	got := truncateLeft(path, 18)
+	if !strings.HasPrefix(got, "...") {
+		t.Fatalf("expected prefix ellipsis, got %q", got)
+	}
+	if !strings.HasSuffix(got, "manifest.yaml") {
+		t.Fatalf("expected to keep file suffix, got %q", got)
+	}
+}
+
+func TestDisplayContextNameFallback(t *testing.T) {
+	if got := displayContextName(" "); got != "default" {
+		t.Fatalf("expected default fallback, got %q", got)
+	}
+}
+
+func TestDisplayDockerHostFallback(t *testing.T) {
+	if got := displayDockerHost(""); got != "(unknown)" {
+		t.Fatalf("expected unknown fallback, got %q", got)
+	}
+}
+
+func TestDisplayEngineVersionFallback(t *testing.T) {
+	if got := displayEngineVersion(""); got != "(unknown)" {
+		t.Fatalf("expected unknown fallback, got %q", got)
 	}
 }

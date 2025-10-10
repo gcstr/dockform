@@ -1,6 +1,7 @@
 package dashboardcmd
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss/v2"
@@ -157,14 +158,16 @@ func (m model) renderColumns(bodyHeight int) string {
 	r2Header := buildGradHeader("Volumes")
 	r3Header := buildGradHeader("Networks")
 
-	r0Line0 := components.RenderGradientText("DOCKFORM v0.6.3", "#5EC6F6", "#376FE9")
-	r0Line1 := components.RenderSimple("Identifier", "homelab")
-	r0Line2 := components.RenderSimple("Manifest", ".../dockform/manifest.yaml")
+	versionLabel := fmt.Sprintf("DOCKFORM %s", displayVersion(m.version))
+	r0Line0 := components.RenderGradientText(versionLabel, "#5EC6F6", "#376FE9")
+	r0Line1 := renderSimpleWithWidth("Identifier", displayIdentifier(m.identifier), contentWidth)
+	manifestDisplay := truncateLeft(displayManifestPath(m.manifestPath), availableValueWidth(contentWidth, "Manifest"))
+	r0Line2 := components.RenderSimple("Manifest", manifestDisplay)
 	rightRow0 := r0Line0 + "\n\n" + r0Line1 + "\n" + r0Line2 + "\n"
 
-	r1Line1 := components.RenderSimple("Context", "default")
-	r1Line2 := components.RenderSimple("Host", "unix:///var/run/docker.sock")
-	r1Line3 := components.RenderSimple("Version", buildinfo.Version())
+	r1Line1 := renderSimpleWithWidth("Context", displayContextName(m.contextName), contentWidth)
+	r1Line2 := renderSimpleWithWidth("Host", displayDockerHost(m.dockerHost), contentWidth)
+	r1Line3 := renderSimpleWithWidth("Version", displayEngineVersion(m.engineVersion), contentWidth)
 	rightRow1 := r1Header + "\n\n" + r1Line1 + "\n" + r1Line2 + "\n" + r1Line3 + "\n"
 
 	v1 := components.RenderVolume("vaultwarden", "/mnt/data/vaultwarden", "1.2GB")
@@ -179,6 +182,120 @@ func (m model) renderColumns(bodyHeight int) string {
 	rightView := rightStyle.Width(remainingContent).Render(rightRows)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftView, centerView, rightView)
+}
+
+func renderSimpleWithWidth(key, value string, totalWidth int) string {
+	available := availableValueWidth(totalWidth, key)
+	return components.RenderSimple(key, truncateRight(value, available))
+}
+
+func availableValueWidth(totalWidth int, key string) int {
+	width := totalWidth - lipgloss.Width(key+": ")
+	if width < 0 {
+		return 0
+	}
+	return width
+}
+
+func displayVersion(version string) string {
+	v := strings.TrimSpace(version)
+	if v == "" {
+		return buildinfo.Version()
+	}
+	return v
+}
+
+func displayIdentifier(identifier string) string {
+	id := strings.TrimSpace(identifier)
+	if id == "" {
+		return "(unset)"
+	}
+	return id
+}
+
+func displayContextName(name string) string {
+	n := strings.TrimSpace(name)
+	if n == "" {
+		return "default"
+	}
+	return n
+}
+
+func displayDockerHost(host string) string {
+	h := strings.TrimSpace(host)
+	if h == "" {
+		return "(unknown)"
+	}
+	return h
+}
+
+func displayEngineVersion(version string) string {
+	v := strings.TrimSpace(version)
+	if v == "" {
+		return "(unknown)"
+	}
+	return v
+}
+
+func displayManifestPath(path string) string {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return "(unknown)"
+	}
+	return p
+}
+
+func truncateRight(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) <= width {
+		return value
+	}
+	ellipsis := "..."
+	ellipsisWidth := lipgloss.Width(ellipsis)
+	if width <= ellipsisWidth {
+		return ellipsis[:min(width, len(ellipsis))]
+	}
+	target := width - ellipsisWidth
+	var builder strings.Builder
+	current := 0
+	for _, r := range value {
+		rw := lipgloss.Width(string(r))
+		if current+rw > target {
+			break
+		}
+		builder.WriteRune(r)
+		current += rw
+	}
+	return builder.String() + ellipsis
+}
+
+func truncateLeft(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) <= width {
+		return value
+	}
+	ellipsis := "..."
+	ellipsisWidth := lipgloss.Width(ellipsis)
+	if width <= ellipsisWidth {
+		return ellipsis[:min(width, len(ellipsis))]
+	}
+	target := width - ellipsisWidth
+	runes := []rune(value)
+	current := 0
+	start := len(runes)
+	for start > 0 && current < target {
+		start--
+		rw := lipgloss.Width(string(runes[start]))
+		if current+rw > target {
+			break
+		}
+		current += rw
+	}
+	return ellipsis + string(runes[start:])
 }
 
 func (m model) renderHelp() string {
