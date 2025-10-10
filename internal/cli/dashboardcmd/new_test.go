@@ -1,6 +1,7 @@
 package dashboardcmd
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -120,7 +121,7 @@ func TestRenderSlashBannerProducesThreeLines(t *testing.T) {
 
 func TestNewModelCreatesListWithItems(t *testing.T) {
 	summaries := []data.StackSummary{{Name: "stack", Services: []data.ServiceSummary{{Service: "svc", Image: "img"}}}}
-	m := newModel(summaries, "1.2.3", "demo", "/tmp/dockform.yml", "default", "unix:///var/run/docker.sock", "24.0.0")
+	m := newModel(context.Background(), nil, summaries, "1.2.3", "demo", "/tmp/dockform.yml", "default", "unix:///var/run/docker.sock", "24.0.0")
 	if m.quitting {
 		t.Fatalf("model should start non-quitting")
 	}
@@ -158,5 +159,17 @@ func TestDisplayDockerHostFallback(t *testing.T) {
 func TestDisplayEngineVersionFallback(t *testing.T) {
 	if got := displayEngineVersion(""); got != "(unknown)" {
 		t.Fatalf("expected unknown fallback, got %q", got)
+	}
+}
+
+func TestDisplayVolumeMountFallback(t *testing.T) {
+	if got := displayVolumeMount(" "); got != "(no mountpoint)" {
+		t.Fatalf("expected mountpoint fallback, got %q", got)
+	}
+}
+
+func TestDisplayVolumeDriverFallback(t *testing.T) {
+	if got := displayVolumeDriver(" "); got != "(driver unknown)" {
+		t.Fatalf("expected driver fallback, got %q", got)
 	}
 }

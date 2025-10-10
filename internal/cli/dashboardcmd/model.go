@@ -11,6 +11,7 @@ import (
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/components"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/data"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/theme"
+	"github.com/gcstr/dockform/internal/dockercli"
 )
 
 // model is the Bubble Tea model for the dashboard.
@@ -24,6 +25,10 @@ type model struct {
 	dockerHost    string
 	engineVersion string
 	manifestPath  string
+
+	ctx          context.Context
+	dockerClient *dockercli.Client
+	volumes      []dockercli.VolumeSummary
 
 	keys      keyMap
 	help      help.Model
@@ -45,7 +50,7 @@ type model struct {
 	activePane int
 }
 
-func newModel(stacks []data.StackSummary, version, identifier, manifestPath, contextName, dockerHost, engineVersion string) model {
+func newModel(ctx context.Context, docker *dockercli.Client, stacks []data.StackSummary, version, identifier, manifestPath, contextName, dockerHost, engineVersion string) model {
 	items := stackItemsFromSummaries(stacks)
 	delegate := components.StacksDelegate{}
 	projectList := list.New(items, delegate, 0, 0)
@@ -82,6 +87,9 @@ func newModel(stacks []data.StackSummary, version, identifier, manifestPath, con
 		dockerHost:    strings.TrimSpace(dockerHost),
 		engineVersion: strings.TrimSpace(engineVersion),
 		manifestPath:  strings.TrimSpace(manifestPath),
+		ctx:           ctx,
+		dockerClient:  docker,
+		volumes:       nil,
 		keys:          newKeyMap(),
 		help:          h,
 		list:          projectList,

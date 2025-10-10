@@ -170,10 +170,8 @@ func (m model) renderColumns(bodyHeight int) string {
 	r1Line3 := renderSimpleWithWidth("Version", displayEngineVersion(m.engineVersion), contentWidth)
 	rightRow1 := r1Header + "\n\n" + r1Line1 + "\n" + r1Line2 + "\n" + r1Line3 + "\n"
 
-	v1 := components.RenderVolume("vaultwarden", "/mnt/data/vaultwarden", "1.2GB")
-	v2 := components.RenderVolume("postgresql", "/var/lib/postgresql/data", "12.8GB")
-	v3 := components.RenderVolume("redis", "/data", "512MB")
-	rightRow2 := r2Header + "\n\n" + v1 + "\n\n" + v2 + "\n\n" + v3 + "\n"
+	volumesBlock := m.renderVolumesSection(contentWidth)
+	rightRow2 := r2Header + "\n\n" + volumesBlock + "\n"
 	n1 := components.RenderNetwork("traefik", "bridge")
 	n2 := components.RenderNetwork("frontend", "bridge")
 	n3 := components.RenderNetwork("backend", "bridge")
@@ -187,6 +185,26 @@ func (m model) renderColumns(bodyHeight int) string {
 func renderSimpleWithWidth(key, value string, totalWidth int) string {
 	available := availableValueWidth(totalWidth, key)
 	return components.RenderSimple(key, truncateRight(value, available))
+}
+
+func (m model) renderVolumesSection(contentWidth int) string {
+	if len(m.volumes) == 0 {
+		empty := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Italic(true).Render("(no volumes)")
+		return empty
+	}
+	limit := min(3, len(m.volumes))
+	blocks := make([]string, 0, limit)
+	lineWidth := contentWidth - 2
+	if lineWidth < 1 {
+		lineWidth = 1
+	}
+	for i := 0; i < limit; i++ {
+		vol := m.volumes[i]
+		mount := truncateRight(displayVolumeMount(vol.Mountpoint), lineWidth)
+		driver := truncateRight(displayVolumeDriver(vol.Driver), lineWidth)
+		blocks = append(blocks, components.RenderVolume(vol.Name, mount, driver))
+	}
+	return strings.Join(blocks, "\n\n")
 }
 
 func availableValueWidth(totalWidth int, key string) int {
@@ -243,6 +261,22 @@ func displayManifestPath(path string) string {
 		return "(unknown)"
 	}
 	return p
+}
+
+func displayVolumeMount(mount string) string {
+	m := strings.TrimSpace(mount)
+	if m == "" {
+		return "(no mountpoint)"
+	}
+	return m
+}
+
+func displayVolumeDriver(driver string) string {
+	d := strings.TrimSpace(driver)
+	if d == "" {
+		return "(driver unknown)"
+	}
+	return d
 }
 
 func truncateRight(value string, width int) string {

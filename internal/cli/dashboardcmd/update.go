@@ -12,6 +12,7 @@ import (
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/components"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/data"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/theme"
+	"github.com/gcstr/dockform/internal/dockercli"
 )
 
 func (m model) Init() tea.Cmd {
@@ -21,6 +22,8 @@ func (m model) Init() tea.Cmd {
 		m.tickStatuses(),
 		m.tickLogs(),
 		m.startInitialLogsCmd(),
+		m.fetchDockerInfoCmd(),
+		m.fetchVolumesCmd(),
 	)
 }
 
@@ -74,6 +77,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logsTickMsg:
 		m = m.withFlushedLogs()
 		return m, m.tickLogs()
+	case dockerInfoMsg:
+		if strings.TrimSpace(msg.host) != "" {
+			m.dockerHost = strings.TrimSpace(msg.host)
+		}
+		if strings.TrimSpace(msg.version) != "" {
+			m.engineVersion = strings.TrimSpace(msg.version)
+		}
+		return m, nil
+	case volumesMsg:
+		if msg.volumes != nil {
+			m.volumes = msg.volumes
+		}
+		return m, nil
 	case startLogsFor:
 		if strings.TrimSpace(msg.name) == "" {
 			return m, nil
@@ -183,6 +199,13 @@ func (m model) tickStatuses() tea.Cmd {
 
 type statusTickMsg struct{}
 type statusesMsg struct{ statuses map[data.Key]data.Status }
+type dockerInfoMsg struct {
+	host    string
+	version string
+}
+type volumesMsg struct {
+	volumes []dockercli.VolumeSummary
+}
 
 func (m model) startInitialLogsCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -239,4 +262,30 @@ func (m model) refreshStatusesCmd() tea.Cmd {
 		},
 		m.tickStatuses(),
 	)
+}
+
+func (m model) fetchDockerInfoCmd() tea.Cmd {
+	if m.dockerClient == nil {
+		return nil
+	}
+	ctx := m.ctx
+	return func() tea.Msg {
+		host, _ := m.dockerClient.ContextHost(ctx)
+		version, _ := m.dockerClient.ServerVersion(ctx)
+		return dockerInfoMsg{host: strings.TrimSpace(host), version: strings.TrimSpace(version)}
+	}
+}
+
+func (m model) fetchVolumesCmd() tea.Cmd {
+	if m.dockerClient == nil {
+		return nil
+	}
+	ctx := m.ctx
+	return func() tea.Msg {
+		vols, err := m.dockerClient.VolumeSummaries(ctx)
+		if err != nil {
+			return nil
+		}
+		return volumesMsg{volumes: vols}
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/util"
@@ -20,6 +21,9 @@ type Client struct {
 	exec        Exec
 	identifier  string
 	contextName string
+
+	composeCache   map[string]ComposeConfigDoc
+	composeCacheMu sync.RWMutex
 }
 
 func New(contextName string) *Client {
@@ -30,6 +34,25 @@ func New(contextName string) *Client {
 func (c *Client) WithIdentifier(id string) *Client {
 	c.identifier = id
 	return c
+}
+
+func (c *Client) loadComposeCache(key string) (ComposeConfigDoc, bool) {
+	c.composeCacheMu.RLock()
+	defer c.composeCacheMu.RUnlock()
+	if c.composeCache == nil {
+		return ComposeConfigDoc{}, false
+	}
+	doc, ok := c.composeCache[key]
+	return doc, ok
+}
+
+func (c *Client) storeComposeCache(key string, doc ComposeConfigDoc) {
+	c.composeCacheMu.Lock()
+	defer c.composeCacheMu.Unlock()
+	if c.composeCache == nil {
+		c.composeCache = make(map[string]ComposeConfigDoc)
+	}
+	c.composeCache[key] = doc
 }
 
 // CheckDaemon verifies the docker daemon for the configured context is reachable.

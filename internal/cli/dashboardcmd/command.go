@@ -39,10 +39,8 @@ func New() *cobra.Command {
 			}
 			manifestPath := resolveManifestPath(cmd, cliCtx.Config)
 			contextName := dockerContextName(cliCtx.Config)
-			dockerHost := dockerHostFromClient(cliCtx)
-			engineVersion := engineVersionFromClient(cliCtx)
 
-			m := newModel(stacks, buildinfo.Version(), identifier, manifestPath, contextName, dockerHost, engineVersion)
+			m := newModel(cliCtx.Ctx, cliCtx.Docker, stacks, buildinfo.Version(), identifier, manifestPath, contextName, "", "")
 			m.statusProvider = data.NewStatusProvider(cliCtx.Docker, identifier)
 
 			p := tea.NewProgram(m, tea.WithAltScreen())
@@ -74,28 +72,6 @@ func dockerContextName(cfg *manifest.Config) string {
 		return ""
 	}
 	return strings.TrimSpace(cfg.Docker.Context)
-}
-
-func dockerHostFromClient(cliCtx *common.CLIContext) string {
-	if cliCtx == nil || cliCtx.Docker == nil {
-		return ""
-	}
-	host, err := cliCtx.Docker.ContextHost(cliCtx.Ctx)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(host)
-}
-
-func engineVersionFromClient(cliCtx *common.CLIContext) string {
-	if cliCtx == nil || cliCtx.Docker == nil {
-		return ""
-	}
-	ver, err := cliCtx.Docker.ServerVersion(cliCtx.Ctx)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(ver)
 }
 
 func resolveManifestPath(cmd *cobra.Command, cfg *manifest.Config) string {
