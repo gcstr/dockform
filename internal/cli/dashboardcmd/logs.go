@@ -23,7 +23,11 @@ func (m *model) streamLogsCmd(name string) tea.Cmd {
 		return nil
 	}
 	pr, pw := io.Pipe()
-	ctx, cancel := context.WithCancel(context.Background())
+    ctxParent := m.ctx
+    if ctxParent == nil {
+        ctxParent = context.Background()
+    }
+    ctx, cancel := context.WithCancel(ctxParent)
 	if m.logLines == nil {
 		m.logLines = make(chan string, 256)
 	}

@@ -110,6 +110,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			m.quitting = true
+			if m.logCancel != nil {
+				m.logCancel()
+				m.logCancel = nil
+			}
+			if m.debounceTimer != nil {
+				m.debounceTimer.Stop()
+				m.debounceTimer = nil
+			}
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.CyclePane):
 			m.activePane = (m.activePane + 1) % 2
@@ -173,15 +181,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.list.Index() != oldIndex {
 			it, _ := m.list.SelectedItem().(components.StackItem)
 			m.pendingSelName = strings.TrimSpace(it.ContainerName)
-			if m.debounceTimer != nil {
-				m.debounceTimer.Stop()
-			}
 			name := m.pendingSelName
-			m.debounceTimer = time.AfterFunc(200*time.Millisecond, func() {
-				m.logLines <- ""
-			})
 			return m, func() tea.Msg {
-				time.Sleep(220 * time.Millisecond)
+				time.Sleep(200 * time.Millisecond)
 				return startLogsFor{name: name}
 			}
 		}
