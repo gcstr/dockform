@@ -29,6 +29,7 @@ type model struct {
 	ctx          context.Context
 	dockerClient *dockercli.Client
 	volumes      []dockercli.VolumeSummary
+	networks     []dockercli.NetworkSummary
 
 	keys      keyMap
 	help      help.Model
@@ -90,6 +91,7 @@ func newModel(ctx context.Context, docker *dockercli.Client, stacks []data.Stack
 		ctx:           ctx,
 		dockerClient:  docker,
 		volumes:       nil,
+		networks:      nil,
 		keys:          newKeyMap(),
 		help:          h,
 		list:          projectList,

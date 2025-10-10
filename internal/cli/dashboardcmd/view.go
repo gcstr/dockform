@@ -172,10 +172,8 @@ func (m model) renderColumns(bodyHeight int) string {
 
 	volumesBlock := m.renderVolumesSection(contentWidth)
 	rightRow2 := r2Header + "\n\n" + volumesBlock + "\n"
-	n1 := components.RenderNetwork("traefik", "bridge")
-	n2 := components.RenderNetwork("frontend", "bridge")
-	n3 := components.RenderNetwork("backend", "bridge")
-	rightRow3 := r3Header + "\n\n" + n1 + "\n" + n2 + "\n" + n3 + "\n"
+	networksBlock := m.renderNetworksSection(contentWidth)
+	rightRow3 := r3Header + "\n\n" + networksBlock + "\n"
 	rightRows := lipgloss.JoinVertical(lipgloss.Left, rightRow0, rightRow1, rightRow2, rightRow3)
 	rightView := rightStyle.Width(remainingContent).Render(rightRows)
 
@@ -205,6 +203,24 @@ func (m model) renderVolumesSection(contentWidth int) string {
 		blocks = append(blocks, components.RenderVolume(vol.Name, mount, driver))
 	}
 	return strings.Join(blocks, "\n\n")
+}
+
+func (m model) renderNetworksSection(contentWidth int) string {
+	if len(m.networks) == 0 {
+		return lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Italic(true).Render("(no networks)")
+	}
+	limit := min(3, len(m.networks))
+	lines := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		n := m.networks[i]
+		name := truncateRight(n.Name, contentWidth)
+		driver := truncateRight(displayNetworkDriver(n.Driver), contentWidth-lipgloss.Width(name)-3)
+		if driver == "" {
+			driver = ""
+		}
+		lines = append(lines, components.RenderNetwork(name, driver))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func availableValueWidth(totalWidth int, key string) int {
@@ -272,6 +288,14 @@ func displayVolumeMount(mount string) string {
 }
 
 func displayVolumeDriver(driver string) string {
+	d := strings.TrimSpace(driver)
+	if d == "" {
+		return "(driver unknown)"
+	}
+	return d
+}
+
+func displayNetworkDriver(driver string) string {
 	d := strings.TrimSpace(driver)
 	if d == "" {
 		return "(driver unknown)"

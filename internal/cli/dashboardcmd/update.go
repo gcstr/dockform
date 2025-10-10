@@ -24,6 +24,7 @@ func (m model) Init() tea.Cmd {
 		m.startInitialLogsCmd(),
 		m.fetchDockerInfoCmd(),
 		m.fetchVolumesCmd(),
+		m.fetchNetworksCmd(),
 	)
 }
 
@@ -88,6 +89,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case volumesMsg:
 		if msg.volumes != nil {
 			m.volumes = msg.volumes
+		}
+		return m, nil
+	case networksMsg:
+		if msg.networks != nil {
+			m.networks = msg.networks
 		}
 		return m, nil
 	case startLogsFor:
@@ -206,6 +212,9 @@ type dockerInfoMsg struct {
 type volumesMsg struct {
 	volumes []dockercli.VolumeSummary
 }
+type networksMsg struct {
+	networks []dockercli.NetworkSummary
+}
 
 func (m model) startInitialLogsCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -287,5 +296,19 @@ func (m model) fetchVolumesCmd() tea.Cmd {
 			return nil
 		}
 		return volumesMsg{volumes: vols}
+	}
+}
+
+func (m model) fetchNetworksCmd() tea.Cmd {
+	if m.dockerClient == nil {
+		return nil
+	}
+	ctx := m.ctx
+	return func() tea.Msg {
+		nets, err := m.dockerClient.NetworkSummaries(ctx)
+		if err != nil {
+			return nil
+		}
+		return networksMsg{networks: nets}
 	}
 }
