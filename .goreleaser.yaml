@@ -28,20 +28,13 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
 
 archives:
   - id: archive
     formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     name_template: '{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}'
     files:
       - README.md
@@ -57,9 +50,9 @@ changelog:
   use: git
   sort: asc
   abbrev: 7
-  # Trim conventional-commit prefix (with optional scope and breaking "!")
-  # Use .Subject to avoid including the body
-  format: '{{ regexReplaceAll "^(feat|fix|perf|refactor|build|ci|docs|style|test|chore)(\\([^)]*\\))?!?:\\s*" .Subject "" }}'
+  # Keep only the commit subject (first line) without additional formatting.
+  # Avoids unsupported template functions in CI (e.g., regexReplaceAll).
+  format: '{{ .Message }}'
   groups:
     - title: Breaking Changes
       regexp: '^.+!:.+$'
