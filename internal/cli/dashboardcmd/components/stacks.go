@@ -18,6 +18,7 @@ type StackItem struct {
 	ContainerName string
 	Containers    []string
 	Status        string
+	StatusKind    string // success | warning | error | unknown
 	FilterText    string
 }
 
@@ -37,6 +38,18 @@ func (d StacksDelegate) Height() int                               { return 4 }
 func (d StacksDelegate) Spacing() int                              { return 1 }
 func (d StacksDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
 
+// Precomputed styles to avoid per-frame allocations in render loop
+var (
+	titleStyle      = lipgloss.NewStyle().Foreground(theme.FgBase).Bold(true)
+	treeStyle       = lipgloss.NewStyle().Foreground(theme.FgBase)
+	textStyle       = lipgloss.NewStyle().Foreground(theme.FgHalfMuted)
+	textItalicStyle = textStyle.Italic(true)
+	bulletMuted     = lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render("●")
+	bulletWarn      = lipgloss.NewStyle().Foreground(theme.Warning).Render("●")
+	bulletErr       = lipgloss.NewStyle().Foreground(theme.Error).Render("●")
+	bulletOk        = lipgloss.NewStyle().Foreground(theme.Success).Render("●")
+)
+
 func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
 	i, ok := item.(StackItem)
 	if !ok {
@@ -44,15 +57,6 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 	}
 
 	var bodyLines []string
-
-	// Base (unselected) styles
-	titleStyle := lipgloss.NewStyle().Foreground(theme.FgBase).Bold(true)
-	treeStyle := lipgloss.NewStyle().Foreground(theme.FgBase)
-	textStyle := lipgloss.NewStyle().Foreground(theme.FgHalfMuted)
-	textItalicStyle := textStyle.Italic(true)
-	mutedBullet := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render("●")
-	yellowBullet := lipgloss.NewStyle().Foreground(theme.Warning).Render("●")
-	redBullet := lipgloss.NewStyle().Foreground(theme.Error).Render("●")
 
 	bodyLines = append(bodyLines, treeStyle.Render("")+titleStyle.Render(i.TitleText))
 
@@ -76,26 +80,17 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 		bodyLines = append(bodyLines, treeStyle.Render("├ ")+rendered)
 	}
 
-	statusText := i.Status
-	// Choose bullet color by simple prefix marker if present in Status field
-	bullet := mutedBullet
-	if strings.HasPrefix(statusText, "[warn]") {
-		statusText = strings.TrimSpace(strings.TrimPrefix(statusText, "[warn]"))
-		bullet = yellowBullet
-	} else if strings.HasPrefix(statusText, "[err]") {
-		statusText = strings.TrimSpace(strings.TrimPrefix(statusText, "[err]"))
-		bullet = redBullet
-	} else if strings.HasPrefix(statusText, "[ok]") {
-		statusText = strings.TrimSpace(strings.TrimPrefix(statusText, "[ok]"))
-		// green for OK
-		bullet = lipgloss.NewStyle().Foreground(theme.Success).Render("●")
+	statusText := strings.TrimSpace(i.Status)
+	bullet := bulletMuted
+	switch strings.TrimSpace(i.StatusKind) {
+	case "success":
+		bullet = bulletOk
+	case "warning":
+		bullet = bulletWarn
+	case "error":
+		bullet = bulletErr
 	}
-	if strings.HasPrefix(statusText, "●") || strings.HasPrefix(statusText, "○") {
-		remainder := strings.TrimSpace(strings.TrimLeft(statusText, "●○ "))
-		statusText = bullet + " " + textItalicStyle.Render(remainder)
-	} else {
-		statusText = bullet + " " + textItalicStyle.Render(statusText)
-	}
+	statusText = bullet + " " + textItalicStyle.Render(statusText)
 	renderedStatus := treeStyle.Render("└ ") + statusText
 
 	width := m.Width()
@@ -131,22 +126,17 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 			selectedBody = append(selectedBody, selectedTree.Render("├ ")+rendered)
 		}
 		// status: same logic as unselected, but render text with selected styles
-		raw := i.Status
-		bullet := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render("●")
-		if strings.HasPrefix(raw, "[warn]") {
-			raw = strings.TrimSpace(strings.TrimPrefix(raw, "[warn]"))
-			bullet = lipgloss.NewStyle().Foreground(theme.Warning).Render("●")
-		} else if strings.HasPrefix(raw, "[err]") {
-			raw = strings.TrimSpace(strings.TrimPrefix(raw, "[err]"))
-			bullet = lipgloss.NewStyle().Foreground(theme.Error).Render("●")
-		} else if strings.HasPrefix(raw, "[ok]") {
-			raw = strings.TrimSpace(strings.TrimPrefix(raw, "[ok]"))
-			bullet = lipgloss.NewStyle().Foreground(theme.Success).Render("●")
+		raw := strings.TrimSpace(i.Status)
+		b := bulletMuted
+		switch strings.TrimSpace(i.StatusKind) {
+		case "success":
+			b = bulletOk
+		case "warning":
+			b = bulletWarn
+		case "error":
+			b = bulletErr
 		}
-		if strings.HasPrefix(raw, "●") || strings.HasPrefix(raw, "○") {
-			raw = strings.TrimSpace(strings.TrimLeft(raw, "●○ "))
-		}
-		selectedRenderedStatus := selectedTree.Render("└ ") + bullet + " " + selectedItalic.Render(raw)
+		selectedRenderedStatus := selectedTree.Render("└ ") + b + " " + selectedItalic.Render(raw)
 		selectedLines := fitLinesToHeight(selectedBody, selectedRenderedStatus, d.Height(), width)
 		block = lipgloss.NewStyle().Bold(true).Render(strings.Join(selectedLines, "\n"))
 	}
