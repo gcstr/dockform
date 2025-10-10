@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/util"
 )
@@ -19,6 +21,12 @@ func (c *Client) ListNetworks(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return util.SplitNonEmptyLines(out), nil
+}
+
+// NetworkSummary contains key metadata about a network for dashboard display.
+type NetworkSummary struct {
+	Name   string
+	Driver string
 }
 
 // NetworkCreateOpts represents supported docker network create flags.
@@ -77,6 +85,37 @@ func (c *Client) CreateNetwork(ctx context.Context, name string, labels map[stri
 func (c *Client) RemoveNetwork(ctx context.Context, name string) error {
 	_, err := c.exec.Run(ctx, "network", "rm", name)
 	return err
+}
+
+// NetworkSummaries returns basic metadata for docker networks (name & driver).
+func (c *Client) NetworkSummaries(ctx context.Context) ([]NetworkSummary, error) {
+	args := []string{"network", "ls", "--format", "{{.Name}}\t{{.Driver}}"}
+	if c.identifier != "" {
+		args = append(args, "--filter", "label=io.dockform.identifier="+c.identifier)
+	}
+	out, err := c.exec.Run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	lines := util.SplitNonEmptyLines(out)
+	if len(lines) == 0 {
+		return nil, nil
+	}
+	summaries := make([]NetworkSummary, 0, len(lines))
+	for _, line := range lines {
+		parts := strings.SplitN(line, "\t", 2)
+		name := strings.TrimSpace(parts[0])
+		if name == "" {
+			continue
+		}
+		driver := ""
+		if len(parts) > 1 {
+			driver = strings.TrimSpace(parts[1])
+		}
+		summaries = append(summaries, NetworkSummary{Name: name, Driver: driver})
+	}
+	sort.Slice(summaries, func(i, j int) bool { return summaries[i].Name < summaries[j].Name })
+	return summaries, nil
 }
 
 // NetworkInspectIPAMConfig represents a single IPAM config entry

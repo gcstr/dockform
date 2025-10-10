@@ -168,6 +168,7 @@ func (s SystemExec) RunWithStdout(ctx context.Context, stdout io.Writer, args ..
 	}
 	// Pass writer via context to avoid changing Options signature
 	ctxWith := context.WithValue(ctx, stdOutWriterKey{}, stdout)
-	_, err := s.RunDetailed(ctxWith, Options{}, args...)
+	// For long-running streams, avoid buffering stderr growth; ignore stdout buffering entirely
+	_, err := s.RunDetailed(ctxWith, Options{Timeout: 0}, args...)
 	return err
 }

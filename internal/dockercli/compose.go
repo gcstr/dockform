@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
@@ -58,6 +59,10 @@ func (c *Client) ComposeConfigServices(ctx context.Context, workingDir string, f
 
 // ComposeConfigFull renders the effective compose config and parses desired services info (image, etc.).
 func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files, profiles, envFiles []string, inlineEnv []string) (ComposeConfigDoc, error) {
+	cacheKey := c.composeCacheKey(workingDir, files, profiles, envFiles, inlineEnv)
+	if doc, ok := c.loadComposeCache(cacheKey); ok {
+		return doc, nil
+	}
 	args := c.composeBaseArgs(files, profiles, envFiles, "")
 	// Prefer JSON when available
 	argsJSON := append(append([]string{}, args...), "config", "--format", "json")
@@ -71,6 +76,7 @@ func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files
 	if err == nil {
 		var doc ComposeConfigDoc
 		if json.Unmarshal([]byte(out), &doc) == nil {
+			c.storeComposeCache(cacheKey, doc)
 			return doc, nil
 		}
 	}
@@ -88,6 +94,7 @@ func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files
 	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
 		return ComposeConfigDoc{}, apperr.Wrap("dockercli.ComposeConfigFull", apperr.Internal, err, "parse compose yaml")
 	}
+	c.storeComposeCache(cacheKey, doc)
 	return doc, nil
 }
 
@@ -220,6 +227,24 @@ func (c *Client) ComposeConfigHashes(ctx context.Context, workingDir string, fil
 		out[svc] = fields[len(fields)-1]
 	}
 	return out, nil
+}
+
+func (c *Client) composeCacheKey(workingDir string, files, profiles, envFiles []string, inlineEnv []string) string {
+	var b strings.Builder
+	writePart := func(label string, vals []string) {
+		b.WriteString(label)
+		b.WriteString("=")
+		b.WriteString(strings.Join(vals, ","))
+		b.WriteString(";")
+	}
+	b.WriteString("dir=")
+	b.WriteString(filepath.Clean(workingDir))
+	b.WriteString(";")
+	writePart("files", files)
+	writePart("profiles", profiles)
+	writePart("envfiles", envFiles)
+	writePart("inline", inlineEnv)
+	return b.String()
 }
 
 // buildLabeledProjectTemp loads the effective compose yaml via `docker compose config`,

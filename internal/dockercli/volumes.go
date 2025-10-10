@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
@@ -22,6 +23,13 @@ func (c *Client) ListVolumes(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return util.SplitNonEmptyLines(out), nil
+}
+
+// VolumeSummary contains basic metadata about a volume for dashboard display.
+type VolumeSummary struct {
+	Name       string
+	Driver     string
+	Mountpoint string
 }
 
 func (c *Client) CreateVolume(ctx context.Context, name string, labels map[string]string) error {
@@ -59,9 +67,11 @@ func (c *Client) VolumeExists(ctx context.Context, name string) (bool, error) {
 
 // VolumeDetails contains driver, options and labels of a volume.
 type VolumeDetails struct {
-	Driver  string            `json:"Driver"`
-	Options map[string]string `json:"Options"`
-	Labels  map[string]string `json:"Labels"`
+	Name       string            `json:"Name"`
+	Driver     string            `json:"Driver"`
+	Mountpoint string            `json:"Mountpoint"`
+	Options    map[string]string `json:"Options"`
+	Labels     map[string]string `json:"Labels"`
 }
 
 // InspectVolume returns driver/options/labels for a volume.
@@ -85,6 +95,65 @@ func (c *Client) InspectVolume(ctx context.Context, name string) (VolumeDetails,
 		d.Labels = map[string]string{}
 	}
 	return d, nil
+}
+
+// VolumeSummaries returns a list of volume metadata including driver and mountpoint.
+func (c *Client) VolumeSummaries(ctx context.Context) ([]VolumeSummary, error) {
+	args := []string{"volume", "ls", "--format", "{{.Name}}\t{{.Driver}}"}
+	if c.identifier != "" {
+		args = append(args, "--filter", "label=io.dockform.identifier="+c.identifier)
+	}
+	out, err := c.exec.Run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	lines := util.SplitNonEmptyLines(out)
+	if len(lines) == 0 {
+		return nil, nil
+	}
+	names := make([]string, 0, len(lines))
+	driverByName := make(map[string]string, len(lines))
+	for _, line := range lines {
+		parts := strings.SplitN(line, "\t", 2)
+		name := strings.TrimSpace(parts[0])
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+		if len(parts) > 1 {
+			driverByName[name] = strings.TrimSpace(parts[1])
+		}
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	inspectArgs := append([]string{"volume", "inspect"}, names...)
+	inspectOut, err := c.exec.Run(ctx, inspectArgs...)
+	if err != nil {
+		return nil, err
+	}
+	var details []VolumeDetails
+	if err := json.Unmarshal([]byte(inspectOut), &details); err != nil {
+		return nil, apperr.Wrap("dockercli.VolumeSummaries", apperr.Internal, err, "parse inspect output")
+	}
+	summaries := make([]VolumeSummary, 0, len(details))
+	for _, d := range details {
+		name := strings.TrimSpace(d.Name)
+		if name == "" {
+			continue
+		}
+		driver := strings.TrimSpace(driverByName[name])
+		if driver == "" {
+			driver = strings.TrimSpace(d.Driver)
+		}
+		summaries = append(summaries, VolumeSummary{
+			Name:       name,
+			Driver:     driver,
+			Mountpoint: strings.TrimSpace(d.Mountpoint),
+		})
+	}
+	sort.Slice(summaries, func(i, j int) bool { return summaries[i].Name < summaries[j].Name })
+	return summaries, nil
 }
 
 // StreamTarFromVolume streams a tar of the root of the volume to w.
