@@ -55,16 +55,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if st, ok := m.statusByKey[key]; ok {
 				colorKey, text := data.FormatStatusLine(st.State, st.StatusText)
-				prefix := ""
-				switch colorKey {
-				case "success":
-					prefix = "[ok] "
-				case "warning":
-					prefix = "[warn] "
-				default:
-					prefix = "[err] "
-				}
-				si.Status = prefix + text
+				si.StatusKind = colorKey
+				si.Status = text
 				if strings.TrimSpace(st.ContainerName) != "" {
 					si.ContainerName = st.ContainerName
 				}
@@ -235,34 +227,11 @@ func (m model) refreshStatusesCmd() tea.Cmd {
 	if m.statusProvider == nil {
 		return m.tickStatuses()
 	}
-	items := m.list.Items()
+	stacks := m.stacks
 	return tea.Sequence(
 		func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			stackMap := map[string][]data.ServiceSummary{}
-			for _, it := range items {
-				si, ok := it.(components.StackItem)
-				if !ok {
-					continue
-				}
-				if len(si.Containers) == 0 {
-					continue
-				}
-				service := si.Containers[0]
-				cname := ""
-				if strings.Contains(service, "(container:") {
-					parts := strings.Split(service, "(container:")
-					service = strings.TrimSpace(parts[0])
-					seg := strings.TrimSpace(strings.TrimSuffix(parts[1], ")"))
-					cname = seg
-				}
-				stackMap[si.TitleText] = append(stackMap[si.TitleText], data.ServiceSummary{Service: service, ContainerName: cname})
-			}
-			stacks := make([]data.StackSummary, 0, len(stackMap))
-			for name, svcs := range stackMap {
-				stacks = append(stacks, data.StackSummary{Name: name, Services: svcs})
-			}
 			statuses, err := m.statusProvider.FetchAll(ctx, stacks)
 			if err == nil {
 				return statusesMsg{statuses: statuses}
