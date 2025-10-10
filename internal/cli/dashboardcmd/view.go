@@ -136,37 +136,37 @@ func (m model) renderColumns(bodyHeight int) string {
 	if contentWidth < 1 {
 		contentWidth = 1
 	}
-    buildGradHeader := func(title string) string {
-        cacheKey := fmt.Sprintf("hdr:%s:%d", title, contentWidth)
-        if m.headerCache != nil {
-            if s, ok := m.headerCache[cacheKey]; ok {
-                return s
-            }
-        }
-        base := "◇ " + title + " "
-        baseWidth := lipgloss.Width(base)
-        slashCount := contentWidth - baseWidth
-        var raw string
-        if slashCount < 0 {
-            runes := []rune(base)
-            if contentWidth < len(runes) {
-                raw = string(runes[:contentWidth])
-            } else {
-                raw = base
-            }
-        } else {
-            raw = base + strings.Repeat("╱", slashCount)
-        }
-        grad := components.RenderGradientText(raw, "#5EC6F6", "#376FE9")
-        rendered := lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(grad)
-        if m.headerCache != nil {
-            m.headerCache[cacheKey] = rendered
-        }
-        return rendered
-    }
-    r1Header := buildGradHeader("Docker")
-    r2Header := buildGradHeader("Volumes")
-    r3Header := buildGradHeader("Networks")
+	buildGradHeader := func(title string) string {
+		cacheKey := fmt.Sprintf("hdr:%s:%d", title, contentWidth)
+		if m.headerCache != nil {
+			if s, ok := m.headerCache[cacheKey]; ok {
+				return s
+			}
+		}
+		base := "◇ " + title + " "
+		baseWidth := lipgloss.Width(base)
+		slashCount := contentWidth - baseWidth
+		var raw string
+		if slashCount < 0 {
+			runes := []rune(base)
+			if contentWidth < len(runes) {
+				raw = string(runes[:contentWidth])
+			} else {
+				raw = base
+			}
+		} else {
+			raw = base + strings.Repeat("╱", slashCount)
+		}
+		grad := components.RenderGradientText(raw, "#5EC6F6", "#376FE9")
+		rendered := lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Render(grad)
+		if m.headerCache != nil {
+			m.headerCache[cacheKey] = rendered
+		}
+		return rendered
+	}
+	r1Header := buildGradHeader("Docker")
+	r2Header := buildGradHeader("Volumes")
+	r3Header := buildGradHeader("Networks")
 
 	versionLabel := fmt.Sprintf("DOCKFORM %s", displayVersion(m.version))
 	r0Line0 := components.RenderGradientText(versionLabel, "#5EC6F6", "#376FE9")
@@ -224,7 +224,7 @@ func (m model) renderNetworksSection(contentWidth int) string {
 	for i := 0; i < limit; i++ {
 		n := m.networks[i]
 		name := truncateRight(n.Name, contentWidth)
-    driver := truncateRight(displayNetworkDriver(n.Driver), contentWidth-lipgloss.Width(name)-3)
+		driver := truncateRight(displayNetworkDriver(n.Driver), contentWidth-lipgloss.Width(name)-3)
 		lines = append(lines, components.RenderNetwork(name, driver))
 	}
 	return strings.Join(lines, "\n")

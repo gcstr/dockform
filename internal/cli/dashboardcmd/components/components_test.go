@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/v2/list"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
-	"github.com/charmbracelet/bubbles/v2/list"
 )
 
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -106,12 +106,8 @@ func TestLogsPagerUpdateNoPanic(t *testing.T) {
 	p := NewLogsPager()
 	p.SetSize(10, 3)
 	var msg tea.Msg
-	var cmd tea.Cmd
-	// sending a nil message should be safe
-	p, cmd = p.Update(msg)
-	if cmd != nil {
-		// It's okay if it returns nil or a no-op cmd
-	}
+	p, _ = p.Update(msg)
+	_ = p // ensure p is used
 }
 
 func TestStackItemFilterValue(t *testing.T) {
