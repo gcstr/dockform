@@ -81,7 +81,7 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 	}
 
 	statusText := strings.TrimSpace(i.Status)
-	bullet := bulletMuted
+	bullet := ""
 	switch strings.TrimSpace(i.StatusKind) {
 	case "success":
 		bullet = bulletOk
@@ -89,8 +89,14 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 		bullet = bulletWarn
 	case "error":
 		bullet = bulletErr
+	default:
+		// unknown/empty kind: do not prepend an extra bullet to avoid double symbols
 	}
-	statusText = bullet + " " + textItalicStyle.Render(statusText)
+	if bullet != "" {
+		statusText = bullet + " " + textItalicStyle.Render(statusText)
+	} else {
+		statusText = textItalicStyle.Render(statusText)
+	}
 	renderedStatus := treeStyle.Render("└ ") + statusText
 
 	width := m.Width()
@@ -127,7 +133,7 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 		}
 		// status: same logic as unselected, but render text with selected styles
 		raw := strings.TrimSpace(i.Status)
-		b := bulletMuted
+		b := ""
 		switch strings.TrimSpace(i.StatusKind) {
 		case "success":
 			b = bulletOk
@@ -136,7 +142,12 @@ func (d StacksDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 		case "error":
 			b = bulletErr
 		}
-		selectedRenderedStatus := selectedTree.Render("└ ") + b + " " + selectedItalic.Render(raw)
+		var selectedRenderedStatus string
+		if b != "" {
+			selectedRenderedStatus = selectedTree.Render("└ ") + b + " " + selectedItalic.Render(raw)
+		} else {
+			selectedRenderedStatus = selectedTree.Render("└ ") + selectedItalic.Render(raw)
+		}
 		selectedLines := fitLinesToHeight(selectedBody, selectedRenderedStatus, d.Height(), width)
 		block = lipgloss.NewStyle().Bold(true).Render(strings.Join(selectedLines, "\n"))
 	}
