@@ -5,7 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/charmbracelet/bubbles/v2/list"
 )
 
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -100,6 +102,18 @@ func TestLogsPagerLifecycle(t *testing.T) {
 	}
 }
 
+func TestLogsPagerUpdateNoPanic(t *testing.T) {
+	p := NewLogsPager()
+	p.SetSize(10, 3)
+	var msg tea.Msg
+	var cmd tea.Cmd
+	// sending a nil message should be safe
+	p, cmd = p.Update(msg)
+	if cmd != nil {
+		// It's okay if it returns nil or a no-op cmd
+	}
+}
+
 func TestStackItemFilterValue(t *testing.T) {
 	item := StackItem{TitleText: "paperless"}
 	if got := item.FilterValue(); got != "paperless" {
@@ -108,5 +122,19 @@ func TestStackItemFilterValue(t *testing.T) {
 	item.FilterText = "custom filter"
 	if got := item.FilterValue(); got != "custom filter" {
 		t.Fatalf("expected custom filter value, got %q", got)
+	}
+}
+
+func TestStackItemRendersWithStatusKind(t *testing.T) {
+	m := list.New([]list.Item{}, StacksDelegate{}, 40, 10)
+	item := StackItem{TitleText: "app", Containers: []string{"web", "nginx:alpine"}, Status: "Up 2m (healthy)", StatusKind: "success"}
+	var buf strings.Builder
+	StacksDelegate{}.Render(&buf, m, 0, item)
+	plain := stripANSI(buf.String())
+	if !strings.Contains(plain, "Up 2m (healthy)") {
+		t.Fatalf("expected status text to be present, got %q", plain)
+	}
+	if !strings.Contains(plain, "● Up 2m (healthy)") {
+		t.Fatalf("expected bullet then status text, got %q", plain)
 	}
 }
