@@ -71,6 +71,8 @@ func newModel(ctx context.Context, docker *dockercli.Client, stacks []data.Stack
 	projectList.Styles.Filter.Blurred.Prompt = lipgloss.NewStyle().Foreground(theme.FgMuted)
 	projectList.FilterInput.Styles.Focused.Prompt = lipgloss.NewStyle().Foreground(theme.Success)
 	projectList.FilterInput.Styles.Blurred.Prompt = lipgloss.NewStyle().Foreground(theme.FgMuted)
+	projectList.FilterInput.Styles.Focused.Placeholder = lipgloss.NewStyle().Foreground(theme.FgMuted)
+	projectList.FilterInput.Styles.Blurred.Placeholder = lipgloss.NewStyle().Foreground(theme.FgMuted)
 
 	projectList.SetShowFilter(true)
 	projectList.Styles.TitleBar = projectList.Styles.TitleBar.Padding(0, 0, 0, 0)

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/v2/key"
-	"github.com/charmbracelet/bubbles/v2/list"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/components"
@@ -40,13 +39,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusByKey[k] = v
 		}
 		items := m.list.Items()
-		newItems := make([]list.Item, 0, len(items))
-		for _, it := range items {
+		var cmds []tea.Cmd
+		for idx, it := range items {
 			si, ok := it.(components.StackItem)
 			if !ok {
-				newItems = append(newItems, it)
 				continue
 			}
+			changed := false
 			key := data.Key{Stack: si.TitleText}
 			if si.Service != "" {
 				key.Service = si.Service
@@ -55,16 +54,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if st, ok := m.statusByKey[key]; ok {
 				colorKey, text := data.FormatStatusLine(st.State, st.StatusText)
-				si.StatusKind = colorKey
-				si.Status = text
-				if strings.TrimSpace(st.ContainerName) != "" {
-					si.ContainerName = st.ContainerName
+				if si.StatusKind != colorKey {
+					si.StatusKind = colorKey
+					changed = true
+				}
+				if si.Status != text {
+					si.Status = text
+					changed = true
+				}
+				if name := strings.TrimSpace(st.ContainerName); name != "" && si.ContainerName != name {
+					si.ContainerName = name
+					changed = true
 				}
 			}
-			newItems = append(newItems, si)
+			if changed {
+				if cmd := m.list.SetItem(idx, si); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
 		}
-		m.list.SetItems(newItems)
-		return m, nil
+		return m, tea.Batch(cmds...)
 	case statusTickMsg:
 		return m, m.refreshStatusesCmd()
 	case logsTickMsg:

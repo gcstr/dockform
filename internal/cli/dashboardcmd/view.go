@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/v2/list"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/gcstr/dockform/internal/cli/buildinfo"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/components"
@@ -111,7 +112,21 @@ func (m model) renderColumns(bodyHeight int) string {
 	} else {
 		leftHeader = renderHeaderWithPadding(leftTitle, leftW, totalHorizontalPadding, "dash")
 	}
-	leftContent := leftHeader + "\n" + m.list.View()
+	listView := m.list.View()
+	if m.list.FilterState() == list.Filtering {
+		if idx := strings.Index(listView, "\n"); idx != -1 {
+			listView = listView[:idx+1] + "\n" + listView[idx+1:]
+		} else {
+			listView += "\n"
+		}
+	}
+	if m.list.FilterState() == list.Unfiltered {
+		placeholder := renderFilterPlaceholder(leftW - totalHorizontalPadding)
+		if placeholder != "" {
+			listView = placeholder + "\n" + listView
+		}
+	}
+	leftContent := leftHeader + "\n" + listView
 
 	centerPadding := (paddingHorizontal + 1) * 2
 	var centerHeader string
@@ -193,6 +208,15 @@ func (m model) renderColumns(bodyHeight int) string {
 func renderSimpleWithWidth(key, value string, totalWidth int) string {
 	available := availableValueWidth(totalWidth, key)
 	return components.RenderSimple(key, truncateRight(value, available))
+}
+
+func renderFilterPlaceholder(width int) string {
+	text := "Press / to filter stacks"
+	style := lipgloss.NewStyle().Foreground(theme.FgSubtle).Italic(true)
+	if width > 0 {
+		style = style.Width(width).MaxWidth(width)
+	}
+	return style.Render(text)
 }
 
 func (m model) renderVolumesSection(contentWidth int) string {
