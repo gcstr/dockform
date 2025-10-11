@@ -26,36 +26,6 @@ type commandActionResultMsg struct {
 	err       error
 }
 
-func (a commandAction) label() string {
-	switch a {
-	case actionPause:
-		return "pause"
-	case actionRestart:
-		return "restart"
-	case actionStop:
-		return "stop"
-	case actionDelete:
-		return "delete"
-	default:
-		return string(a)
-	}
-}
-
-func (a commandAction) pastTense() string {
-	switch a {
-	case actionPause:
-		return "paused"
-	case actionRestart:
-		return "restarted"
-	case actionStop:
-		return "stopped"
-	case actionDelete:
-		return "deleted"
-	default:
-		return a.label()
-	}
-}
-
 func (m model) executeCommand(action commandAction, container string) tea.Cmd {
 	container = strings.TrimSpace(container)
 	if container == "" {
@@ -105,25 +75,4 @@ func (m model) executeCommand(action commandAction, container string) tea.Cmd {
 			err:       err,
 		}
 	}
-}
-
-func formatCommandSuccess(action commandAction, container string) string {
-	past := action.pastTense()
-	if past == "" {
-		past = action.label()
-	}
-	if past != "" {
-		past = strings.ToUpper(past[:1]) + past[1:]
-	}
-	if container == "" {
-		return past
-	}
-	return fmt.Sprintf("%s %s", past, container)
-}
-
-func formatCommandFailure(action commandAction, container string, err error) string {
-	if err == nil {
-		return fmt.Sprintf("Failed to %s %s", action.label(), container)
-	}
-	return fmt.Sprintf("Failed to %s %s: %v", action.label(), container, err)
 }
