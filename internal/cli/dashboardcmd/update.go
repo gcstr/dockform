@@ -116,8 +116,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logCancel = msg.cancel
 		return m, nil
 	case tea.KeyMsg:
-		switch {
-		case key.Matches(msg, m.keys.Quit):
+		if key.Matches(msg, m.keys.Quit) {
 			m.quitting = true
 			if m.logCancel != nil {
 				m.logCancel()
@@ -128,6 +127,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.debounceTimer = nil
 			}
 			return m, tea.Quit
+		}
+
+		if key.Matches(msg, m.keys.Command) {
+			if m.commandPaletteOpen {
+				m.commandPaletteOpen = false
+			} else {
+				if m.commandList.Index() < 0 {
+					m.commandList.Select(0)
+				}
+				m.commandPaletteOpen = true
+			}
+			return m, nil
+		}
+
+		if m.commandPaletteOpen {
+			switch msg.String() {
+			case "esc":
+				m.commandPaletteOpen = false
+				return m, nil
+			case "enter":
+				m.commandPaletteOpen = false
+				return m, nil
+			}
+			var listCmd tea.Cmd
+			m.commandList, listCmd = m.commandList.Update(msg)
+			return m, listCmd
+		}
+
+		switch {
 		case key.Matches(msg, m.keys.CyclePane):
 			m.activePane = (m.activePane + 1) % 2
 			return m, nil
@@ -189,6 +217,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.list.SetSize(listWidth, listHeight)
 		m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, bodyHeight-3))
+
+		paletteWidth := commandPaletteWidth(m.width)
+		m.commandList.SetSize(commandListContentWidth(paletteWidth), len(m.commandList.Items()))
+
 		return m, nil
 	}
 

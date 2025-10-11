@@ -45,11 +45,34 @@ func (m model) View() string {
 		helpBar = lipgloss.NewStyle().Width(m.width).Render("")
 	}
 	content := lipgloss.JoinVertical(lipgloss.Left, "", columns, helpBar)
-	return lipgloss.NewStyle().
+	base := lipgloss.NewStyle().
 		Background(theme.BgBase).
 		Width(m.width).
 		Height(m.height).
 		Render(content)
+	if !m.commandPaletteOpen {
+		return base
+	}
+
+	baseLayer := lipgloss.NewLayer(base).ID("base")
+	canvas := lipgloss.NewCanvas(baseLayer)
+
+	palette := m.renderCommandPaletteWindow()
+	paletteLayer := lipgloss.NewLayer(palette).ID("command_palette")
+	pWidth := lipgloss.Width(palette)
+	pHeight := lipgloss.Height(palette)
+	if pWidth > m.width {
+		pWidth = m.width
+	}
+	if pHeight > m.height {
+		pHeight = m.height
+	}
+	x := max(0, (m.width-pWidth)/2)
+	y := max(0, (m.height-pHeight)/2)
+	paletteLayer.X(x).Y(y).Z(1)
+	canvas.AddLayers(paletteLayer)
+
+	return canvas.Render()
 }
 
 func computeColumnWidths(total int) (left, center, right int) {
@@ -403,6 +426,50 @@ func (m model) renderHelp() string {
 		return m.help.View(m.keys)
 	}
 	return lipgloss.NewStyle().Width(m.width).Render(m.help.View(m.keys))
+}
+
+func (m model) renderCommandPaletteWindow() string {
+	width := commandPaletteWidth(m.width)
+	if available := max(1, m.width); width > available {
+		width = available
+	}
+	innerWidth := max(1, width-2)
+	contentWidth := commandListContentWidth(width)
+
+	header := components.RenderHeaderActive("Commands", innerWidth, 0, "slash")
+
+	containerName := strings.TrimSpace(m.selectedContainerName())
+	if containerName == "" {
+		containerName = "(no container selected)"
+	}
+	containerKey := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render("Container: ")
+	containerValue := lipgloss.NewStyle().Foreground(theme.FgBase).Bold(true).Render(containerName)
+	containerLine := lipgloss.NewStyle().
+		Width(contentWidth).
+		MaxWidth(contentWidth).
+		Render(containerKey + containerValue)
+
+	listView := lipgloss.NewStyle().
+		Width(contentWidth).
+		MaxWidth(contentWidth).
+		Render(m.commandList.View())
+
+	content := lipgloss.JoinVertical(lipgloss.Left, containerLine, "", listView)
+	contentStyled := lipgloss.NewStyle().
+		Padding(contentPaddingTop, contentPaddingRight, contentPaddingBottom, contentPaddingLeft).
+		Width(innerWidth).
+		Render(content)
+
+	body := lipgloss.JoinVertical(lipgloss.Left, header, contentStyled)
+
+	modal := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(theme.Primary).
+		Background(theme.BgBase).
+		Width(width).
+		Render(body)
+
+	return modal
 }
 
 func renderHeaderWithPadding(title string, containerWidth int, horizontalPadding int, pattern string) string {
