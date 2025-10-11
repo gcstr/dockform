@@ -3,10 +3,10 @@
   <picture>
     <source srcset="logo_light.svg" media="(prefers-color-scheme: light)" width="100"/>
     <source srcset="logo_dark.svg"  media="(prefers-color-scheme: dark)" width="100"/>
-    <img src="logo_light.svg" alt="Description of what the image shows" width="100"/>
+    <img src="logo_light.svg" alt="dockform logo" width="100"/>
   </picture>
   <br/>
-  <img src="plan.png" alt="Description of what the image shows" width="400"/>
+  <img src="preview.png" alt="Dockform Preview" width="400"/>
   <br/>
   <a href="https://github.com/gcstr/dockform/blob/main/LICENSE"><img src="https://img.shields.io/github/license/gcstr/dockform?color=blue"></a>
   &nbsp;
