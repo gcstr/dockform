@@ -5,6 +5,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestRenderYAMLInPagerTTY_NonTTY_FallsBackToPlainOutput(t *testing.T) {
@@ -209,6 +212,28 @@ func TestPagerModel_SmallWidth_HandlesGracefully(t *testing.T) {
 	}
 }
 
+func TestPagerModelUpdateWindowSize(t *testing.T) {
+	content := "line1\nline2"
+	m := newPagerModel("title", content)
+	msg := tea.WindowSizeMsg{Width: 40, Height: 10}
+	if updated, _ := m.Update(msg); updated != nil {
+		m = updated.(pagerModel)
+	}
+	if !m.ready || m.viewport.Width != 40 {
+		t.Fatalf("expected viewport configured, got ready=%v width=%d", m.ready, m.viewport.Width)
+	}
+	if m.viewport.Height <= 0 {
+		t.Fatalf("expected positive viewport height, got %d", m.viewport.Height)
+	}
+	view := m.View()
+	if view == "" {
+		t.Fatalf("expected non-empty view after ready")
+	}
+	if updated, _ := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyCtrlC})); updated != nil {
+		m = updated.(pagerModel)
+	}
+}
+
 func TestRenderYAMLInPagerTTY_WriteError_ReturnsError(t *testing.T) {
 	yamlContent := "docker:\n  identifier: test\n"
 	title := "test.yml"
@@ -220,6 +245,36 @@ func TestRenderYAMLInPagerTTY_WriteError_ReturnsError(t *testing.T) {
 	err := RenderYAMLInPagerTTY(&in, failWriter, yamlContent, title)
 	if err == nil {
 		t.Fatalf("expected error from failing writer, got nil")
+	}
+}
+
+func TestRenderYAMLInPagerTTY_WithTTY(t *testing.T) {
+	master, slave := openPTYOrSkip(t)
+	t.Cleanup(func() {
+		if err := master.Close(); err != nil {
+			t.Fatalf("close master pty: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		if err := slave.Close(); err != nil {
+			t.Fatalf("close slave pty: %v", err)
+		}
+	})
+	discardPTY(master)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RenderYAMLInPagerTTY(slave, slave, "docker:\n  context: test\n", "test.yml")
+	}()
+	time.Sleep(50 * time.Millisecond)
+	_, _ = master.Write([]byte("q"))
+	_, _ = master.Write([]byte{''})
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("timeout waiting for pager to exit")
 	}
 }
 

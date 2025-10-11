@@ -54,8 +54,10 @@ type model struct {
 	// cached UI strings by key (e.g., right-column gradient headers)
 	headerCache map[string]string
 
-	quitting   bool
-	activePane int
+	quitting           bool
+	activePane         int
+	commandPaletteOpen bool
+	commandList        list.Model
 }
 
 func newModel(ctx context.Context, docker *dockercli.Client, stacks []data.StackSummary, version, identifier, manifestPath, contextName, dockerHost, engineVersion string) model {
@@ -115,6 +117,7 @@ func newModel(ctx context.Context, docker *dockercli.Client, stacks []data.Stack
 		statusByKey:       make(map[data.Key]data.Status),
 		logsBuf:           make([]string, 0, 512),
 		headerCache:       make(map[string]string),
+		commandList:       newCommandPalette(),
 	}
 }
 

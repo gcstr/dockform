@@ -99,6 +99,20 @@ func TestRemoveContainer_BuildsArgs(t *testing.T) {
 	}
 }
 
+func TestPauseContainer_BuildsArgs(t *testing.T) {
+	stub := &execStub{}
+	c := &Client{exec: stub}
+	if err := c.PauseContainer(context.Background(), "c1"); err != nil {
+		t.Fatalf("pause container: %v", err)
+	}
+	if !containsArgSeq(stub.lastArgs, []string{"container", "pause", "c1"}) {
+		t.Fatalf("pause args mismatch: %#v", stub.lastArgs)
+	}
+	if err := c.PauseContainer(context.Background(), ""); err == nil {
+		t.Fatalf("expected error for empty container name")
+	}
+}
+
 func TestInspectContainerLabels_FilterAndErrors(t *testing.T) {
 	stub := &execStub{outInspect: `{"a":"1","b":"2"}`}
 	c := &Client{exec: stub}

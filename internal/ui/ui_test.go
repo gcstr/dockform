@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/creack/pty"
 )
 
 func TestStripANSI_RemovesCodes(t *testing.T) {
@@ -171,6 +174,110 @@ func TestConfirmModel_ViewContainsPrompts(t *testing.T) {
 	v := StripANSI(m.View())
 	if v == "" || !containsAll(v, []string{"Dockform will apply", "Type", "Answer:"}) {
 		t.Fatalf("expected view to contain prompt text, got: %q", v)
+	}
+}
+
+func TestItalicStripsToPlain(t *testing.T) {
+	rendered := Italic("manifest.yml")
+	if !strings.Contains(rendered, "manifest.yml") {
+		t.Fatalf("expected italic output to contain original text, got: %q", rendered)
+	}
+	if StripANSI(rendered) != "manifest.yml" {
+		t.Fatalf("expected italic output to strip to plain text, got: %q", StripANSI(rendered))
+	}
+}
+
+func TestSuccessAndColorHelpers(t *testing.T) {
+	if StripANSI(SuccessMark()) != "✓" {
+		t.Fatalf("expected success mark to render check")
+	}
+	if StripANSI(RedText("boom")) != "boom" {
+		t.Fatalf("expected red text to strip to original value")
+	}
+	if StripANSI(ConfirmToken("yes")) != "yes" {
+		t.Fatalf("expected confirm token to strip to original")
+	}
+	for _, fn := range []func(string) string{GreenText, YellowText, BlueText} {
+		if StripANSI(fn("text")) != "text" {
+			t.Fatalf("expected color helper to strip to original text")
+		}
+	}
+}
+
+func TestSectionTitleAndPlanSummary(t *testing.T) {
+	if StripANSI(SectionTitle("Apps")) == "" {
+		t.Fatalf("expected section title output")
+	}
+	if !strings.Contains(FormatPlanSummary(1, 2, 3), "1 to create") {
+		t.Fatalf("unexpected plan summary string")
+	}
+	if StripRedundantPrefixes("volume data", "Volumes") != "data" {
+		t.Fatalf("expected volume prefix stripped")
+	}
+	if StripRedundantPrefixes("network net1", "Networks") != "net1" {
+		t.Fatalf("expected network prefix stripped")
+	}
+}
+
+func TestNoopPrinterAndLineHelpers(t *testing.T) {
+	var np NoopPrinter
+	np.Plain("noop")
+	np.Info("noop")
+	np.Warn("noop")
+	np.Error("noop")
+	if Line(Info, "value").String() != "value" {
+		t.Fatalf("expected line string helper to return message")
+	}
+}
+
+func TestClearCurrentLineIfTTY(t *testing.T) {
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Fatalf("pty open: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := master.Close(); err != nil {
+			t.Fatalf("close master pty: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		if err := slave.Close(); err != nil {
+			t.Fatalf("close slave pty: %v", err)
+		}
+	})
+	dataCh := make(chan string, 1)
+	go func() {
+		buf := make([]byte, 32)
+		n, _ := master.Read(buf)
+		dataCh <- string(buf[:n])
+	}()
+	clearCurrentLineIfTTY(slave)
+	select {
+	case data := <-dataCh:
+		if !strings.HasPrefix(data, "\r\x1b[2K") {
+			t.Fatalf("expected clear sequence, got %q", data)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("timed out waiting for clear sequence")
+	}
+}
+
+func TestStdPrinterSuppressedByEnv(t *testing.T) {
+	var out bytes.Buffer
+	p := StdPrinter{Out: &out, Err: &out}
+	t.Setenv("DOCKFORM_TUI_ACTIVE", "1")
+	p.Info("should not print")
+	p.Warn("warn")
+	p.Error("err")
+	if out.Len() != 0 {
+		t.Fatalf("expected suppressed output when TUI active")
+	}
+	t.Setenv("DOCKFORM_TUI_ACTIVE", "")
+	p.Info("visible")
+	p.Warn("warn")
+	p.Error("err")
+	if !strings.Contains(StripANSI(out.String()), "visible") {
+		t.Fatalf("expected info output when env cleared")
 	}
 }
 
