@@ -91,6 +91,15 @@ func (c *Client) RestartContainer(ctx context.Context, name string) error {
 	return err
 }
 
+// PauseContainer pauses a running container by name.
+func (c *Client) PauseContainer(ctx context.Context, name string) error {
+	if strings.TrimSpace(name) == "" {
+		return apperr.New("dockercli.PauseContainer", apperr.InvalidInput, "container name required")
+	}
+	_, err := c.exec.Run(ctx, "container", "pause", name)
+	return err
+}
+
 // InspectContainerLabels returns selected labels from a container.
 func (c *Client) InspectContainerLabels(ctx context.Context, containerName string, keys []string) (map[string]string, error) {
 	if containerName == "" {

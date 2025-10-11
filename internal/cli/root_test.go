@@ -182,3 +182,47 @@ func TestPrintUserFriendly_NonAppErr(t *testing.T) {
 		t.Fatalf("expected plain error output, got: %s", string(b))
 	}
 }
+
+func TestExecuteContextCanceled(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"dockform", "--help"}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if code := Execute(ctx); code != 130 {
+		t.Fatalf("expected exit code 130 for canceled context, got %d", code)
+	}
+}
+
+func TestProvideExternalErrorHints(t *testing.T) {
+	old := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+
+	provideExternalErrorHints(errors.New("invalid compose file at line 1"))
+	_ = w.Close()
+	out, _ := io.ReadAll(r)
+	s := string(out)
+	if !strings.Contains(s, "Hint: Check your Docker Compose file syntax") {
+		t.Fatalf("expected compose syntax hint, got: %s", s)
+	}
+}
+
+func TestProvideDockerTroubleshootingHintsNonDefaultContext(t *testing.T) {
+	old := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+
+	provideDockerTroubleshootingHints(errors.New("context=my-prod docker daemon not reachable"))
+	_ = w.Close()
+	out, _ := io.ReadAll(r)
+	s := string(out)
+	if !strings.Contains(s, "docker context ls") {
+		t.Fatalf("expected context troubleshooting hint, got: %s", s)
+	}
+	if !strings.Contains(s, "docker --context <name> ps") {
+		t.Fatalf("expected context ps hint, got: %s", s)
+	}
+}

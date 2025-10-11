@@ -9,6 +9,7 @@ import (
 
 	"github.com/gcstr/dockform/internal/cli"
 	"github.com/gcstr/dockform/internal/cli/clitest"
+	"github.com/gcstr/dockform/internal/cli/manifestcmd"
 )
 
 func TestManifest_Render_Success_WithTrailingNewline(t *testing.T) {
@@ -98,5 +99,19 @@ func TestManifest_Render_InvalidPath_ReturnsError(t *testing.T) {
 	root.SetArgs([]string{"manifest", "render", "-c", "does-not-exist.yml"})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for invalid manifest path, got nil")
+	}
+}
+
+func TestManifestCommandIncludesRender(t *testing.T) {
+	cmd := manifestcmd.New()
+	found := false
+	for _, c := range cmd.Commands() {
+		if c.Name() == "render" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected manifest command to include render subcommand")
 	}
 }
