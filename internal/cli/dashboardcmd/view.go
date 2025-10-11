@@ -422,10 +422,11 @@ func truncateLeft(value string, width int) string {
 }
 
 func (m model) renderHelp() string {
+	base := m.help.View(m.keys)
 	if m.width <= 0 {
-		return m.help.View(m.keys)
+		return base
 	}
-	return lipgloss.NewStyle().Width(m.width).Render(m.help.View(m.keys))
+	return lipgloss.NewStyle().Width(m.width).Render(base)
 }
 
 func (m model) renderCommandPaletteWindow() string {

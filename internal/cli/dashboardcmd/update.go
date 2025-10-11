@@ -147,8 +147,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.commandPaletteOpen = false
 				return m, nil
 			case "enter":
+				item := m.commandList.SelectedItem()
+				ci, ok := item.(commandItem)
+				if !ok {
+					m.commandPaletteOpen = false
+					return m, nil
+				}
+				container := strings.TrimSpace(m.selectedContainerName())
+				if container == "" {
+					m.commandPaletteOpen = false
+					return m, nil
+				}
 				m.commandPaletteOpen = false
-				return m, nil
+				action := commandAction(ci.id)
+				return m, m.executeCommand(action, container)
 			}
 			var listCmd tea.Cmd
 			m.commandList, listCmd = m.commandList.Update(msg)
@@ -193,6 +205,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logsPager.SetSize(centerW-(paddingHorizontal+1)*2, max(1, bodyHeight-2))
 			return m, nil
 		}
+	case commandActionResultMsg:
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
