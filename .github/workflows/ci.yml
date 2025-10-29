@@ -69,7 +69,11 @@ jobs:
         run: go test ./internal/... -v
   e2e:
     needs: test
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -79,7 +83,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      
+
+      - name: Setup Docker on Windows
+        if: runner.os == 'Windows'
+        run: |
+          # Start Docker service on Windows runner
+          Start-Service docker
+
       - name: Setup SOPS
         uses: nhedger/setup-sops@v2
         with:
@@ -87,6 +97,21 @@ jobs:
 
       - name: Setup Age
         uses: alessiodionisi/setup-age-action@v1.3.0
+
+      - name: Create dummy age key file (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p $HOME/.config/sops/age
+          echo 'AGE-SECRET-KEY-1XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' > $HOME/.config/sops/age/keys.txt
+
+      - name: Create dummy age key file (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:APPDATA\sops\age"
+          Set-Content -Path "$env:APPDATA\sops\age\keys.txt" -Value 'AGE-SECRET-KEY-1XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+
+      - name: Verify Docker is running
+        run: docker version
 
       - name: Run e2e tests
         run: go test ./test/e2e -v
