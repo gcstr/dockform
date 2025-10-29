@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/dockercli"
@@ -255,12 +256,16 @@ func TestValidate_Fails_WhenSopsAgeKeyMissing(t *testing.T) {
 	t.Cleanup(func() { _ = os.Setenv(homeEnvVar, oldHome) })
 
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
+	mustWrite(filepath.Join(tmp, "secrets.env"), "KEY=value\n")
 	yml := []byte(`docker:
   context: default
   identifier: test-id
 sops:
   age:
     key_file: ~/.config/sops/age/keys.txt
+secrets:
+  sops:
+    - secrets.env
 stacks:
   website:
     root: website
@@ -541,5 +546,202 @@ stacks:
 	d := dockercli.New(cfg.Docker.Context)
 	if err := Validate(context.Background(), cfg, d); err == nil {
 		t.Fatalf("expected app root not directory error")
+	}
+}
+
+func TestValidate_Fails_WhenAgeKeyFileEmptyWithSopsSecrets(t *testing.T) {
+	defer withStubDocker(t)()
+	tmp := t.TempDir()
+	mustWrite := func(path string, content string) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
+	mustWrite(filepath.Join(tmp, "secrets.env"), "KEY=value\n")
+
+	// Simulate empty AGE_KEY_FILE environment variable (which causes key_file to be empty after interpolation)
+	yml := []byte(`docker:
+  context: default
+  identifier: test-id
+sops:
+  age:
+    key_file: ${AGE_KEY_FILE}
+secrets:
+  sops:
+    - secrets.env
+stacks:
+  website:
+    root: website
+    files:
+      - docker-compose.yaml
+`)
+	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
+
+	// Ensure AGE_KEY_FILE is not set
+	oldVal := os.Getenv("AGE_KEY_FILE")
+	_ = os.Unsetenv("AGE_KEY_FILE")
+	t.Cleanup(func() {
+		if oldVal != "" {
+			_ = os.Setenv("AGE_KEY_FILE", oldVal)
+		}
+	})
+
+	cfg, err := manifest.Load(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	d := dockercli.New(cfg.Docker.Context)
+	err = Validate(context.Background(), cfg, d)
+	if err == nil {
+		t.Fatalf("expected error when age key_file is empty but sops secrets are configured")
+	}
+	if !strings.Contains(err.Error(), "key_file is empty") {
+		t.Errorf("expected error message to mention empty key_file, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "environment variable") {
+		t.Errorf("expected error message to mention environment variable, got: %v", err)
+	}
+}
+
+func TestValidate_Fails_WhenAgeKeyFileEmptyWithStackSopsSecrets(t *testing.T) {
+	defer withStubDocker(t)()
+	tmp := t.TempDir()
+	mustWrite := func(path string, content string) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
+	mustWrite(filepath.Join(tmp, "website", "secrets.env"), "KEY=value\n")
+
+	// Stack-level sops secrets with empty key_file
+	yml := []byte(`docker:
+  context: default
+  identifier: test-id
+sops:
+  age:
+    key_file: ${MISSING_VAR}
+stacks:
+  website:
+    root: website
+    files:
+      - docker-compose.yaml
+    secrets:
+      sops:
+        - secrets.env
+`)
+	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
+
+	// Ensure MISSING_VAR is not set
+	_ = os.Unsetenv("MISSING_VAR")
+
+	cfg, err := manifest.Load(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	d := dockercli.New(cfg.Docker.Context)
+	err = Validate(context.Background(), cfg, d)
+	if err == nil {
+		t.Fatalf("expected error when age key_file is empty but stack sops secrets are configured")
+	}
+	if !strings.Contains(err.Error(), "key_file is empty") {
+		t.Errorf("expected error message to mention empty key_file, got: %v", err)
+	}
+}
+
+func TestValidate_Succeeds_WhenAgeKeyFileEmptyWithoutSopsSecrets(t *testing.T) {
+	defer withStubDocker(t)()
+	tmp := t.TempDir()
+	mustWrite := func(path string, content string) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
+
+	// Empty key_file but NO sops secrets - should pass
+	yml := []byte(`docker:
+  context: default
+  identifier: test-id
+sops:
+  age:
+    key_file: ${AGE_KEY_FILE}
+stacks:
+  website:
+    root: website
+    files:
+      - docker-compose.yaml
+`)
+	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
+
+	// Ensure AGE_KEY_FILE is not set
+	_ = os.Unsetenv("AGE_KEY_FILE")
+
+	cfg, err := manifest.Load(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	d := dockercli.New(cfg.Docker.Context)
+	err = Validate(context.Background(), cfg, d)
+	if err != nil {
+		t.Fatalf("expected validation to succeed when no sops secrets configured, got: %v", err)
+	}
+}
+
+func TestValidate_Succeeds_WhenNoSopsConfigured(t *testing.T) {
+	defer withStubDocker(t)()
+	tmp := t.TempDir()
+	mustWrite := func(path string, content string) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
+	mustWrite(filepath.Join(tmp, "secrets.env"), "KEY=value\n")
+
+	// SOPS secrets but no sops config section at all - should pass (treated as plaintext)
+	yml := []byte(`docker:
+  context: default
+  identifier: test-id
+secrets:
+  sops:
+    - secrets.env
+stacks:
+  website:
+    root: website
+    files:
+      - docker-compose.yaml
+`)
+	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
+
+	cfg, err := manifest.Load(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	d := dockercli.New(cfg.Docker.Context)
+	err = Validate(context.Background(), cfg, d)
+	if err != nil {
+		t.Fatalf("expected validation to succeed when no sops config section, got: %v", err)
 	}
 }
