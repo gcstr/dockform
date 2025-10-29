@@ -66,8 +66,44 @@ func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) err
 		}
 	}
 
-	// 4) SOPS key file (if configured)
-	if cfg.Sops != nil && cfg.Sops.Age != nil && cfg.Sops.Age.KeyFile != "" {
+	// 4) SOPS key file validation
+	// Check if any SOPS secrets are configured (root level or stack level)
+	hasSopsSecrets := false
+	if cfg.Secrets != nil && len(cfg.Secrets.Sops) > 0 {
+		for _, s := range cfg.Secrets.Sops {
+			if s != "" {
+				hasSopsSecrets = true
+				break
+			}
+		}
+	}
+	if !hasSopsSecrets {
+		for _, stack := range cfg.Stacks {
+			if len(stack.SopsSecrets) > 0 {
+				for _, s := range stack.SopsSecrets {
+					if s != "" {
+						hasSopsSecrets = true
+						break
+					}
+				}
+			}
+			if hasSopsSecrets {
+				break
+			}
+		}
+	}
+
+	// If SOPS secrets are configured, validate key file configuration
+	if hasSopsSecrets && cfg.Sops != nil && cfg.Sops.Age != nil {
+		// Check if key_file is empty - this indicates a missing environment variable
+		if cfg.Sops.Age.KeyFile == "" {
+			return apperr.New("validator.Validate", apperr.InvalidInput,
+				"SOPS age key_file is empty but SOPS secrets are configured; "+
+				"if using environment variable interpolation (e.g., ${AGE_KEY_FILE}), "+
+				"ensure the variable is set in your environment")
+		}
+
+		// Validate that the key file exists
 		key := cfg.Sops.Age.KeyFile
 		if strings.HasPrefix(key, "~/") {
 			if home, err := os.UserHomeDir(); err == nil {
