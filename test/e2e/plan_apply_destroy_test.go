@@ -147,8 +147,6 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	exampleCfg := filepath.Join(root, "test", "e2e", "testdata", "scenarios", "example")
 
 	env := os.Environ()
-	// Avoid sops age key file validation by providing an explicit empty value
-	env = append(env, "AGE_KEY_FILE=")
 
 	// 1) Apply Happy Path (skip confirmation)
 	stdout, stderr, code := runCmdDetailed(t, root, env, bin, "apply", "--skip-confirmation", "-c", exampleCfg)
