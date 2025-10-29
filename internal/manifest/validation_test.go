@@ -225,6 +225,21 @@ func TestFilesets_ValidationAndNormalization(t *testing.T) {
 	} else if !apperr.IsKind(err, apperr.InvalidInput) {
 		t.Fatalf("expected InvalidInput, got %v", err)
 	}
+
+	// Unix-style absolute paths should always be valid (cross-platform)
+	// This ensures Windows hosts can use Unix paths for container targets
+	unixPaths := []string{"/app", "/etc/app", "/var/lib/data", "/opt/myapp"}
+	for _, path := range unixPaths {
+		cfgUnixPath := Config{
+			Docker: DockerConfig{Identifier: "id"},
+			Filesets: map[string]FilesetSpec{
+				"test": {Source: "s", TargetVolume: "data", TargetPath: path},
+			},
+		}
+		if err := cfgUnixPath.normalizeAndValidate(base); err != nil {
+			t.Fatalf("Unix-style absolute path %q should be valid on all platforms: %v", path, err)
+		}
+	}
 }
 
 func TestFindDefaultComposeFile(t *testing.T) {
