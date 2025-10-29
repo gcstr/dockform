@@ -85,6 +85,9 @@ func TestApply_Precondition_NoDocker(t *testing.T) {
 }
 
 func TestApply_ComposeConfigError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	_ = writeComposeErrorStub(t)
 	cfg := manifest.Config{Stacks: map[string]manifest.Stack{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
 	d := dockercli.New("")
@@ -95,6 +98,9 @@ func TestApply_ComposeConfigError(t *testing.T) {
 }
 
 func TestApply_NoChanges_NoComposeUp(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	// Stub that reports planned service and running container with matching labels and hash
 	dir := t.TempDir()
 	script := `#!/bin/sh

@@ -235,7 +235,8 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		if a.TargetVolume == "" {
 			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_volume is required", filesetName)
 		}
-		if a.TargetPath == "" || !filepath.IsAbs(a.TargetPath) {
+		// target_path must be an absolute Unix path since it's used inside containers
+		if a.TargetPath == "" || !strings.HasPrefix(a.TargetPath, "/") {
 			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_path must be an absolute path", filesetName)
 		}
 		if a.TargetPath == "/" {

@@ -58,8 +58,9 @@ func TestEncryptDotenvFileWithSops_Success_AndDecryptable(t *testing.T) {
 	requireSops(t)
 	dir := t.TempDir()
 	keyPath, recip := writeTempAgeKey(t, dir, true)
-	// Isolate sops config from CI environment
+	// Isolate sops config from CI environment (cross-platform)
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir) // Windows uses USERPROFILE
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 	_ = os.MkdirAll(filepath.Join(dir, ".config", "sops", "age"), 0o755)
 	// plaintext dotenv
@@ -99,6 +100,7 @@ func TestEncryptDotenvFileWithSops_NoRecipients_Error(t *testing.T) {
 }
 
 func TestEncryptDotenvFileWithSops_BadRecipient_Error(t *testing.T) {
+	requireSops(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "x.env")
 	_ = os.WriteFile(path, []byte("K=V\n"), 0o600)

@@ -60,7 +60,36 @@ func TestCheckStatus_Constants(t *testing.T) {
 // withHealthyDoctorStub creates a stub docker command that simulates a healthy system
 func withHealthyDoctorStub(t *testing.T) func() {
 	t.Helper()
-	stub := `#!/bin/sh
+	var stub string
+	if runtime.GOOS == "windows" {
+		stub = `@echo off
+if "%1"=="version" (
+  echo 20.0.0
+  exit /b 0
+)
+if "%1"=="context" (
+  echo "unix:///var/run/docker.sock"
+  exit /b 0
+)
+if "%1"=="compose" (
+  echo 2.29.0
+  exit /b 0
+)
+if "%1"=="image" (
+  exit /b 0
+)
+if "%1"=="network" (
+  if "%2"=="create" exit /b 0
+  if "%2"=="rm" exit /b 0
+)
+if "%1"=="volume" (
+  if "%2"=="create" exit /b 0
+  if "%2"=="rm" exit /b 0
+)
+exit /b 0
+`
+	} else {
+		stub = `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -105,12 +134,19 @@ case "$cmd" in
 esac
 exit 0
 `
+	}
 	return withDoctorStub(t, stub)
 }
 
 // withDoctorStub creates a custom docker stub for doctor tests
 func withDoctorStub(t *testing.T, script string) func() {
 	t.Helper()
+
+	// Skip tests that try to use Unix shell scripts on Windows
+	if runtime.GOOS == "windows" && strings.HasPrefix(script, "#!/bin/sh") {
+		t.Skip("test uses Unix shell script; skipping on Windows")
+	}
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "docker")
 	if runtime.GOOS == "windows" {
@@ -121,23 +157,49 @@ func withDoctorStub(t *testing.T, script string) func() {
 	}
 
 	// Also create a fake sops in the same directory
-	sopsStub := `#!/bin/sh
+	var sopsStub string
+	sopsPath := filepath.Join(dir, "sops")
+	if runtime.GOOS == "windows" {
+		sopsPath += ".cmd"
+		sopsStub = `@echo off
+if "%1"=="--version" (
+  echo sops 3.10.2
+  exit /b 0
+)
+exit /b 0
+`
+	} else {
+		sopsStub = `#!/bin/sh
 if [ "$1" = "--version" ]; then
   echo "sops 3.10.2"
   exit 0
 fi
 exit 0
 `
-	sopsPath := filepath.Join(dir, "sops")
-	if runtime.GOOS == "windows" {
-		sopsPath += ".cmd"
 	}
 	if err := os.WriteFile(sopsPath, []byte(sopsStub), 0o755); err != nil {
 		t.Fatalf("write sops stub: %v", err)
 	}
 
 	// Provide minimal gpg stub so doctor reports pass by default
-	gpgStub := `#!/bin/sh
+	var gpgStub string
+	gpgPath := filepath.Join(dir, "gpg")
+	if runtime.GOOS == "windows" {
+		gpgPath += ".cmd"
+		gpgStub = `@echo off
+if "%1"=="--version" (
+  echo gpg ^(GnuPG^) 2.4.3
+  exit /b 0
+)
+if "%1"=="--help" (
+  echo Usage: gpg [options]
+  echo   --pinentry-mode
+  exit /b 0
+)
+exit /b 0
+`
+	} else {
+		gpgStub = `#!/bin/sh
 case "$1" in
   --version)
     echo "gpg (GnuPG) 2.4.3"
@@ -151,25 +213,31 @@ case "$1" in
 esac
 exit 0
 `
-	gpgPath := filepath.Join(dir, "gpg")
-	if runtime.GOOS == "windows" {
-		gpgPath += ".cmd"
 	}
 	if err := os.WriteFile(gpgPath, []byte(gpgStub), 0o755); err != nil {
 		t.Fatalf("write gpg stub: %v", err)
 	}
 
 	// Provide gpgconf stub for agent socket info
-	gpgConfStub := `#!/bin/sh
+	var gpgConfStub string
+	gpgConfPath := filepath.Join(dir, "gpgconf")
+	if runtime.GOOS == "windows" {
+		gpgConfPath += ".cmd"
+		gpgConfStub = `@echo off
+if "%1"=="--list-dirs" if "%2"=="agent-socket" (
+  echo /tmp/gpg-agent.sock
+  exit /b 0
+)
+exit /b 0
+`
+	} else {
+		gpgConfStub = `#!/bin/sh
 if [ "$1" = "--list-dirs" ] && [ "$2" = "agent-socket" ]; then
   echo "/tmp/gpg-agent.sock"
   exit 0
 fi
 exit 0
 `
-	gpgConfPath := filepath.Join(dir, "gpgconf")
-	if runtime.GOOS == "windows" {
-		gpgConfPath += ".cmd"
 	}
 	if err := os.WriteFile(gpgConfPath, []byte(gpgConfStub), 0o755); err != nil {
 		t.Fatalf("write gpgconf stub: %v", err)

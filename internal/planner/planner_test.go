@@ -153,6 +153,9 @@ exit 0
 }
 
 func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	defer withPlannerDockerStub_Basic(t)()
 	cfg := manifest.Config{
 		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
@@ -180,6 +183,9 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 }
 
 func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	defer withPlannerDockerStub_Mismatch(t)()
 	cfg := manifest.Config{
 		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
@@ -197,6 +203,9 @@ func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
 }
 
 func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	defer withPlannerDockerStub_Basic(t)()
 	cfg := manifest.Config{
 		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},

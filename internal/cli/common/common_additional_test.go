@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +110,21 @@ func TestLoadConfigWithWarningsEmitsMessages(t *testing.T) {
 }
 
 func TestLoadConfigWithWarningsInteractiveSelection(t *testing.T) {
+	// Check PTY support FIRST before any setup to avoid Windows cleanup issues
+	master, slave := openTTYOrSkip(t)
+	t.Cleanup(func() {
+		if err := master.Close(); err != nil {
+			t.Fatalf("close master pty: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		if err := slave.Close(); err != nil {
+			t.Fatalf("close slave pty: %v", err)
+		}
+	})
+	drainTTY(t, master)
+
+	// Now do the test setup
 	temp := t.TempDir()
 	manifestRel, root := createSampleManifest(t)
 	// move manifest under subdir to force interactive selection
@@ -124,19 +140,6 @@ func TestLoadConfigWithWarningsInteractiveSelection(t *testing.T) {
 		t.Fatalf("chdir: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(root) })
-
-	master, slave := openTTYOrSkip(t)
-	t.Cleanup(func() {
-		if err := master.Close(); err != nil {
-			t.Fatalf("close master pty: %v", err)
-		}
-	})
-	t.Cleanup(func() {
-		if err := slave.Close(); err != nil {
-			t.Fatalf("close slave pty: %v", err)
-		}
-	})
-	drainTTY(t, master)
 
 	cmd := &cobra.Command{}
 	cmd.Flags().String("config", "", "")
@@ -364,14 +367,26 @@ func TestSelectManifestPathTTYError(t *testing.T) {
 }
 
 func TestCreateDockerClientAndValidate(t *testing.T) {
-	defer clitest.WithCustomDockerStub(t, `#!/bin/sh
+	var stub string
+	if runtime.GOOS == "windows" {
+		stub = `@echo off
+if "%1"=="version" (
+  echo 24.0.0
+  exit /b 0
+)
+exit /b 0
+`
+	} else {
+		stub = `#!/bin/sh
 cmd="$1"; shift
 if [ "$cmd" = "version" ]; then
   echo "24.0.0"
   exit 0
 fi
 exit 0
-`)()
+`
+	}
+	defer clitest.WithCustomDockerStub(t, stub)()
 
 	cfg := &manifest.Config{Docker: manifest.DockerConfig{Context: "default", Identifier: "demo"}}
 	client := CreateDockerClient(cfg)
@@ -647,14 +662,26 @@ func TestGetDestroyConfirmationFlows(t *testing.T) {
 }
 
 func TestSetupCLIContextSuccess(t *testing.T) {
-	defer clitest.WithCustomDockerStub(t, `#!/bin/sh
+	var stub string
+	if runtime.GOOS == "windows" {
+		stub = `@echo off
+if "%1"=="version" (
+  echo 24.0.0
+  exit /b 0
+)
+exit /b 0
+`
+	} else {
+		stub = `#!/bin/sh
 cmd="$1"; shift
 if [ "$cmd" = "version" ]; then
   echo "24.0.0"
   exit 0
 fi
 exit 0
-`)()
+`
+	}
+	defer clitest.WithCustomDockerStub(t, stub)()
 
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "dockform.yml")
