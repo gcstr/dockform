@@ -59,6 +59,9 @@ exit 0
 }
 
 func TestBuildPlan_Filesets_DiffChanges(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	// Prepare local files: a.txt (content A), b.txt (content B)
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("A"), 0o644); err != nil {
@@ -107,6 +110,9 @@ func TestBuildPlan_Filesets_DiffChanges(t *testing.T) {
 }
 
 func TestBuildPlan_Filesets_NoChanges(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	// Local and remote are equal
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "index.html"), []byte("hello"), 0o644); err != nil {
@@ -145,6 +151,9 @@ func TestBuildPlan_Filesets_NoChanges(t *testing.T) {
 }
 
 func TestApply_Filesets_SyncAndRestart(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	// Local has foo.txt; remote has bar.txt -> expect create foo, delete bar, write index, then restart
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "foo.txt"), []byte("x"), 0o644); err != nil {

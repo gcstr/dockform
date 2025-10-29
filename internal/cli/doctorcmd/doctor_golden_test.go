@@ -16,6 +16,9 @@ import (
 var update = flag.Bool("update", false, "update golden files")
 
 func TestDoctorCmd_Golden_Healthy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping golden test on Windows due to output format differences")
+	}
 	defer withHealthyDoctorStub(t)()
 
 	root := cli.TestNewRootCmd()
@@ -150,6 +153,9 @@ exit 0
 }
 
 func TestDoctorCmd_Golden_SopsWarning(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping golden test on Windows due to output format differences")
+	}
 	// Create a stub with docker but without sops
 	stubScript := `#!/bin/sh
 cmd="$1"; shift

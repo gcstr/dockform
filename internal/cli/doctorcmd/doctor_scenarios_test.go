@@ -174,6 +174,9 @@ exit 0
 }
 
 func TestDoctorCmd_SopsWarning(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses Unix shell script; skipping on Windows")
+	}
 	// Create a stub with docker but without sops
 	stubScript := `#!/bin/sh
 cmd="$1"; shift

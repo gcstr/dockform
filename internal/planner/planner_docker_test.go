@@ -98,6 +98,9 @@ func withPlannerStub(t *testing.T, mode string, logPath string) func() {
 }
 
 func TestPlanner_BuildPlan_AddRemoveStart(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "basic", log)()
 	appRoot := t.TempDir()
@@ -125,6 +128,9 @@ func TestPlanner_BuildPlan_AddRemoveStart(t *testing.T) {
 }
 
 func TestPlanner_BuildPlan_IdentifierMismatch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "mismatch", log)()
 	appRoot := t.TempDir()
@@ -142,6 +148,9 @@ func TestPlanner_BuildPlan_IdentifierMismatch(t *testing.T) {
 }
 
 func TestPlanner_BuildPlan_ConfigDriftAndMatch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	// Drift case
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "drift", log)()
@@ -172,6 +181,9 @@ func TestPlanner_BuildPlan_ConfigDriftAndMatch(t *testing.T) {
 }
 
 func TestPlanner_Prune_RemovesUnmanaged(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "basic", log)()
 	appRoot := t.TempDir()

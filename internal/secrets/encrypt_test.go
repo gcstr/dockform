@@ -100,6 +100,7 @@ func TestEncryptDotenvFileWithSops_NoRecipients_Error(t *testing.T) {
 }
 
 func TestEncryptDotenvFileWithSops_BadRecipient_Error(t *testing.T) {
+	requireSops(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "x.env")
 	_ = os.WriteFile(path, []byte("K=V\n"), 0o600)
