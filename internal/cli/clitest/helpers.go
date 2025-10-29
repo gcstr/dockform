@@ -11,7 +11,53 @@ import (
 // WriteDockerStub creates a docker stub script with basic behaviors used across CLI tests.
 func WriteDockerStub(t *testing.T, dir string) string {
 	t.Helper()
-	stub := `#!/bin/sh
+
+	var stub string
+	path := filepath.Join(dir, "docker")
+
+	if runtime.GOOS == "windows" {
+		// Windows batch script
+		path += ".cmd"
+		stub = `@echo off
+if "%1"=="volume" (
+  if "%2"=="ls" (
+    echo orphan-vol
+    exit /b 0
+  )
+)
+if "%1"=="network" (
+  if "%2"=="ls" (
+    echo demo-network
+    echo orphan-net
+    exit /b 0
+  )
+)
+if "%1"=="compose" (
+  for %%a in (%*) do if "%%a"=="--services" (
+    echo nginx
+    exit /b 0
+  )
+  if "%2"=="config" if "%3"=="--hash" (
+    echo %4 deadbeefcafebabe
+    exit /b 0
+  )
+  if "%2"=="ps" if "%3"=="--format" if "%4"=="json" (
+    echo []
+    exit /b 0
+  )
+  if "%2"=="up" if "%3"=="-d" exit /b 0
+  exit /b 0
+)
+if "%1"=="ps" exit /b 0
+if "%1"=="inspect" (
+  echo {}
+  exit /b 0
+)
+exit /b 0
+`
+	} else {
+		// Unix shell script
+		stub = `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   volume)
@@ -55,10 +101,8 @@ case "$cmd" in
 esac
 exit 0
 `
-	path := filepath.Join(dir, "docker")
-	if runtime.GOOS == "windows" {
-		path += ".cmd"
 	}
+
 	if err := os.WriteFile(path, []byte(stub), 0o755); err != nil {
 		t.Fatalf("write stub: %v", err)
 	}

@@ -233,7 +233,7 @@ func TestNoopPrinterAndLineHelpers(t *testing.T) {
 func TestClearCurrentLineIfTTY(t *testing.T) {
 	master, slave, err := pty.Open()
 	if err != nil {
-		t.Fatalf("pty open: %v", err)
+		t.Skipf("unable to open pty: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := master.Close(); err != nil {

@@ -11,8 +11,9 @@ func TestDecryptAndParse_Dotenv_Success(t *testing.T) {
 	requireSops(t)
 	dir := t.TempDir()
 	keyPath, recip := writeTempAgeKey(t, dir, true)
-	// Isolate sops config from CI environment
+	// Isolate sops config from CI environment (cross-platform)
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir) // Windows uses USERPROFILE
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 	_ = os.MkdirAll(filepath.Join(dir, ".config", "sops", "age"), 0o755)
 	// Create plaintext and encrypt using our helper

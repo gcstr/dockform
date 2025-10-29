@@ -38,8 +38,9 @@ func TestSecret_Create_Success(t *testing.T) {
 	requireSops(t)
 	dir := t.TempDir()
 	keyPath, _ := writeTempAgeKey(t, dir)
-	// Isolate sops config from CI environment
+	// Isolate sops config from CI environment (cross-platform)
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir) // Windows uses USERPROFILE
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 	_ = os.MkdirAll(filepath.Join(dir, ".config", "sops", "age"), 0o755)
 	t.Setenv("SOPS_AGE_KEY_FILE", keyPath)
@@ -122,8 +123,9 @@ func TestSecret_Rekey_Success(t *testing.T) {
 	requireSops(t)
 	dir := t.TempDir()
 	keyPath, recipient := writeTempAgeKey(t, dir)
-	// Isolate sops config from CI environment
+	// Isolate sops config from CI environment (cross-platform)
 	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir) // Windows uses USERPROFILE
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 	_ = os.MkdirAll(filepath.Join(dir, ".config", "sops", "age"), 0o755)
 	t.Setenv("SOPS_AGE_KEY_FILE", keyPath)

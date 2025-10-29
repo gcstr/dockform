@@ -97,9 +97,14 @@ func TestValidate_Succeeds_WithCompleteConfigAndFiles(t *testing.T) {
 	home := t.TempDir()
 	keyFile := filepath.Join(home, ".config", "sops", "age", "keys.txt")
 	mustWrite(keyFile, "KEY")
-	oldHome := os.Getenv("HOME")
-	_ = os.Setenv("HOME", home)
-	t.Cleanup(func() { _ = os.Setenv("HOME", oldHome) })
+	// Set home directory environment variable (cross-platform)
+	homeEnvVar := "HOME"
+	if runtime.GOOS == "windows" {
+		homeEnvVar = "USERPROFILE"
+	}
+	oldHome := os.Getenv(homeEnvVar)
+	_ = os.Setenv(homeEnvVar, home)
+	t.Cleanup(func() { _ = os.Setenv(homeEnvVar, oldHome) })
 
 	yml := []byte(`docker:
   context: default
@@ -222,9 +227,14 @@ func TestValidate_Fails_WhenSopsAgeKeyMissing(t *testing.T) {
 	}
 	// ensure HOME has no key file path
 	home := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	_ = os.Setenv("HOME", home)
-	t.Cleanup(func() { _ = os.Setenv("HOME", oldHome) })
+	// Set home directory environment variable (cross-platform)
+	homeEnvVar := "HOME"
+	if runtime.GOOS == "windows" {
+		homeEnvVar = "USERPROFILE"
+	}
+	oldHome := os.Getenv(homeEnvVar)
+	_ = os.Setenv(homeEnvVar, home)
+	t.Cleanup(func() { _ = os.Setenv(homeEnvVar, oldHome) })
 
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
 	yml := []byte(`docker:

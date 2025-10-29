@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -95,7 +96,12 @@ func TestFindManifestInDirAndExpand(t *testing.T) {
 		t.Fatalf("expected manifest path, got %q", got)
 	}
 	home := t.TempDir()
-	if err := os.Setenv("HOME", home); err != nil {
+	// Set home directory environment variable (cross-platform)
+	homeEnvVar := "HOME"
+	if runtime.GOOS == "windows" {
+		homeEnvVar = "USERPROFILE"
+	}
+	if err := os.Setenv(homeEnvVar, home); err != nil {
 		t.Fatalf("setenv: %v", err)
 	}
 	if expandUser("~/file") != filepath.Join(home, "file") {

@@ -12,7 +12,39 @@ import (
 
 func writeDockerExecStub(t *testing.T, dir string) string {
 	t.Helper()
-	script := `#!/bin/sh
+	var script string
+	path := filepath.Join(dir, "docker")
+
+	if runtime.GOOS == "windows" {
+		// Windows batch script
+		path += ".cmd"
+		script = `@echo off
+if "%1"=="version" (
+  echo CTX=%DOCKER_CONTEXT%
+  exit /b 0
+)
+if "%1"=="pwdcmd" (
+  cd
+  exit /b 0
+)
+if "%1"=="envcmd" (
+  echo PWD=%CD% FOO=%FOO%
+  exit /b 0
+)
+if "%1"=="stdin" (
+  more
+  exit /b 0
+)
+if "%1"=="fail" (
+  echo FAIL OUT
+  echo failure details from docker 1>&2
+  exit /b 2
+)
+exit /b 0
+`
+	} else {
+		// Unix shell script
+		script = `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -31,10 +63,8 @@ case "$cmd" in
 esac
 exit 0
 `
-	path := filepath.Join(dir, "docker")
-	if runtime.GOOS == "windows" {
-		path += ".cmd"
 	}
+
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write stub: %v", err)
 	}

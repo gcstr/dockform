@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -364,14 +365,26 @@ func TestSelectManifestPathTTYError(t *testing.T) {
 }
 
 func TestCreateDockerClientAndValidate(t *testing.T) {
-	defer clitest.WithCustomDockerStub(t, `#!/bin/sh
+	var stub string
+	if runtime.GOOS == "windows" {
+		stub = `@echo off
+if "%1"=="version" (
+  echo 24.0.0
+  exit /b 0
+)
+exit /b 0
+`
+	} else {
+		stub = `#!/bin/sh
 cmd="$1"; shift
 if [ "$cmd" = "version" ]; then
   echo "24.0.0"
   exit 0
 fi
 exit 0
-`)()
+`
+	}
+	defer clitest.WithCustomDockerStub(t, stub)()
 
 	cfg := &manifest.Config{Docker: manifest.DockerConfig{Context: "default", Identifier: "demo"}}
 	client := CreateDockerClient(cfg)
@@ -647,14 +660,26 @@ func TestGetDestroyConfirmationFlows(t *testing.T) {
 }
 
 func TestSetupCLIContextSuccess(t *testing.T) {
-	defer clitest.WithCustomDockerStub(t, `#!/bin/sh
+	var stub string
+	if runtime.GOOS == "windows" {
+		stub = `@echo off
+if "%1"=="version" (
+  echo 24.0.0
+  exit /b 0
+)
+exit /b 0
+`
+	} else {
+		stub = `#!/bin/sh
 cmd="$1"; shift
 if [ "$cmd" = "version" ]; then
   echo "24.0.0"
   exit 0
 fi
 exit 0
-`)()
+`
+	}
+	defer clitest.WithCustomDockerStub(t, stub)()
 
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "dockform.yml")

@@ -35,7 +35,8 @@ func TestNormalize_DefaultsEnvMergingAndFiles(t *testing.T) {
 		t.Fatalf("root not resolved: want %q got %q", wantRoot, app.Root)
 	}
 	// Root env files rebased relative to app root, then app env, then app EnvFile; de-duped
-	wantEnv := []string{"../global.env", "../root/vars.env", "app.env", "compose.env"}
+	// Normalize paths for cross-platform comparison (Windows uses backslashes)
+	wantEnv := []string{filepath.FromSlash("../global.env"), filepath.FromSlash("../root/vars.env"), "app.env", "compose.env"}
 	if !reflect.DeepEqual(app.EnvFile, wantEnv) {
 		t.Fatalf("env files mismatch:\nwant: %#v\n got: %#v", wantEnv, app.EnvFile)
 	}
@@ -144,7 +145,8 @@ func TestNormalize_SopsMergingAndValidation(t *testing.T) {
 		t.Fatalf("normalizeAndValidate: %v", err)
 	}
 	sops := cfg.Stacks["web"].SopsSecrets
-	want := []string{"../secrets/root.env", "../secrets/another.env", "app.env"}
+	// Normalize paths for cross-platform comparison (Windows uses backslashes)
+	want := []string{filepath.FromSlash("../secrets/root.env"), filepath.FromSlash("../secrets/another.env"), "app.env"}
 	if !reflect.DeepEqual(sops, want) {
 		t.Fatalf("sops merged mismatch:\nwant: %#v\n got: %#v", want, sops)
 	}
