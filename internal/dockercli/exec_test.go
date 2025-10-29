@@ -131,8 +131,15 @@ func TestSystemExec_RunWithStdin_ForwardsInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run with stdin: %v", err)
 	}
-	if out != "hello world\n" {
-		t.Fatalf("unexpected stdout from cat, got %q", out)
+	// On Windows, 'more' adds CRLF line endings; normalize for comparison
+	want := "hello world\n"
+	if runtime.GOOS == "windows" {
+		// Windows 'more' may add extra line endings
+		out = strings.ReplaceAll(out, "\r\n", "\n")
+		out = strings.TrimSpace(out) + "\n"
+	}
+	if out != want {
+		t.Fatalf("unexpected stdout, got %q want %q", out, want)
 	}
 }
 

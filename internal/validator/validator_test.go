@@ -15,7 +15,19 @@ import (
 // for Validate tests.
 func writeDockerStub(t *testing.T, dir string) string {
 	t.Helper()
-	stub := `#!/bin/sh
+	var stub string
+	path := filepath.Join(dir, "docker")
+	if runtime.GOOS == "windows" {
+		path += ".cmd"
+		stub = `@echo off
+if "%1"=="version" (
+    echo 24.0.0
+    exit /b 0
+)
+exit /b 0
+`
+	} else {
+		stub = `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -26,9 +38,6 @@ case "$cmd" in
 esac
 exit 0
 `
-	path := filepath.Join(dir, "docker")
-	if runtime.GOOS == "windows" {
-		path += ".cmd"
 	}
 	if err := os.WriteFile(path, []byte(stub), 0o755); err != nil {
 		t.Fatalf("write stub: %v", err)
@@ -50,7 +59,19 @@ func withStubDocker(t *testing.T) func() {
 func withFailingDocker(t *testing.T) func() {
 	t.Helper()
 	dir := t.TempDir()
-	stub := `#!/bin/sh
+	var stub string
+	path := filepath.Join(dir, "docker")
+	if runtime.GOOS == "windows" {
+		path += ".cmd"
+		stub = `@echo off
+if "%1"=="version" (
+    echo boom 1>&2
+    exit /b 1
+)
+exit /b 1
+`
+	} else {
+		stub = `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
   version)
@@ -60,9 +81,6 @@ case "$cmd" in
 esac
 exit 1
 `
-	path := filepath.Join(dir, "docker")
-	if runtime.GOOS == "windows" {
-		path += ".cmd"
 	}
 	if err := os.WriteFile(path, []byte(stub), 0o755); err != nil {
 		t.Fatalf("write stub: %v", err)

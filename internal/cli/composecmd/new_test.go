@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -175,6 +176,25 @@ func writeComposeManifest(t *testing.T, secret string, dockerExtras string, extr
 }
 
 func composeConfigStub() string {
+	if runtime.GOOS == "windows" {
+		return `@echo off
+if "%1"=="compose" (
+    for %%a in (%*) do if "%%a"=="config" (
+        if "%API_SECRET%"=="" (
+            echo API_SECRET missing 1>&2
+            exit /b 3
+        )
+        echo services:
+        echo   web:
+        echo     environment:
+        echo       secret: %API_SECRET%
+        exit /b 0
+    )
+)
+if "%1"=="version" exit /b 0
+exit /b 0
+`
+	}
 	return `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
