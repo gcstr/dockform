@@ -124,6 +124,12 @@ func WithStubDocker(t *testing.T) func() {
 // WithCustomDockerStub installs a custom docker stub script and prepends PATH with it.
 func WithCustomDockerStub(t *testing.T, script string) func() {
 	t.Helper()
+
+	// Skip tests that try to use Unix shell scripts on Windows
+	if runtime.GOOS == "windows" && strings.HasPrefix(script, "#!/bin/sh") {
+		t.Skip("test uses Unix shell script; skipping on Windows")
+	}
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "docker")
 	if runtime.GOOS == "windows" {

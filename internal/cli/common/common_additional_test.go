@@ -110,6 +110,21 @@ func TestLoadConfigWithWarningsEmitsMessages(t *testing.T) {
 }
 
 func TestLoadConfigWithWarningsInteractiveSelection(t *testing.T) {
+	// Check PTY support FIRST before any setup to avoid Windows cleanup issues
+	master, slave := openTTYOrSkip(t)
+	t.Cleanup(func() {
+		if err := master.Close(); err != nil {
+			t.Fatalf("close master pty: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		if err := slave.Close(); err != nil {
+			t.Fatalf("close slave pty: %v", err)
+		}
+	})
+	drainTTY(t, master)
+
+	// Now do the test setup
 	temp := t.TempDir()
 	manifestRel, root := createSampleManifest(t)
 	// move manifest under subdir to force interactive selection
@@ -125,19 +140,6 @@ func TestLoadConfigWithWarningsInteractiveSelection(t *testing.T) {
 		t.Fatalf("chdir: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(root) })
-
-	master, slave := openTTYOrSkip(t)
-	t.Cleanup(func() {
-		if err := master.Close(); err != nil {
-			t.Fatalf("close master pty: %v", err)
-		}
-	})
-	t.Cleanup(func() {
-		if err := slave.Close(); err != nil {
-			t.Fatalf("close slave pty: %v", err)
-		}
-	})
-	drainTTY(t, master)
 
 	cmd := &cobra.Command{}
 	cmd.Flags().String("config", "", "")
