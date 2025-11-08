@@ -103,7 +103,7 @@ func newRootCmd() *cobra.Command {
 	// Logging flags
 	cmd.PersistentFlags().String("log-level", "info", "Log level: debug, info, warn, error")
 	cmd.PersistentFlags().String("log-format", "auto", "Log format: auto, pretty, json")
-	cmd.PersistentFlags().String("log-file", "", "Write JSON logs to file (in addition to stderr)")
+	cmd.PersistentFlags().String("log-file", "", "Write logs to file using the format specified by --log-format (in addition to stderr)")
 	cmd.PersistentFlags().Bool("no-color", false, "Disable color in pretty logs")
 
 	cmd.AddCommand(initcmd.New())
