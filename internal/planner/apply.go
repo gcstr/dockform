@@ -10,7 +10,16 @@ import (
 )
 
 // Apply creates missing top-level resources with labels and performs compose up, labeling containers with identifier.
+// This method detects the current state fresh, which may duplicate work if a plan was already built.
+// Consider using ApplyWithPlan if you have a pre-built plan to avoid redundant state detection.
 func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
+	return p.ApplyWithPlan(ctx, cfg, nil)
+}
+
+// ApplyWithPlan applies the desired state, optionally reusing execution context from a pre-built plan.
+// If plan is non-nil and contains ExecutionContext, this avoids redundant Docker API calls, SOPS decryption,
+// and compose config parsing by reusing the state detection results from BuildPlan.
+func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *Plan) error {
 	log := logger.FromContext(ctx).With("component", "planner")
 	st := logger.StartStep(log, "apply_infrastructure", cfg.Docker.Identifier,
 		"resource_kind", "infrastructure",
@@ -29,9 +38,18 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 		labels["io.dockform.identifier"] = identifier
 	}
 
+	// Extract execution context from plan if available
+	var execCtx *ExecutionContext
+	if plan != nil && plan.ExecutionContext != nil {
+		execCtx = plan.ExecutionContext
+	}
+
 	// Initialize progress tracking
 	progress := newProgressReporter(p.prog)
 	progressEstimator := NewProgressEstimator(p.docker, progress)
+	if execCtx != nil {
+		progressEstimator = progressEstimator.WithExecutionContext(execCtx)
+	}
 	if err := progressEstimator.EstimateAndStartProgress(ctx, cfg, identifier); err != nil {
 		return st.Fail(err)
 	}
@@ -43,19 +61,20 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 		return st.Fail(err)
 	}
 
-	if err := resourceManager.EnsureNetworksExist(ctx, cfg, labels); err != nil {
+	if err := resourceManager.EnsureNetworksExist(ctx, cfg, labels, execCtx); err != nil {
 		return st.Fail(err)
 	}
 
 	// Synchronize filesets
+	// Use fresh existingVolumes from EnsureVolumesExist (includes newly created volumes)
 	filesetManager := NewFilesetManager(p.docker, progress)
-	restartPending, err := filesetManager.SyncFilesets(ctx, cfg, existingVolumes)
+	restartPending, err := filesetManager.SyncFilesets(ctx, cfg, existingVolumes, execCtx)
 	if err != nil {
 		return st.Fail(err)
 	}
 
-	// Apply stack changes
-	if err := p.applyStackChanges(ctx, cfg, identifier, restartPending, progress); err != nil {
+	// Apply stack changes (reusing execution context if available)
+	if err := p.applyStackChanges(ctx, cfg, identifier, restartPending, progress, execCtx); err != nil {
 		return st.Fail(err)
 	}
 
@@ -70,7 +89,8 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 }
 
 // applyStackChanges processes stacks and performs compose up for those that need updates.
-func (p *Planner) applyStackChanges(ctx context.Context, cfg manifest.Config, identifier string, restartPending map[string]struct{}, progress ProgressReporter) error {
+// If execCtx is non-nil, it reuses pre-computed state detection results to avoid redundant work.
+func (p *Planner) applyStackChanges(ctx context.Context, cfg manifest.Config, identifier string, restartPending map[string]struct{}, progress ProgressReporter, execCtx *ExecutionContext) error {
 	detector := NewServiceStateDetector(p.docker)
 
 	// Process stacks in sorted order for deterministic behavior
@@ -83,10 +103,28 @@ func (p *Planner) applyStackChanges(ctx context.Context, cfg manifest.Config, id
 	for _, stackName := range stackNames {
 		stack := cfg.Stacks[stackName]
 
-		// Use ServiceStateDetector to analyze service states
-		services, err := detector.DetectAllServicesState(ctx, stackName, stack, identifier, cfg.Sops)
-		if err != nil {
-			return apperr.Wrap("planner.Apply", apperr.External, err, "failed to detect service states for stack %s", stackName)
+		var services []ServiceInfo
+		var inline []string
+		var needsApply bool
+
+		// Check if we have pre-computed execution data from BuildPlan
+		if execCtx != nil && execCtx.Stacks[stackName] != nil {
+			// Reuse pre-computed data to avoid redundant state detection
+			log := logger.FromContext(ctx)
+			log.Info("apply_stack_reuse_cache", "stack", stackName, "msg", "reusing execution context from plan")
+			execData := execCtx.Stacks[stackName]
+			services = execData.Services
+			inline = execData.InlineEnv
+			needsApply = execData.NeedsApply
+		} else {
+			// Fallback: detect state fresh (original behavior)
+			var err error
+			services, err = detector.DetectAllServicesState(ctx, stackName, stack, identifier, cfg.Sops)
+			if err != nil {
+				return apperr.Wrap("planner.Apply", apperr.External, err, "failed to detect service states for stack %s", stackName)
+			}
+			inline = detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+			needsApply = NeedsApply(services)
 		}
 
 		if len(services) == 0 {
@@ -94,12 +132,9 @@ func (p *Planner) applyStackChanges(ctx context.Context, cfg manifest.Config, id
 		}
 
 		// Check if any services need updates
-		if !NeedsApply(services) {
+		if !needsApply {
 			continue // All services are up-to-date
 		}
-
-		// Build inline env for compose operations
-		inline := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
 
 		// Get project name
 		proj := ""

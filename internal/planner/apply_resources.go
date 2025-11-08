@@ -73,19 +73,27 @@ func (rm *ResourceManager) EnsureVolumesExist(ctx context.Context, cfg manifest.
 }
 
 // EnsureNetworksExist creates any missing networks defined in the manifest.
-func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest.Config, labels map[string]string) error {
+// If execCtx is provided with cached network list, it reuses it to avoid redundant ListNetworks call.
+func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest.Config, labels map[string]string, execCtx *ExecutionContext) error {
 	log := logger.FromContext(ctx).With("component", "network")
 	if rm.docker == nil {
 		return apperr.New("resourcemanager.EnsureNetworksExist", apperr.Precondition, "docker client not configured")
 	}
-	// Get existing networks
-	existingNetworks := map[string]struct{}{}
-	if nets, err := rm.docker.ListNetworks(ctx); err == nil {
-		for _, n := range nets {
-			existingNetworks[n] = struct{}{}
-		}
+	// Get existing networks - use cached data if available
+	var existingNetworks map[string]struct{}
+	if execCtx != nil && execCtx.ExistingNetworks != nil {
+		log.Info("network_ensure_reuse_cache", "msg", "reusing network list from plan")
+		existingNetworks = execCtx.ExistingNetworks
 	} else {
-		return apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "list networks")
+		// Fallback: query fresh (original behavior)
+		existingNetworks = map[string]struct{}{}
+		if nets, err := rm.docker.ListNetworks(ctx); err == nil {
+			for _, n := range nets {
+				existingNetworks[n] = struct{}{}
+			}
+		} else {
+			return apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "list networks")
+		}
 	}
 
 	// Create or reconcile networks

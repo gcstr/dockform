@@ -29,10 +29,21 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		Containers: []Resource{},
 	}
 
+	// Initialize execution context for plan reuse during apply
+	execCtx := &ExecutionContext{
+		Stacks:           make(map[string]*StackExecutionData),
+		Filesets:         make(map[string]*FilesetExecutionData),
+		ExistingVolumes:  make(map[string]struct{}),
+		ExistingNetworks: make(map[string]struct{}),
+	}
+
 	// Accumulate existing sets when docker client is available
 	var existingVolumes, existingNetworks map[string]struct{}
 	if p.docker != nil {
 		existingVolumes, existingNetworks = p.getExistingResourcesConcurrently(ctx)
+		// Store in execution context for reuse during apply
+		execCtx.ExistingVolumes = existingVolumes
+		execCtx.ExistingNetworks = existingNetworks
 		log.Debug("resource_discovery",
 			"volumes_found", len(existingVolumes),
 			"networks_found", len(existingNetworks))
@@ -93,7 +104,7 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 	}
 
 	// Stacks: compose planned vs running diff
-	if err := p.buildStackResources(ctx, cfg, resourcePlan); err != nil {
+	if err := p.buildStackResources(ctx, cfg, resourcePlan, execCtx); err != nil {
 		return nil, err
 	}
 
@@ -124,7 +135,7 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 
 	// Filesets: show per-file changes using remote index when available
 	if p.docker != nil && len(cfg.Filesets) > 0 {
-		p.buildFilesetResources(ctx, cfg.Filesets, existingVolumes, resourcePlan)
+		p.buildFilesetResources(ctx, cfg.Filesets, existingVolumes, resourcePlan, execCtx)
 	}
 
 	// Check if we have any resources
@@ -151,11 +162,14 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		"changes_delete", deleteCount,
 		"changes_total", totalChanges)
 
-	return &Plan{Resources: resourcePlan}, nil
+	return &Plan{
+		Resources:        resourcePlan,
+		ExecutionContext: execCtx,
+	}, nil
 }
 
 // buildStackResources analyzes stacks and adds service resources to the plan.
-func (p *Planner) buildStackResources(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
+func (p *Planner) buildStackResources(ctx context.Context, cfg manifest.Config, plan *ResourcePlan, execCtx *ExecutionContext) error {
 	if len(cfg.Stacks) == 0 {
 		// No stacks to process
 		return nil
@@ -173,13 +187,13 @@ func (p *Planner) buildStackResources(ctx context.Context, cfg manifest.Config, 
 
 	// Choose parallel or sequential processing based on configuration
 	if p.parallel {
-		return p.buildStackResourcesParallel(ctx, cfg, plan)
+		return p.buildStackResourcesParallel(ctx, cfg, plan, execCtx)
 	}
-	return p.buildStackResourcesSequential(ctx, cfg, plan)
+	return p.buildStackResourcesSequential(ctx, cfg, plan, execCtx)
 }
 
 // buildStackResourcesSequential processes stacks one by one
-func (p *Planner) buildStackResourcesSequential(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
+func (p *Planner) buildStackResourcesSequential(ctx context.Context, cfg manifest.Config, plan *ResourcePlan, execCtx *ExecutionContext) error {
 	detector := NewServiceStateDetector(p.docker)
 
 	// Process stacks in sorted order for deterministic output
@@ -191,6 +205,10 @@ func (p *Planner) buildStackResourcesSequential(ctx context.Context, cfg manifes
 
 	for _, stackName := range stackNames {
 		stack := cfg.Stacks[stackName]
+
+		// Build inline environment (including decrypted secrets)
+		inline := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+
 		services, err := detector.DetectAllServicesState(ctx, stackName, stack, cfg.Docker.Identifier, cfg.Sops)
 		if err != nil {
 			// Fallback to "TBD" for any errors during planning
@@ -205,6 +223,16 @@ func (p *Planner) buildStackResourcesSequential(ctx context.Context, cfg manifes
 				NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"),
 			}
 			continue
+		}
+
+		// Determine if this stack needs apply
+		needsApply := NeedsApply(services)
+
+		// Store execution data for reuse during apply
+		execCtx.Stacks[stackName] = &StackExecutionData{
+			Services:   services,
+			InlineEnv:  inline,
+			NeedsApply: needsApply,
 		}
 
 		// Convert service states to resources
@@ -238,7 +266,7 @@ func (p *Planner) buildStackResourcesSequential(ctx context.Context, cfg manifes
 }
 
 // buildStackResourcesParallel processes stacks concurrently for faster planning
-func (p *Planner) buildStackResourcesParallel(ctx context.Context, cfg manifest.Config, plan *ResourcePlan) error {
+func (p *Planner) buildStackResourcesParallel(ctx context.Context, cfg manifest.Config, plan *ResourcePlan, execCtx *ExecutionContext) error {
 	detector := NewServiceStateDetector(p.docker).WithParallel(true)
 
 	// Sort stack names for deterministic processing
@@ -251,6 +279,7 @@ func (p *Planner) buildStackResourcesParallel(ctx context.Context, cfg manifest.
 	type stackResult struct {
 		stackName string
 		resources []Resource
+		execData  *StackExecutionData
 	}
 
 	resultsChan := make(chan stackResult, len(stackNames))
@@ -263,9 +292,15 @@ func (p *Planner) buildStackResourcesParallel(ctx context.Context, cfg manifest.
 			defer wg.Done()
 
 			stack := cfg.Stacks[stackName]
+
+			// Build inline environment (including decrypted secrets)
+			inline := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+
 			services, err := detector.DetectAllServicesState(ctx, stackName, stack, cfg.Docker.Identifier, cfg.Sops)
 
 			var resources []Resource
+			var execData *StackExecutionData
+
 			if err != nil {
 				// Fallback to "TBD" for any errors during planning
 				resources = append(resources,
@@ -274,6 +309,16 @@ func (p *Planner) buildStackResourcesParallel(ctx context.Context, cfg manifest.
 				resources = append(resources,
 					NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"))
 			} else {
+				// Determine if this stack needs apply
+				needsApply := NeedsApply(services)
+
+				// Store execution data for reuse during apply
+				execData = &StackExecutionData{
+					Services:   services,
+					InlineEnv:  inline,
+					NeedsApply: needsApply,
+				}
+
 				// Convert service states to resources
 				for _, service := range services {
 					switch service.State {
@@ -299,7 +344,7 @@ func (p *Planner) buildStackResourcesParallel(ctx context.Context, cfg manifest.
 				}
 			}
 
-			resultsChan <- stackResult{stackName: stackName, resources: resources}
+			resultsChan <- stackResult{stackName: stackName, resources: resources, execData: execData}
 		}(stackName)
 	}
 
@@ -312,6 +357,9 @@ func (p *Planner) buildStackResourcesParallel(ctx context.Context, cfg manifest.
 	// Collect results and add to plan
 	for result := range resultsChan {
 		plan.Stacks[result.stackName] = result.resources
+		if result.execData != nil {
+			execCtx.Stacks[result.stackName] = result.execData
+		}
 	}
 
 	return nil
@@ -379,8 +427,9 @@ func (p *Planner) getExistingResourcesConcurrently(ctx context.Context) (volumes
 	return volumes, networks
 }
 
-// buildFilesetResources processes fileset diffs in parallel and adds them to the plan
-func (p *Planner) buildFilesetResources(ctx context.Context, filesetSpecs map[string]manifest.FilesetSpec, existingVolumes map[string]struct{}, plan *ResourcePlan) {
+// buildFilesetResources processes fileset diffs in parallel and adds them to the plan.
+// It also caches the computed indexes and diffs in execCtx for reuse during apply.
+func (p *Planner) buildFilesetResources(ctx context.Context, filesetSpecs map[string]manifest.FilesetSpec, existingVolumes map[string]struct{}, plan *ResourcePlan, execCtx *ExecutionContext) {
 	filesetNames := sortedKeys(filesetSpecs)
 	if len(filesetNames) == 0 {
 		return
@@ -389,6 +438,7 @@ func (p *Planner) buildFilesetResources(ctx context.Context, filesetSpecs map[st
 	type filesetResult struct {
 		name      string
 		resources []Resource
+		execData  *FilesetExecutionData
 	}
 
 	resultsChan := make(chan filesetResult, len(filesetNames))
@@ -408,7 +458,7 @@ func (p *Planner) buildFilesetResources(ctx context.Context, filesetSpecs map[st
 				resources = append(resources,
 					NewResource(ResourceFile, "", ActionUpdate,
 						fmt.Sprintf("unable to index local files: %v", err)))
-				resultsChan <- filesetResult{name: name, resources: resources}
+				resultsChan <- filesetResult{name: name, resources: resources, execData: nil}
 				return
 			}
 
@@ -419,6 +469,13 @@ func (p *Planner) buildFilesetResources(ctx context.Context, filesetSpecs map[st
 			}
 			remote, _ := filesets.ParseIndexJSON(raw)
 			diff := filesets.DiffIndexes(local, remote)
+
+			// Store execution data for reuse during apply
+			execData := &FilesetExecutionData{
+				LocalIndex:  local,
+				RemoteIndex: remote,
+				Diff:        diff,
+			}
 
 			if local.TreeHash == remote.TreeHash {
 				resources = append(resources,
@@ -442,7 +499,7 @@ func (p *Planner) buildFilesetResources(ctx context.Context, filesetSpecs map[st
 				}
 			}
 
-			resultsChan <- filesetResult{name: name, resources: resources}
+			resultsChan <- filesetResult{name: name, resources: resources, execData: execData}
 		}(name)
 	}
 
@@ -452,8 +509,11 @@ func (p *Planner) buildFilesetResources(ctx context.Context, filesetSpecs map[st
 		close(resultsChan)
 	}()
 
-	// Collect results and add to plan
+	// Collect results and add to plan and execution context
 	for result := range resultsChan {
 		plan.Filesets[result.name] = result.resources
+		if result.execData != nil {
+			execCtx.Filesets[result.name] = result.execData
+		}
 	}
 }

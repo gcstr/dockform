@@ -12,11 +12,18 @@ import (
 type ProgressEstimator struct {
 	docker   DockerClient
 	progress ProgressReporter
+	execCtx  *ExecutionContext
 }
 
 // NewProgressEstimator creates a new progress estimator.
 func NewProgressEstimator(docker DockerClient, progress ProgressReporter) *ProgressEstimator {
 	return &ProgressEstimator{docker: docker, progress: progress}
+}
+
+// WithExecutionContext sets the execution context for reusing pre-computed data.
+func (pe *ProgressEstimator) WithExecutionContext(execCtx *ExecutionContext) *ProgressEstimator {
+	pe.execCtx = execCtx
+	return pe
 }
 
 // EstimateAndStartProgress calculates the total number of work items and starts the progress tracker.
@@ -71,8 +78,12 @@ func (pe *ProgressEstimator) EstimateAndStartProgress(ctx context.Context, cfg m
 
 // countVolumesToCreate counts how many volumes need to be created.
 func (pe *ProgressEstimator) countVolumesToCreate(ctx context.Context, cfg manifest.Config) (int, error) {
+	// Use cached data from execution context if available
 	existingVolumes := map[string]struct{}{}
-	if pe.docker != nil {
+	if pe.execCtx != nil && pe.execCtx.ExistingVolumes != nil {
+		existingVolumes = pe.execCtx.ExistingVolumes
+	} else if pe.docker != nil {
+		// Fallback: query Docker
 		if vols, err := pe.docker.ListVolumes(ctx); err == nil {
 			for _, v := range vols {
 				existingVolumes[v] = struct{}{}
@@ -100,7 +111,21 @@ func (pe *ProgressEstimator) countVolumesToCreate(ctx context.Context, cfg manif
 
 // countFilesetsToUpdate counts how many filesets need synchronization.
 func (pe *ProgressEstimator) countFilesetsToUpdate(ctx context.Context, cfg manifest.Config) (int, error) {
-	// Get existing volumes to avoid creating them during estimation
+	// If we have cached fileset data from BuildPlan, use it to avoid redundant work
+	if pe.execCtx != nil && pe.execCtx.Filesets != nil {
+		count := 0
+		for name := range cfg.Filesets {
+			if execData := pe.execCtx.Filesets[name]; execData != nil {
+				// Count if tree hashes differ (fileset needs updates)
+				if execData.LocalIndex.TreeHash != execData.RemoteIndex.TreeHash {
+					count++
+				}
+			}
+		}
+		return count, nil
+	}
+
+	// Fallback: compute fresh (original behavior)
 	existingVolumes := map[string]struct{}{}
 	if pe.docker != nil {
 		if vols, err := pe.docker.ListVolumes(ctx); err == nil {
@@ -142,8 +167,12 @@ func (pe *ProgressEstimator) countFilesetsToUpdate(ctx context.Context, cfg mani
 
 // countNetworksToCreate counts how many networks need to be created.
 func (pe *ProgressEstimator) countNetworksToCreate(ctx context.Context, cfg manifest.Config) (int, error) {
+	// Use cached data from execution context if available
 	existingNetworks := map[string]struct{}{}
-	if pe.docker != nil {
+	if pe.execCtx != nil && pe.execCtx.ExistingNetworks != nil {
+		existingNetworks = pe.execCtx.ExistingNetworks
+	} else if pe.docker != nil {
+		// Fallback: query Docker
 		if nets, err := pe.docker.ListNetworks(ctx); err == nil {
 			for _, n := range nets {
 				existingNetworks[n] = struct{}{}
@@ -166,9 +195,21 @@ func (pe *ProgressEstimator) countStacksToUpdate(ctx context.Context, cfg manife
 	if pe.docker == nil {
 		return 0, nil
 	}
-	detector := NewServiceStateDetector(pe.docker)
+
 	count := 0
 
+	// If we have execution context from BuildPlan, reuse it to avoid redundant state detection
+	if pe.execCtx != nil && pe.execCtx.Stacks != nil {
+		for stackName := range cfg.Stacks {
+			if execData := pe.execCtx.Stacks[stackName]; execData != nil && execData.NeedsApply {
+				count++
+			}
+		}
+		return count, nil
+	}
+
+	// Fallback: detect state fresh (original behavior)
+	detector := NewServiceStateDetector(pe.docker)
 	for stackName, stack := range cfg.Stacks {
 		services, err := detector.DetectAllServicesState(ctx, stackName, stack, identifier, cfg.Sops)
 		if err == nil && NeedsApply(services) {

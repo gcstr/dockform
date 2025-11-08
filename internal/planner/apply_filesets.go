@@ -26,7 +26,9 @@ func NewFilesetManager(docker DockerClient, progress ProgressReporter) *FilesetM
 }
 
 // SyncFilesets synchronizes all filesets into their target volumes and returns services that need restart.
-func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config, existingVolumes map[string]struct{}) (map[string]struct{}, error) {
+// If execCtx is provided with cached fileset data, it reuses the pre-computed indexes and diffs to avoid
+// redundant filesystem walks, volume reads, and SHA256 computations.
+func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config, existingVolumes map[string]struct{}, execCtx *ExecutionContext) (map[string]struct{}, error) {
 	log := logger.FromContext(ctx).With("component", "fileset")
 	restartPending := map[string]struct{}{}
 	if fm.docker == nil {
@@ -51,20 +53,32 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 			return nil, apperr.New("filesetmanager.SyncFilesets", apperr.InvalidInput, "fileset %s: resolved source path is empty", name)
 		}
 
-		// Build local and remote indexes
-		local, err := filesets.BuildLocalIndex(fileset.SourceAbs, fileset.TargetPath, fileset.Exclude)
-		if err != nil {
-			return nil, apperr.Wrap("filesetmanager.SyncFilesets", apperr.Internal, err, "index local filesets for %s", name)
-		}
+		var local, remote filesets.Index
+		var diff filesets.Diff
 
-		// Only read from volume if it exists to avoid implicit creation
-		raw := ""
-		if _, volumeExists := existingVolumes[fileset.TargetVolume]; volumeExists {
-			raw, _ = fm.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
-		}
-		remote, _ := filesets.ParseIndexJSON(raw)
+		// Try to reuse cached data from plan execution context
+		if execCtx != nil && execCtx.Filesets != nil && execCtx.Filesets[name] != nil {
+			log.Info("fileset_sync_reuse_cache", "fileset", name, "msg", "reusing indexes and diff from plan")
+			execData := execCtx.Filesets[name]
+			local = execData.LocalIndex
+			remote = execData.RemoteIndex
+			diff = execData.Diff
+		} else {
+			// Fallback: compute indexes and diff fresh (original behavior)
+			var err error
+			local, err = filesets.BuildLocalIndex(fileset.SourceAbs, fileset.TargetPath, fileset.Exclude)
+			if err != nil {
+				return nil, apperr.Wrap("filesetmanager.SyncFilesets", apperr.Internal, err, "index local filesets for %s", name)
+			}
 
-		diff := filesets.DiffIndexes(local, remote)
+			// Only read from volume if it exists to avoid implicit creation
+			raw := ""
+			if _, volumeExists := existingVolumes[fileset.TargetVolume]; volumeExists {
+				raw, _ = fm.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
+			}
+			remote, _ = filesets.ParseIndexJSON(raw)
+			diff = filesets.DiffIndexes(local, remote)
+		}
 
 		// If completely equal, skip this fileset
 		if local.TreeHash == remote.TreeHash {

@@ -285,11 +285,28 @@ func (ctx *CLIContext) ApplyPlan() error {
 	})
 }
 
+// ApplyPlanWithContext executes the plan with progress tracking, reusing a pre-built plan.
+// This avoids redundant state detection by passing the execution context from the plan.
+func (ctx *CLIContext) ApplyPlanWithContext(plan *planner.Plan) error {
+	stdPr := ctx.Printer.(ui.StdPrinter)
+	return ProgressOperation(stdPr, "Applying", func(pb *ui.Progress) error {
+		return ctx.Planner.WithProgress(pb).ApplyWithPlan(ctx.Ctx, *ctx.Config, plan)
+	})
+}
+
 // PrunePlan executes pruning with spinner.
 func (ctx *CLIContext) PrunePlan() error {
 	stdPr := ctx.Printer.(ui.StdPrinter)
 	return SpinnerOperation(stdPr, "Pruning...", func() error {
 		return ctx.Planner.Prune(ctx.Ctx, *ctx.Config)
+	})
+}
+
+// PrunePlanWithContext executes pruning with spinner, reusing a pre-built plan.
+func (ctx *CLIContext) PrunePlanWithContext(plan *planner.Plan) error {
+	stdPr := ctx.Printer.(ui.StdPrinter)
+	return SpinnerOperation(stdPr, "Pruning...", func() error {
+		return ctx.Planner.PruneWithPlan(ctx.Ctx, *ctx.Config, plan)
 	})
 }
 
