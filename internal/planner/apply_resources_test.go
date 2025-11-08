@@ -172,7 +172,7 @@ func TestResourceManager_EnsureNetworksExist(t *testing.T) {
 			cfg := manifest.Config{Networks: tt.networks}
 			labels := map[string]string{"test": "label"}
 
-			err := resourceManager.EnsureNetworksExist(context.Background(), cfg, labels)
+			err := resourceManager.EnsureNetworksExist(context.Background(), cfg, labels, nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
