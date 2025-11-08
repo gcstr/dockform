@@ -70,7 +70,7 @@ func New(opts Options) (Logger, io.Closer, error) {
 		primary = &charmLogger{l: cl}
 	}
 
-	// Optional JSON file sink
+	// Optional file sink
 	var closer io.Closer
 	var sinks []Logger
 	sinks = append(sinks, primary)
@@ -81,9 +81,9 @@ func New(opts Options) (Logger, io.Closer, error) {
 		}
 		fl := clog.NewWithOptions(f, clog.Options{})
 		fl.SetLevel(parseLevel(opts.Level))
-		fl.SetFormatter(clog.JSONFormatter)
-		// Prefer machine-friendly logs: no timestamps, caller, or color artifacts.
-		fl.SetReportTimestamp(false)
+		fl.SetFormatter(chooseFormatter(f, opts.Format))
+		// File logs default to no timestamps for machine parsing (unless pretty format is explicitly requested)
+		fl.SetReportTimestamp(opts.Format == "pretty" || opts.Format == "text")
 		sinks = append(sinks, &charmLogger{l: fl})
 		closer = f
 	}
