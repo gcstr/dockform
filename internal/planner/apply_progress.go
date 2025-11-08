@@ -12,6 +12,7 @@ import (
 type ProgressEstimator struct {
 	docker   DockerClient
 	progress ProgressReporter
+	execCtx  *ExecutionContext
 }
 
 // NewProgressEstimator creates a new progress estimator.
