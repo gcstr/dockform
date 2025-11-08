@@ -30,18 +30,18 @@ func (p *Planner) PruneWithPlan(ctx context.Context, cfg manifest.Config, plan *
 	// Desired services set across all stacks
 	desiredServices := map[string]struct{}{}
 
-	// If we have execution context, use the pre-computed service lists
+	// If we have execution context, use the pre-computed service lists where available
 	if execCtx != nil && execCtx.Stacks != nil {
-		for stackName, execData := range execCtx.Stacks {
-			if execData != nil && execData.Services != nil {
+		// Iterate over cfg.Stacks (not execCtx.Stacks) to ensure we process ALL stacks
+		for stackName, stack := range cfg.Stacks {
+			if execData := execCtx.Stacks[stackName]; execData != nil && execData.Services != nil {
+				// Use cached service list from execution context
 				for _, svc := range execData.Services {
 					desiredServices[svc.Name] = struct{}{}
 				}
 			} else {
-				// Fallback for stacks without execution data
-				if stack, ok := cfg.Stacks[stackName]; ok {
-					p.collectDesiredServicesForStack(ctx, stack, cfg.Sops, desiredServices)
-				}
+				// Fallback: collect fresh for stacks missing from execution context
+				p.collectDesiredServicesForStack(ctx, stack, cfg.Sops, desiredServices)
 			}
 		}
 	} else {
