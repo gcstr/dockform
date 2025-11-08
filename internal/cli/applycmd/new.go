@@ -76,10 +76,12 @@ func New() *cobra.Command {
 				prev := ctx.Ctx
 				ctx.Ctx = runCtx
 				defer func() { ctx.Ctx = prev }()
-				if err := ctx.ApplyPlan(); err != nil {
+				// Pass the pre-built plan to avoid redundant state detection
+				if err := ctx.ApplyPlanWithContext(builtPlan); err != nil {
 					return "", err
 				}
-				if err := ctx.PrunePlan(); err != nil {
+				// Also pass the plan to prune to reuse execution context
+				if err := ctx.PrunePlanWithContext(builtPlan); err != nil {
 					return "", err
 				}
 				return "│ Done.", nil
