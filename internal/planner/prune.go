@@ -58,10 +58,13 @@ func (p *Planner) PruneWithPlan(ctx context.Context, cfg manifest.Config, plan *
 			}
 		}
 	}
-	// Remove labeled volumes not needed by any fileset
+	// Remove labeled volumes not needed by any fileset or explicit volume declaration
 	desiredVolumes := map[string]struct{}{}
 	for _, fileset := range cfg.Filesets {
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
+	}
+	for name := range cfg.Volumes {
+		desiredVolumes[name] = struct{}{}
 	}
 	if vols, err := p.docker.ListVolumes(ctx); err == nil {
 		for _, v := range vols {
