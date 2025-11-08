@@ -61,20 +61,14 @@ func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *
 		return st.Fail(err)
 	}
 
-	// If execution context has existing volumes snapshot, use it for filesets
-	// Otherwise use the freshly created volumes list
-	volumesForFilesets := existingVolumes
-	if execCtx != nil && len(execCtx.ExistingVolumes) > 0 {
-		volumesForFilesets = execCtx.ExistingVolumes
-	}
-
 	if err := resourceManager.EnsureNetworksExist(ctx, cfg, labels, execCtx); err != nil {
 		return st.Fail(err)
 	}
 
 	// Synchronize filesets
+	// Use fresh existingVolumes from EnsureVolumesExist (includes newly created volumes)
 	filesetManager := NewFilesetManager(p.docker, progress)
-	restartPending, err := filesetManager.SyncFilesets(ctx, cfg, volumesForFilesets, execCtx)
+	restartPending, err := filesetManager.SyncFilesets(ctx, cfg, existingVolumes, execCtx)
 	if err != nil {
 		return st.Fail(err)
 	}
