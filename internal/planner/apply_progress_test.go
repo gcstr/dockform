@@ -9,17 +9,20 @@ import (
 )
 
 func TestProgressEstimator_New(t *testing.T) {
-	prog := &ui.Progress{}
-	estimator := NewProgressEstimator(nil, newProgressReporter(prog))
+	spinner := &ui.Spinner{}
+	estimator := NewProgressEstimator(nil, newProgressReporter(spinner, "Testing"))
 	if estimator.docker != nil {
 		t.Error("expected estimator docker client to be nil")
 	}
-	pa, ok := estimator.progress.(*progressAdapter)
+	sa, ok := estimator.progress.(*spinnerAdapter)
 	if !ok {
-		t.Fatal("expected progress adapter")
+		t.Fatal("expected spinner adapter")
 	}
-	if pa.inner != prog {
-		t.Error("estimator progress adapter not wrapping provided progress")
+	if sa.inner != spinner {
+		t.Error("estimator progress adapter not wrapping provided spinner")
+	}
+	if sa.prefix != "Testing" {
+		t.Errorf("expected prefix 'Testing', got '%s'", sa.prefix)
 	}
 }
 func TestProgressEstimator_EstimateProgress_BasicLogic(t *testing.T) {

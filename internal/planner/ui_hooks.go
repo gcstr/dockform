@@ -2,41 +2,32 @@ package planner
 
 import "github.com/gcstr/dockform/internal/ui"
 
-// ProgressReporter exposes the subset of progress bar behavior needed by planner helpers.
+// ProgressReporter exposes the subset of spinner behavior needed by planner helpers.
+// It updates the spinner label to show the current task.
 type ProgressReporter interface {
-	Start(total int)
 	SetAction(action string)
-	Increment()
 }
 
-type progressAdapter struct {
-	inner *ui.Progress
+type spinnerAdapter struct {
+	inner  *ui.Spinner
+	prefix string // Stores initial label (e.g., "Applying") to prepend to actions
 }
 
-func (p *progressAdapter) Start(total int) {
-	if p == nil || p.inner == nil {
+func (s *spinnerAdapter) SetAction(action string) {
+	if s == nil || s.inner == nil {
 		return
 	}
-	p.inner.Start(total)
-}
-
-func (p *progressAdapter) SetAction(action string) {
-	if p == nil || p.inner == nil {
-		return
+	// Prepend the prefix with " -> " to show: "Applying -> creating volume data"
+	if s.prefix != "" {
+		s.inner.SetLabel(s.prefix + " -> " + action)
+	} else {
+		s.inner.SetLabel(action)
 	}
-	p.inner.SetAction(action)
 }
 
-func (p *progressAdapter) Increment() {
-	if p == nil || p.inner == nil {
-		return
-	}
-	p.inner.Increment()
-}
-
-func newProgressReporter(p *ui.Progress) ProgressReporter {
-	if p == nil {
+func newProgressReporter(spinner *ui.Spinner, prefix string) ProgressReporter {
+	if spinner == nil {
 		return nil
 	}
-	return &progressAdapter{inner: p}
+	return &spinnerAdapter{inner: spinner, prefix: prefix}
 }

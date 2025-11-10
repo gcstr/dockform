@@ -28,6 +28,9 @@ type Spinner struct {
 	stopCh chan struct{}
 	doneCh chan struct{}
 	mu     sync.Mutex
+
+	// labelMu protects label updates while spinner is running
+	labelMu sync.RWMutex
 }
 
 // NewSpinner creates a new spinner that writes to out with the given label.
@@ -95,10 +98,21 @@ func (s *Spinner) Start() {
 				i++
 				// Render without newline; carriage return to rewrite line
 				// Ensure one space before and after the spinner
-				_, _ = fmt.Fprintf(s.out, "\r %s %s", s.style.Render(frame), s.label)
+				s.labelMu.RLock()
+				label := s.label
+				s.labelMu.RUnlock()
+				_, _ = fmt.Fprintf(s.out, "\r %s %s", s.style.Render(frame), label)
 			}
 		}
 	}(s.stopCh, s.doneCh)
+}
+
+// SetLabel updates the spinner label while it's running.
+// This allows dynamic updates to show current progress.
+func (s *Spinner) SetLabel(label string) {
+	s.labelMu.Lock()
+	s.label = label
+	s.labelMu.Unlock()
 }
 
 // Stop stops the spinner and clears the line.

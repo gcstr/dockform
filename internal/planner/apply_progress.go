@@ -69,9 +69,8 @@ func (pe *ProgressEstimator) EstimateAndStartProgress(ctx context.Context, cfg m
 	}
 	total += restartCount
 
-	if total > 0 {
-		pe.progress.Start(total)
-	}
+	// Note: Spinner doesn't need total count, so we don't call Start()
+	// The estimation logic is kept for potential future use
 
 	return nil
 }

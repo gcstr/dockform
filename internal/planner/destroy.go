@@ -114,24 +114,20 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 
 	rp := plan.Resources
 
-	// Calculate total operations for progress tracking
-	total := 0
-	for _, services := range rp.Stacks {
-		total += len(services)
-	}
-	total += len(rp.Containers)
-	total += len(rp.Networks)
-	total += len(rp.Volumes)
-	for _, files := range rp.Filesets {
-		// Count filesets as single operations (they represent volumes)
-		if len(files) > 0 {
-			total++
-		}
-	}
-
-	if p.prog != nil {
-		p.prog.Start(total)
-	}
+	// Note: Spinner doesn't need total count for progress tracking
+	// (keeping the calculation logic commented out for reference)
+	// total := 0
+	// for _, services := range rp.Stacks {
+	// 	total += len(services)
+	// }
+	// total += len(rp.Containers)
+	// total += len(rp.Networks)
+	// total += len(rp.Volumes)
+	// for _, files := range rp.Filesets {
+	// 	if len(files) > 0 {
+	// 		total++
+	// 	}
+	// }
 
 	// Step 1: Remove containers (grouped by stack)
 	// Fetch all containers once and build lookup map
@@ -149,8 +145,8 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 
 	for stackName, services := range rp.Stacks {
 		for _, svc := range services {
-			if p.prog != nil {
-				p.prog.SetAction(fmt.Sprintf("removing service %s/%s", stackName, svc.Name))
+			if p.spinner != nil {
+				p.spinner.SetLabel(fmt.Sprintf("removing service %s/%s", stackName, svc.Name))
 			}
 
 			// Remove containers for this service using lookup map
@@ -159,33 +155,23 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 					_ = p.docker.RemoveContainer(ctx, name, true)
 				}
 			}
-
-			if p.prog != nil {
-				p.prog.Increment()
-			}
 		}
 	}
 
 	// Remove orphaned containers
 	for _, container := range rp.Containers {
-		if p.prog != nil {
-			p.prog.SetAction(fmt.Sprintf("removing container %s", container.Name))
+		if p.spinner != nil {
+			p.spinner.SetLabel(fmt.Sprintf("removing container %s", container.Name))
 		}
 		_ = p.docker.RemoveContainer(ctx, container.Name, true)
-		if p.prog != nil {
-			p.prog.Increment()
-		}
 	}
 
 	// Step 2: Remove networks
 	for _, network := range rp.Networks {
-		if p.prog != nil {
-			p.prog.SetAction(fmt.Sprintf("removing network %s", network.Name))
+		if p.spinner != nil {
+			p.spinner.SetLabel(fmt.Sprintf("removing network %s", network.Name))
 		}
 		_ = p.docker.RemoveNetwork(ctx, network.Name)
-		if p.prog != nil {
-			p.prog.Increment()
-		}
 	}
 
 	// Step 3: Remove volumes (including those from filesets)
@@ -195,14 +181,11 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 		if len(files) > 0 {
 			// Find the volume for this fileset
 			if fs, exists := cfg.Filesets[filesetName]; exists {
-				if p.prog != nil {
-					p.prog.SetAction(fmt.Sprintf("removing fileset %s (volume %s)", filesetName, fs.TargetVolume))
+				if p.spinner != nil {
+					p.spinner.SetLabel(fmt.Sprintf("removing fileset %s (volume %s)", filesetName, fs.TargetVolume))
 				}
 				_ = p.docker.RemoveVolume(ctx, fs.TargetVolume)
 				volumesRemoved[fs.TargetVolume] = true
-				if p.prog != nil {
-					p.prog.Increment()
-				}
 			}
 		}
 	}
@@ -210,13 +193,10 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 	// Then, standalone volumes
 	for _, volume := range rp.Volumes {
 		if !volumesRemoved[volume.Name] {
-			if p.prog != nil {
-				p.prog.SetAction(fmt.Sprintf("removing volume %s", volume.Name))
+			if p.spinner != nil {
+				p.spinner.SetLabel(fmt.Sprintf("removing volume %s", volume.Name))
 			}
 			_ = p.docker.RemoveVolume(ctx, volume.Name)
-			if p.prog != nil {
-				p.prog.Increment()
-			}
 		}
 	}
 

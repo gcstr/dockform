@@ -58,9 +58,6 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 				}
 
 				st.OK(true)
-				if rm.progress != nil {
-					rm.progress.Increment()
-				}
 				break
 			}
 		}
