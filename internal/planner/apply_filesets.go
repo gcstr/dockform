@@ -158,10 +158,6 @@ func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config,
 
 		st.OK(true) // Fileset was successfully synced
 
-		if fm.progress != nil {
-			fm.progress.Increment()
-		}
-
 		// Queue services for restart only for hot mode
 		if !isCold {
 			for _, svc := range targetServices {

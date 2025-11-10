@@ -432,18 +432,18 @@ func TestSpinnerAndProgressOperations(t *testing.T) {
 		t.Fatalf("expected spinner operation to run")
 	}
 
-	progressCalled := false
-	if err := ProgressOperation(std, "Applying", func(pb *ui.Progress) error {
-		if pb == nil {
-			t.Fatalf("expected progress bar")
+	dynamicSpinnerCalled := false
+	if err := DynamicSpinnerOperation(std, "Applying", func(s *ui.Spinner) error {
+		if s == nil {
+			t.Fatalf("expected spinner")
 		}
-		progressCalled = true
+		dynamicSpinnerCalled = true
 		return nil
 	}); err != nil {
-		t.Fatalf("ProgressOperation: %v", err)
+		t.Fatalf("DynamicSpinnerOperation: %v", err)
 	}
-	if !progressCalled {
-		t.Fatalf("expected progress operation to run")
+	if !dynamicSpinnerCalled {
+		t.Fatalf("expected dynamic spinner operation to run")
 	}
 }
 

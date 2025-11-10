@@ -57,9 +57,6 @@ func (rm *ResourceManager) EnsureVolumesExist(ctx context.Context, cfg manifest.
 				return nil, st.Fail(apperr.Wrap("resourcemanager.EnsureVolumesExist", apperr.External, err, "create volume %s", name))
 			}
 			st.OK(true)
-			if rm.progress != nil {
-				rm.progress.Increment()
-			}
 			// Add to existing volumes map for return value
 			existingVolumes[name] = struct{}{}
 		} else {
@@ -121,9 +118,6 @@ func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest
 				return st.Fail(apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "create network %s", name))
 			}
 			st.OK(true)
-			if rm.progress != nil {
-				rm.progress.Increment()
-			}
 			continue
 		}
 
@@ -189,9 +183,6 @@ func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest
 				return st.Fail(apperr.Wrap("resourcemanager.EnsureNetworksExist", apperr.External, err, "recreate network %s", name))
 			}
 			st.OK(true)
-			if rm.progress != nil {
-				rm.progress.Increment()
-			}
 		} else {
 			// Network exists and matches desired state - log as no-change
 			st := logger.StartStep(log, "network_ensure", name, "resource_kind", "network")

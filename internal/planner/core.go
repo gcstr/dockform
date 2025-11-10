@@ -6,10 +6,11 @@ import (
 
 // Planner creates a plan comparing desired and current docker state.
 type Planner struct {
-	docker   DockerClient
-	pr       ui.Printer
-	prog     *ui.Progress
-	parallel bool
+	docker        DockerClient
+	pr            ui.Printer
+	spinner       *ui.Spinner
+	spinnerPrefix string // Prefix for dynamic spinner labels (e.g., "Applying", "Destroying")
+	parallel      bool
 }
 
 func New() *Planner { return &Planner{parallel: true} }
@@ -22,9 +23,10 @@ func (p *Planner) WithPrinter(pr ui.Printer) *Planner {
 	return p
 }
 
-// WithProgress sets a progress bar to report stepwise progress during apply.
-func (p *Planner) WithProgress(pb *ui.Progress) *Planner {
-	p.prog = pb
+// WithSpinner sets a spinner to show current task during apply, with a prefix for dynamic labels.
+func (p *Planner) WithSpinner(s *ui.Spinner, prefix string) *Planner {
+	p.spinner = s
+	p.spinnerPrefix = prefix
 	return p
 }
 

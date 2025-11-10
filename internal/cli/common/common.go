@@ -203,11 +203,12 @@ func SpinnerOperation(pr ui.StdPrinter, message string, operation func() error) 
 	return err
 }
 
-// ProgressOperation runs an operation with a progress bar.
-func ProgressOperation(pr ui.StdPrinter, message string, operation func(*ui.Progress) error) error {
-	pb := ui.NewProgress(pr.Out, message)
-	err := operation(pb)
-	pb.Stop()
+// DynamicSpinnerOperation runs an operation with a spinner that can be updated.
+func DynamicSpinnerOperation(pr ui.StdPrinter, message string, operation func(*ui.Spinner) error) error {
+	spinner := ui.NewSpinner(pr.Out, message)
+	spinner.Start()
+	err := operation(spinner)
+	spinner.Stop()
 	return err
 }
 
@@ -277,11 +278,11 @@ func (ctx *CLIContext) BuildPlan() (*planner.Plan, error) {
 	return planObj, err
 }
 
-// ApplyPlan executes the plan with progress tracking.
+// ApplyPlan executes the plan with dynamic spinner.
 func (ctx *CLIContext) ApplyPlan() error {
 	stdPr := ctx.Printer.(ui.StdPrinter)
-	return ProgressOperation(stdPr, "Applying", func(pb *ui.Progress) error {
-		return ctx.Planner.WithProgress(pb).Apply(ctx.Ctx, *ctx.Config)
+	return DynamicSpinnerOperation(stdPr, "Applying", func(s *ui.Spinner) error {
+		return ctx.Planner.WithSpinner(s, "Applying").Apply(ctx.Ctx, *ctx.Config)
 	})
 }
 
@@ -289,8 +290,8 @@ func (ctx *CLIContext) ApplyPlan() error {
 // This avoids redundant state detection by passing the execution context from the plan.
 func (ctx *CLIContext) ApplyPlanWithContext(plan *planner.Plan) error {
 	stdPr := ctx.Printer.(ui.StdPrinter)
-	return ProgressOperation(stdPr, "Applying", func(pb *ui.Progress) error {
-		return ctx.Planner.WithProgress(pb).ApplyWithPlan(ctx.Ctx, *ctx.Config, plan)
+	return DynamicSpinnerOperation(stdPr, "Applying", func(s *ui.Spinner) error {
+		return ctx.Planner.WithSpinner(s, "Applying").ApplyWithPlan(ctx.Ctx, *ctx.Config, plan)
 	})
 }
 
@@ -327,8 +328,8 @@ func (ctx *CLIContext) BuildDestroyPlan() (*planner.Plan, error) {
 // ExecuteDestroy executes the destruction of all managed resources.
 func (ctx *CLIContext) ExecuteDestroy(bgCtx context.Context) error {
 	stdPr := ctx.Printer.(ui.StdPrinter)
-	return ProgressOperation(stdPr, "Destroying", func(pb *ui.Progress) error {
-		return ctx.Planner.WithProgress(pb).Destroy(bgCtx, *ctx.Config)
+	return DynamicSpinnerOperation(stdPr, "Destroying", func(s *ui.Spinner) error {
+		return ctx.Planner.WithSpinner(s, "Destroying").Destroy(bgCtx, *ctx.Config)
 	})
 }
 

@@ -45,7 +45,7 @@ func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *
 	}
 
 	// Initialize progress tracking
-	progress := newProgressReporter(p.prog)
+	progress := newProgressReporter(p.spinner, p.spinnerPrefix)
 	progressEstimator := NewProgressEstimator(p.docker, progress)
 	if execCtx != nil {
 		progressEstimator = progressEstimator.WithExecutionContext(execCtx)
@@ -148,9 +148,6 @@ func (p *Planner) applyStackChanges(ctx context.Context, cfg manifest.Config, id
 		}
 		if _, err := p.docker.ComposeUp(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline); err != nil {
 			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s", stackName)
-		}
-		if progress != nil {
-			progress.Increment()
 		}
 
 		// Best-effort: ensure identifier label is present on containers

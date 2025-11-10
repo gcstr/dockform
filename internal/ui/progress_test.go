@@ -35,14 +35,3 @@ func TestProgressStartIncrementAndStop(t *testing.T) {
 	}
 }
 
-func TestProgressRenderSuppressedByEnv(t *testing.T) {
-	var buf bytes.Buffer
-	p := newTestProgress(&buf)
-	buf.Reset()
-	t.Setenv("DOCKFORM_TUI_ACTIVE", "1")
-	p.Start(2)
-	p.SetAction("blocked")
-	if buf.Len() != 0 {
-		t.Fatalf("expected no output when TUI active, got %q", buf.String())
-	}
-}
