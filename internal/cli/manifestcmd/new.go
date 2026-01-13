@@ -30,7 +30,7 @@ func newRenderCmd() *cobra.Command {
 			if err != nil {
 				// Interactive discovery if no manifest at CWD and no explicit --config
 				if file == "" && apperr.IsKind(err, apperr.NotFound) {
-					if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+					if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3, ""); selErr == nil && ok {
 						_ = cmd.Flags().Set("config", selPath)
 						out, filename, missing, err = manifest.RenderWithWarningsAndPath(selPath)
 					} else if selErr != nil {

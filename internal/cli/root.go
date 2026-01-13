@@ -99,6 +99,7 @@ func newRootCmd() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().StringP("config", "c", "", "Path to configuration file or directory (defaults: dockform.yml, dockform.yaml, Dockform.yml, Dockform.yaml in current directory)")
+	cmd.PersistentFlags().String("context", "", "Target context to select when multiple manifests are found")
 	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose error output")
 	// Logging flags
 	cmd.PersistentFlags().String("log-level", "info", "Log level: debug, info, warn, error")

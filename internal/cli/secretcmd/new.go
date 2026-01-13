@@ -82,7 +82,7 @@ func newCreateCmd() *cobra.Command {
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
 			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3, ""); selErr == nil && ok {
 					_ = cmd.Flags().Set("config", selPath)
 					cfg, err = manifest.Load(selPath)
 				} else if selErr != nil {
@@ -129,7 +129,7 @@ func newRekeyCmd() *cobra.Command {
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
 			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3, ""); selErr == nil && ok {
 					_ = cmd.Flags().Set("config", selPath)
 					cfg, err = manifest.Load(selPath)
 				} else if selErr != nil {
@@ -185,7 +185,7 @@ func newDecryptCmd() *cobra.Command {
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
 			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3, ""); selErr == nil && ok {
 					_ = cmd.Flags().Set("config", selPath)
 					cfg, err = manifest.Load(selPath)
 				} else if selErr != nil {
@@ -231,7 +231,7 @@ func newEditCmd() *cobra.Command {
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			cfg, err := manifest.Load(cfgPath)
 			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3); selErr == nil && ok {
+				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3, ""); selErr == nil && ok {
 					_ = cmd.Flags().Set("config", selPath)
 					cfg, err = manifest.Load(selPath)
 				} else if selErr != nil {

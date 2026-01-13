@@ -181,7 +181,7 @@ func TestSelectManifestPathNonTTYReturnsFalse(t *testing.T) {
 	cmd.SetIn(bytes.NewReader(nil))
 	cmd.SetOut(io.Discard)
 	cmd.Flags().String("config", "", "")
-	okPath, ok, err := SelectManifestPath(cmd, ui.StdPrinter{}, ".", 1)
+	okPath, ok, err := SelectManifestPath(cmd, ui.StdPrinter{}, ".", 1, "")
 	if err != nil {
 		t.Fatalf("SelectManifestPath non-tty: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestSelectManifestPathTTY(t *testing.T) {
 		err  error
 	}, 1)
 	go func() {
-		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, temp, 1)
+		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, temp, 1, "")
 		resCh <- struct {
 			path string
 			ok   bool
@@ -273,11 +273,11 @@ func TestSelectManifestPathTTYNoFiles(t *testing.T) {
 	}
 	resCh := make(chan result, 1)
 	go func() {
-		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, t.TempDir(), 1)
+		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, t.TempDir(), 1, "")
 		resCh <- result{path: path, ok: ok, err: err}
 	}()
 	time.Sleep(50 * time.Millisecond)
-	_, _ = master.Write([]byte{''})
+	_, _ = master.Write([]byte{'\r'})
 	res := <-resCh
 	if res.err != nil {
 		t.Fatalf("SelectManifestPath no files: %v", res.err)
@@ -317,7 +317,7 @@ func TestSelectManifestPathTTYCancel(t *testing.T) {
 		err  error
 	}, 1)
 	go func() {
-		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, temp, 1)
+		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, temp, 1, "")
 		resCh <- struct {
 			path string
 			ok   bool
@@ -357,7 +357,7 @@ func TestSelectManifestPathTTYError(t *testing.T) {
 
 	errorCh := make(chan error, 1)
 	go func() {
-		_, _, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, filepath.Join(t.TempDir(), "missing"), 1)
+		_, _, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, filepath.Join(t.TempDir(), "missing"), 1, "")
 		errorCh <- err
 	}()
 	err := <-errorCh

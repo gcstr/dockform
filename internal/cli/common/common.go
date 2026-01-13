@@ -42,7 +42,8 @@ func LoadConfigWithWarnings(cmd *cobra.Command, pr ui.Printer) (*manifest.Config
 
 	// If no config found in CWD and no explicit --config, try interactive discovery
 	if file == "" && apperr.IsKind(err, apperr.NotFound) {
-		selectedPath, ok, selErr := SelectManifestPath(cmd, pr, ".", 3)
+		targetCtx, _ := cmd.Flags().GetString("context")
+		selectedPath, ok, selErr := SelectManifestPath(cmd, pr, ".", 3, targetCtx)
 		if selErr != nil {
 			return nil, selErr
 		}
@@ -66,7 +67,7 @@ func LoadConfigWithWarnings(cmd *cobra.Command, pr ui.Printer) (*manifest.Config
 // SelectManifestPath scans for manifest files up to maxDepth and presents an interactive picker
 // of docker.context values when attached to a TTY. Returns the chosen manifest path and whether
 // a selection was made. On non-TTY, returns ok=false with no error.
-func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth int) (string, bool, error) {
+func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth int, targetCtx string) (string, bool, error) {
 	// Check TTY
 	inTTY := false
 	outTTY := false
@@ -75,9 +76,6 @@ func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth
 	}
 	if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
 		outTTY = true
-	}
-	if !inTTY || !outTTY {
-		return "", false, nil
 	}
 
 	// Discover manifest files
@@ -97,6 +95,20 @@ func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth
 			lb = filepath.Base(filepath.Dir(p))
 		}
 		labels = append(labels, lb)
+	}
+
+	// If target context is provided, try to match it
+	if targetCtx != "" {
+		for i, lb := range labels {
+			if lb == targetCtx {
+				return files[i], true, nil
+			}
+		}
+		return "", false, apperr.New("SelectManifestPath", apperr.NotFound, "context '%s' not found", targetCtx)
+	}
+
+	if !inTTY || !outTTY {
+		return "", false, nil
 	}
 
 	// Show picker
