@@ -26,80 +26,115 @@ func findDefaultComposeFile(dir string) string {
 }
 
 func (c *Config) normalizeAndValidate(baseDir string) error {
-	// Defaults
-	if c.Docker.Context == "" {
-		c.Docker.Context = "default"
+	// Initialize maps if nil
+	if c.Daemons == nil {
+		c.Daemons = map[string]DaemonConfig{}
 	}
-	// Require docker.identifier
-	if strings.TrimSpace(c.Docker.Identifier) == "" {
-		return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "docker.identifier is required")
+	if c.Deployments == nil {
+		c.Deployments = map[string]DeploymentConfig{}
 	}
 	if c.Stacks == nil {
 		c.Stacks = map[string]Stack{}
 	}
-	if c.Networks == nil {
-		c.Networks = map[string]NetworkSpec{}
+	if c.DiscoveredStacks == nil {
+		c.DiscoveredStacks = map[string]Stack{}
 	}
-	if c.Volumes == nil {
-		c.Volumes = map[string]TopLevelResourceSpec{}
-	}
-	if c.Filesets == nil {
-		c.Filesets = map[string]FilesetSpec{}
+	if c.DiscoveredFilesets == nil {
+		c.DiscoveredFilesets = map[string]FilesetSpec{}
 	}
 
-	// Validate volume names
-	for volumeName := range c.Volumes {
-		if !appKeyRegex.MatchString(volumeName) {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid volume key %q: must match ^[a-z0-9_.-]+$", volumeName)
+	// Require at least one daemon
+	if len(c.Daemons) == 0 {
+		return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "at least one daemon must be defined under 'daemons:'")
+	}
+
+	// Validate daemon configurations
+	for daemonName, daemon := range c.Daemons {
+		if !daemonKeyRegex.MatchString(daemonName) {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid daemon key %q: must match ^[a-z0-9_-]+$", daemonName)
+		}
+
+		// Default context to daemon name if not specified
+		if daemon.Context == "" {
+			daemon.Context = daemonName
+			c.Daemons[daemonName] = daemon
+		}
+
+		// Require identifier
+		if strings.TrimSpace(daemon.Identifier) == "" {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "daemon %s: identifier is required", daemonName)
 		}
 	}
 
-	// Validate network names
-	for networkName := range c.Networks {
-		if !appKeyRegex.MatchString(networkName) {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid network key %q: must match ^[a-z0-9_.-]+$", networkName)
-		}
-	}
-
-	// Validate stack keys and fill defaults
-	for stackName, stack := range c.Stacks {
-		if !appKeyRegex.MatchString(stackName) {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid stack key %q: must match ^[a-z0-9_.-]+$", stackName)
-		}
-		// Resolve root relative to config file directory
-		resolvedRoot := filepath.Clean(filepath.Join(baseDir, stack.Root))
-
-		// Merge environment files with correct base paths
-		// Root-level files are converted from baseDir-relative to resolvedRoot-relative
-		var mergedEnv []string
-		if c.Environment != nil && len(c.Environment.Files) > 0 {
-			mergedEnv = append(mergedEnv, rebaseRootEnvToStack(baseDir, resolvedRoot, c.Environment.Files)...)
-		}
-		if stack.Environment != nil && len(stack.Environment.Files) > 0 {
-			mergedEnv = append(mergedEnv, stack.Environment.Files...)
-		}
-		if len(stack.EnvFile) > 0 {
-			mergedEnv = append(mergedEnv, stack.EnvFile...)
-		}
-		// De-duplicate env files while preserving order
-		if len(mergedEnv) > 1 {
-			seen := make(map[string]struct{}, len(mergedEnv))
-			uniq := make([]string, 0, len(mergedEnv))
-			for _, p := range mergedEnv {
-				if _, ok := seen[p]; ok {
-					continue
-				}
-				seen[p] = struct{}{}
-				uniq = append(uniq, p)
+	// Validate deployment groups
+	for deployName, deploy := range c.Deployments {
+		// Validate referenced daemons exist
+		for _, dName := range deploy.Daemons {
+			if _, ok := c.Daemons[dName]; !ok {
+				return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "deployment %s: references unknown daemon %q", deployName, dName)
 			}
-			mergedEnv = uniq
+		}
+		// Validate referenced stacks format (daemon/stack)
+		for _, stackKey := range deploy.Stacks {
+			daemon, _, err := ParseStackKey(stackKey)
+			if err != nil {
+				return apperr.Wrap("manifest.normalizeAndValidate", apperr.InvalidInput, err, "deployment %s: invalid stack reference", deployName)
+			}
+			if _, ok := c.Daemons[daemon]; !ok {
+				return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "deployment %s: stack %q references unknown daemon %q", deployName, stackKey, daemon)
+			}
+		}
+	}
+
+	// Validate and normalize explicit stack overrides
+	for stackKey, stack := range c.Stacks {
+		daemon, stackName, err := ParseStackKey(stackKey)
+		if err != nil {
+			return apperr.Wrap("manifest.normalizeAndValidate", apperr.InvalidInput, err, "invalid stack key")
 		}
 
-		// Merge inline env vars (root first, then stack). Last value for a key wins.
-		var mergedInline []string
-		if c.Environment != nil && len(c.Environment.Inline) > 0 {
-			mergedInline = append(mergedInline, c.Environment.Inline...)
+		// Validate daemon exists
+		if _, ok := c.Daemons[daemon]; !ok {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "stack %s: references unknown daemon %q", stackKey, daemon)
 		}
+
+		// Validate stack name format
+		if !appKeyRegex.MatchString(stackName) {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid stack name %q in key %q: must match ^[a-z0-9_.-]+$", stackName, stackKey)
+		}
+
+		// Set the daemon reference
+		stack.Daemon = daemon
+		c.Stacks[stackKey] = stack
+	}
+
+	// Normalize all stacks (discovered + explicit merged)
+	allStacks := c.GetAllStacks()
+	for stackKey, stack := range allStacks {
+		daemon, _, err := ParseStackKey(stackKey)
+		if err != nil {
+			continue // Skip invalid keys (shouldn't happen)
+		}
+
+		// Ensure daemon is set
+		if stack.Daemon == "" {
+			stack.Daemon = daemon
+		}
+
+		// Resolve root if not absolute
+		if stack.Root != "" && !filepath.IsAbs(stack.Root) {
+			stack.Root = filepath.Clean(filepath.Join(baseDir, stack.Root))
+		}
+		stack.RootAbs = stack.Root
+
+		// Normalize compose files
+		if len(stack.Files) == 0 && stack.Root != "" {
+			defaultComposeFile := findDefaultComposeFile(stack.Root)
+			stack.Files = []string{defaultComposeFile}
+		}
+
+		// Merge inline env vars
+		var mergedInline []string
 		if stack.Environment != nil && len(stack.Environment.Inline) > 0 {
 			mergedInline = append(mergedInline, stack.Environment.Inline...)
 		}
@@ -128,69 +163,24 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 				mergedInline = append(mergedInline, dedupReversed[i])
 			}
 		}
+		stack.EnvInline = mergedInline
 
-		// Merge SOPS secrets: root-level rebased to stack root, then stack-level
-		var mergedSops []string
-		if c.Secrets != nil && len(c.Secrets.Sops) > 0 {
-			for _, sp := range c.Secrets.Sops {
-				p := strings.TrimSpace(sp)
-				if p == "" {
-					continue
-				}
-				if !strings.HasSuffix(strings.ToLower(p), ".env") {
-					return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "secrets.sops: %s must have .env extension", sp)
-				}
-				abs := filepath.Clean(filepath.Join(baseDir, p))
-				if rel, err := filepath.Rel(resolvedRoot, abs); err == nil {
-					mergedSops = append(mergedSops, rel)
-				} else {
-					mergedSops = append(mergedSops, abs)
-				}
-			}
-		}
-		if stack.Secrets != nil && len(stack.Secrets.Sops) > 0 {
-			for _, sp := range stack.Secrets.Sops {
-				p := strings.TrimSpace(sp)
-				if p == "" {
-					continue
-				}
-				if !strings.HasSuffix(strings.ToLower(p), ".env") {
-					return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "stack %s secrets.sops: %s must have .env extension", stackName, sp)
-				}
-				mergedSops = append(mergedSops, p)
+		// Validate SOPS secrets have .env extension
+		for _, sp := range stack.SopsSecrets {
+			if !strings.HasSuffix(strings.ToLower(sp), ".env") {
+				return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "stack %s: secrets file %s must have .env extension", stackKey, sp)
 			}
 		}
 
-		if len(stack.Files) == 0 {
-			defaultComposeFile := findDefaultComposeFile(resolvedRoot)
-			c.Stacks[stackName] = Stack{
-				Root:        resolvedRoot,
-				Files:       []string{defaultComposeFile},
-				Profiles:    stack.Profiles,
-				EnvFile:     mergedEnv,
-				Environment: stack.Environment,
-				Secrets:     stack.Secrets,
-				EnvInline:   mergedInline,
-				SopsSecrets: mergedSops,
-				Project:     stack.Project,
-			}
+		// Update the stack in discovered (which will be merged in GetAllStacks)
+		if _, isDiscovered := c.DiscoveredStacks[stackKey]; isDiscovered {
+			c.DiscoveredStacks[stackKey] = stack
 		} else {
-			// Keep provided file paths (interpreted relative to Root by compose), but store resolved Root
-			c.Stacks[stackName] = Stack{
-				Root:        resolvedRoot,
-				Files:       stack.Files,
-				Profiles:    stack.Profiles,
-				EnvFile:     mergedEnv,
-				Environment: stack.Environment,
-				Secrets:     stack.Secrets,
-				EnvInline:   mergedInline,
-				SopsSecrets: mergedSops,
-				Project:     stack.Project,
-			}
+			c.Stacks[stackKey] = stack
 		}
 	}
 
-	// Validate SOPS config (global). Stacks inherit usage only; config is global
+	// Validate SOPS config (global)
 	if c.Sops != nil {
 		// Migration error: top-level recipients deprecated
 		if len(c.Sops.Recipients) > 0 {
@@ -220,69 +210,54 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 				return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "sops.pgp.pinentry_mode must be 'default' or 'loopback'")
 			}
 			c.Sops.Pgp.PinentryMode = mode
-			// No strict validation for recipients (fingerprint/email)
 		}
 	}
 
-	// Filesets validation and normalization
-	for filesetName, a := range c.Filesets {
-		if !appKeyRegex.MatchString(filesetName) {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid fileset key %q: must match ^[a-z0-9_.-]+$", filesetName)
+	// Validate and normalize discovered filesets
+	for filesetKey, fs := range c.DiscoveredFilesets {
+		// Validate source
+		if strings.TrimSpace(fs.Source) == "" {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: source path is required", filesetKey)
 		}
-		if strings.TrimSpace(a.Source) == "" {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: source path is required", filesetName)
+		if fs.TargetVolume == "" {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_volume is required", filesetKey)
 		}
-		if a.TargetVolume == "" {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_volume is required", filesetName)
-		}
+
 		// target_path must be an absolute Unix path since it's used inside containers
-		if a.TargetPath == "" || !strings.HasPrefix(a.TargetPath, "/") {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_path must be an absolute path", filesetName)
+		// For discovered filesets, default to "/" if not set
+		if fs.TargetPath == "" {
+			fs.TargetPath = "/"
 		}
-		if a.TargetPath == "/" {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_path cannot be '/'", filesetName)
+		if !strings.HasPrefix(fs.TargetPath, "/") {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: target_path must be an absolute path", filesetKey)
 		}
+
 		// apply_mode: default to hot, validate values
-		mode := strings.ToLower(strings.TrimSpace(a.ApplyMode))
+		mode := strings.ToLower(strings.TrimSpace(fs.ApplyMode))
 		if mode == "" {
 			mode = "hot"
 		}
 		if mode != "hot" && mode != "cold" {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: apply_mode must be 'hot' or 'cold'", filesetName)
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "fileset %s: apply_mode must be 'hot' or 'cold'", filesetKey)
 		}
-		a.ApplyMode = mode
+		fs.ApplyMode = mode
 
 		// Validate and normalize ownership if provided
-		if err := validateOwnership(filesetName, &a); err != nil {
+		if err := validateOwnership(filesetKey, &fs); err != nil {
 			return err
 		}
 
-		// Resolve source relative to baseDir
-		srcAbs := a.Source
-		if !filepath.IsAbs(srcAbs) {
-			srcAbs = filepath.Clean(filepath.Join(baseDir, srcAbs))
+		// Resolve source to absolute path if needed
+		if !filepath.IsAbs(fs.Source) {
+			fs.SourceAbs = filepath.Clean(filepath.Join(baseDir, fs.Source))
+		} else {
+			fs.SourceAbs = fs.Source
 		}
-		a.SourceAbs = srcAbs
-		c.Filesets[filesetName] = a
+
+		c.DiscoveredFilesets[filesetKey] = fs
 	}
 
 	return nil
-}
-
-func rebaseRootEnvToStack(baseDir, resolvedRoot string, files []string) []string {
-	out := make([]string, 0, len(files))
-	for _, f := range files {
-		if f == "" {
-			continue
-		}
-		abs := filepath.Clean(filepath.Join(baseDir, f))
-		if rel, err := filepath.Rel(resolvedRoot, abs); err == nil {
-			out = append(out, rel)
-		} else {
-			out = append(out, abs)
-		}
-	}
-	return out
 }
 
 // Regex patterns for validation
@@ -311,7 +286,6 @@ func validateOwnership(filesetName string, fs *FilesetSpec) error {
 			return apperr.Wrap("manifest.validateOwnership", apperr.InvalidInput, err, "fileset %s: invalid user", filesetName)
 		}
 		o.User = trimmed // Persist trimmed value
-		// Note: non-numeric IDs are allowed but may not be portable across helper images
 	}
 
 	// Validate and normalize group if provided
@@ -325,7 +299,6 @@ func validateOwnership(filesetName string, fs *FilesetSpec) error {
 			return apperr.Wrap("manifest.validateOwnership", apperr.InvalidInput, err, "fileset %s: invalid group", filesetName)
 		}
 		o.Group = trimmed // Persist trimmed value
-		// Note: non-numeric IDs are allowed but may not be portable across helper images
 	}
 
 	// Validate and normalize file_mode if provided
