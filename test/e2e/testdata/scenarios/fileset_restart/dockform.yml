@@ -1,29 +1,28 @@
-docker:
-  context: ""
-  identifier: ${DOCKFORM_RUN_ID}
+daemons:
+  default:
+    context: ""
+    identifier: ${DOCKFORM_RUN_ID}
 
 stacks:
-  app:
+  default/app:
     root: .
     files:
       - docker-compose.yaml
+    daemon: default
     project:
       name: df_e2e_${DOCKFORM_RUN_ID}
 
-filesets:
+discovered_filesets:
   files:
     source: files-src
     target_volume: df_e2e_${DOCKFORM_RUN_ID}_fsvol2
     target_path: /assets
+    daemon: default
     restart_services:
-      - sleeper
+      services:
+        - sleeper
     exclude:
       - "**/.DS_Store"
       - "*.bak"
       - "tmp/**"
       - "secrets/"
-
-networks:
-  df_e2e_${DOCKFORM_RUN_ID}_fsnet2: {}
-
-

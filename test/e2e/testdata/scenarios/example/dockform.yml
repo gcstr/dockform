@@ -1,14 +1,17 @@
-docker:
-  context: default
-  identifier: demo
+daemons:
+  default:
+    context: default
+    identifier: demo
 
-filesets:
+discovered_filesets:
   files:
     source: website/assets/
     target_volume: demo-volume-1
     target_path: /assets
+    daemon: default
     restart_services:
-      - nginx
+      services:
+        - nginx
     exclude:
       - "**/.DS_Store"
       - "*.bak"
@@ -23,10 +26,11 @@ environment:
     - GBAZ=qux
 
 stacks:
-  website:
+  default/website:
     root: website
     files:
       - docker-compose.yaml
+    daemon: default
     project:
       name: website
     environment:
@@ -35,8 +39,4 @@ stacks:
       inline:
         - FOO=bar
         - BAZ=qux
-
-networks:
-  demo-network:
-
 

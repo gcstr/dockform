@@ -50,7 +50,10 @@ func TestBuildPlan_NoDocker_ClientNil(t *testing.T) {
 }
 
 func TestBuildPlan_NoDocker_AppsPlannedTBD(t *testing.T) {
-	cfg := manifest.Config{Stacks: map[string]manifest.Stack{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{
+		Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "test"}},
+		Stacks:  map[string]manifest.Stack{"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}, Daemon: "default"}},
+	}
 	pln, err := New().BuildPlan(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
@@ -63,7 +66,10 @@ func TestBuildPlan_NoDocker_AppsPlannedTBD(t *testing.T) {
 
 func TestBuildPlan_ComposeConfigError(t *testing.T) {
 	_ = writeComposeErrorStub(t)
-	cfg := manifest.Config{Stacks: map[string]manifest.Stack{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{
+		Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "test"}},
+		Stacks:  map[string]manifest.Stack{"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}, Daemon: "default"}},
+	}
 	d := dockercli.New("")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
@@ -77,10 +83,21 @@ func TestBuildPlan_ComposeConfigError(t *testing.T) {
 }
 
 func TestApply_Precondition_NoDocker(t *testing.T) {
+	// With multi-daemon architecture, empty config is a no-op (no daemons to process)
 	cfg := manifest.Config{}
 	err := New().Apply(context.Background(), cfg)
-	if err == nil || !strings.Contains(err.Error(), "docker client not configured") {
-		t.Fatalf("expected precondition error, got: %v", err)
+	if err != nil {
+		t.Fatalf("expected no error for empty config, got: %v", err)
+	}
+
+	// But if there's a daemon configured, we should get an error with no client
+	cfg = manifest.Config{
+		Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "test"}},
+		Stacks:  map[string]manifest.Stack{"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}, Daemon: "default"}},
+	}
+	err = New().Apply(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "docker client not available") {
+		t.Fatalf("expected docker client error for daemon with no client, got: %v", err)
 	}
 }
 
@@ -89,7 +106,10 @@ func TestApply_ComposeConfigError(t *testing.T) {
 		t.Skip("skipping on Windows due to shell script compatibility")
 	}
 	_ = writeComposeErrorStub(t)
-	cfg := manifest.Config{Stacks: map[string]manifest.Stack{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{
+		Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "test"}},
+		Stacks:  map[string]manifest.Stack{"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}, Daemon: "default"}},
+	}
 	d := dockercli.New("")
 	err := NewWithDocker(d).Apply(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to detect service states") {
