@@ -68,8 +68,9 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 	}
 
 	// Map volumes to filesets if possible
+	allFilesets := cfg.GetAllFilesets()
 	volumeToFileset := make(map[string]string)
-	for fsName, fs := range cfg.Filesets {
+	for fsName, fs := range allFilesets {
 		volumeToFileset[fs.TargetVolume] = fsName
 	}
 
@@ -82,7 +83,7 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 			}
 
 			// Get fileset config for details
-			fsConfig := cfg.Filesets[filesetName]
+			fsConfig := allFilesets[filesetName]
 			details := fmt.Sprintf("volume %s at %s will be destroyed", volume, fsConfig.TargetPath)
 			res := NewResource(ResourceFile, "", ActionDelete, details)
 			rp.Filesets[filesetName] = append(rp.Filesets[filesetName], res)
@@ -113,21 +114,6 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 	}
 
 	rp := plan.Resources
-
-	// Note: Spinner doesn't need total count for progress tracking
-	// (keeping the calculation logic commented out for reference)
-	// total := 0
-	// for _, services := range rp.Stacks {
-	// 	total += len(services)
-	// }
-	// total += len(rp.Containers)
-	// total += len(rp.Networks)
-	// total += len(rp.Volumes)
-	// for _, files := range rp.Filesets {
-	// 	if len(files) > 0 {
-	// 		total++
-	// 	}
-	// }
 
 	// Step 1: Remove containers (grouped by stack)
 	// Fetch all containers once and build lookup map
@@ -176,11 +162,12 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 
 	// Step 3: Remove volumes (including those from filesets)
 	// First, volumes associated with filesets
+	allFilesets := cfg.GetAllFilesets()
 	volumesRemoved := make(map[string]bool)
 	for filesetName, files := range rp.Filesets {
 		if len(files) > 0 {
 			// Find the volume for this fileset
-			if fs, exists := cfg.Filesets[filesetName]; exists {
+			if fs, exists := allFilesets[filesetName]; exists {
 				if p.spinner != nil {
 					p.spinner.SetLabel(fmt.Sprintf("removing fileset %s (volume %s)", filesetName, fs.TargetVolume))
 				}

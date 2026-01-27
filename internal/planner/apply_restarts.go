@@ -20,6 +20,11 @@ func NewRestartManager(docker DockerClient, printer ui.Printer, progress Progres
 	return &RestartManager{docker: docker, printer: printer, progress: progress}
 }
 
+// NewRestartManagerWithClient creates a new restart manager with a specific client.
+func NewRestartManagerWithClient(client DockerClient, printer ui.Printer, progress ProgressReporter) *RestartManager {
+	return &RestartManager{docker: client, printer: printer, progress: progress}
+}
+
 // RestartPendingServices restarts all services queued for restart after fileset updates.
 func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPending map[string]struct{}) error {
 	if len(restartPending) == 0 {

@@ -21,35 +21,36 @@ func (p *Planner) PruneWithPlan(ctx context.Context, cfg manifest.Config, plan *
 		return apperr.New("planner.Prune", apperr.Precondition, "docker client not configured")
 	}
 
-	// Check if we have execution context from a pre-built plan
-	var execCtx *ExecutionContext
-	if plan != nil && plan.ExecutionContext != nil {
-		execCtx = plan.ExecutionContext
-	}
-
 	// Desired services set across all stacks
 	desiredServices := map[string]struct{}{}
 
+	// Get all stacks (discovered + explicit)
+	allStacks := cfg.GetAllStacks()
+
 	// If we have execution context, use the pre-computed service lists where available
-	if execCtx != nil && execCtx.Stacks != nil {
-		// Iterate over cfg.Stacks (not execCtx.Stacks) to ensure we process ALL stacks
-		for stackName, stack := range cfg.Stacks {
-			if execData := execCtx.Stacks[stackName]; execData != nil && execData.Services != nil {
-				// Use cached service list from execution context
-				for _, svc := range execData.Services {
-					desiredServices[svc.Name] = struct{}{}
+	if plan != nil && plan.ExecutionContext != nil {
+		// Iterate over all daemons and their stacks
+		for daemonName, daemonCtx := range plan.ExecutionContext.ByDaemon {
+			daemonStacks := cfg.GetStacksForDaemon(daemonName)
+			for stackName, stack := range daemonStacks {
+				if execData := daemonCtx.Stacks[stackName]; execData != nil && execData.Services != nil {
+					// Use cached service list from execution context
+					for _, svc := range execData.Services {
+						desiredServices[svc.Name] = struct{}{}
+					}
+				} else {
+					// Fallback: collect fresh for stacks missing from execution context
+					p.collectDesiredServicesForStack(ctx, stack, cfg.Sops, desiredServices)
 				}
-			} else {
-				// Fallback: collect fresh for stacks missing from execution context
-				p.collectDesiredServicesForStack(ctx, stack, cfg.Sops, desiredServices)
 			}
 		}
 	} else {
 		// Fallback: detect services fresh (original behavior)
-		for _, stack := range cfg.Stacks {
+		for _, stack := range allStacks {
 			p.collectDesiredServicesForStack(ctx, stack, cfg.Sops, desiredServices)
 		}
 	}
+
 	// Remove labeled containers not in desired set
 	if all, err := p.docker.ListComposeContainersAll(ctx); err == nil {
 		for _, it := range all {
@@ -58,13 +59,12 @@ func (p *Planner) PruneWithPlan(ctx context.Context, cfg manifest.Config, plan *
 			}
 		}
 	}
-	// Remove labeled volumes not needed by any fileset or explicit volume declaration
+
+	// Remove labeled volumes not needed by any fileset
+	allFilesets := cfg.GetAllFilesets()
 	desiredVolumes := map[string]struct{}{}
-	for _, fileset := range cfg.Filesets {
+	for _, fileset := range allFilesets {
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
-	}
-	for name := range cfg.Volumes {
-		desiredVolumes[name] = struct{}{}
 	}
 	if vols, err := p.docker.ListVolumes(ctx); err == nil {
 		for _, v := range vols {
@@ -73,14 +73,10 @@ func (p *Planner) PruneWithPlan(ctx context.Context, cfg manifest.Config, plan *
 			}
 		}
 	}
-	// Remove labeled networks not in cfg
-	if nets, err := p.docker.ListNetworks(ctx); err == nil {
-		for _, n := range nets {
-			if _, want := cfg.Networks[n]; !want {
-				_ = p.docker.RemoveNetwork(ctx, n)
-			}
-		}
-	}
+
+	// In the new schema, networks are managed by compose - we don't prune them explicitly
+	// They will be cleaned up when compose down is run
+
 	return nil
 }
 
