@@ -33,9 +33,14 @@ regardless of what's in your current configuration file.`,
 			}
 
 			// Allow environment to override identifier for discovery/confirmation independence
+			identifier := common.GetFirstIdentifier(ctx.Config)
 			if override := os.Getenv("DOCKFORM_RUN_ID"); override != "" {
-				ctx.Config.Docker.Identifier = override
-				ctx.Docker = ctx.Docker.WithIdentifier(override)
+				identifier = override
+				// Update all daemons to use the override identifier
+				for name, daemon := range ctx.Config.Daemons {
+					daemon.Identifier = override
+					ctx.Config.Daemons[name] = daemon
+				}
 			}
 
 			// Build destroy plan using the planner
@@ -56,7 +61,7 @@ regardless of what's in your current configuration file.`,
 			// Get confirmation from user (requires typing identifier)
 			confirmed, err := common.GetDestroyConfirmation(cmd, ctx.Printer, common.DestroyConfirmationOptions{
 				SkipConfirmation: skipConfirm,
-				Identifier:       ctx.Config.Docker.Identifier,
+				Identifier:       identifier,
 			})
 			if err != nil {
 				return err

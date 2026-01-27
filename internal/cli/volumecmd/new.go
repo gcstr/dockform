@@ -101,10 +101,8 @@ func manifestHasVolume(cfg *manifest.Config, name string) bool {
 	if cfg == nil {
 		return false
 	}
-	if _, ok := cfg.Volumes[name]; ok {
-		return true
-	}
-	for _, fs := range cfg.Filesets {
+	// In the new multi-daemon schema, volumes come from filesets only
+	for _, fs := range cfg.GetAllFilesets() {
 		if fs.TargetVolume == name {
 			return true
 		}
@@ -126,6 +124,7 @@ func newSnapshotCmd() *cobra.Command {
 				return err
 			}
 			pr := clictx.Printer
+			docker := clictx.GetDefaultClient()
 			volName := args[0]
 			// Default output next to manifest
 			outDir := outDirFlag
@@ -133,7 +132,7 @@ func newSnapshotCmd() *cobra.Command {
 				outDir = filepath.Join(clictx.Config.BaseDir, ".dockform", "snapshots")
 			}
 			// Inspect volume to get spec
-			details, err := clictx.Docker.InspectVolume(ctx, volName)
+			details, err := docker.InspectVolume(ctx, volName)
 			if err != nil {
 				return err
 			}
@@ -156,13 +155,13 @@ func newSnapshotCmd() *cobra.Command {
 
 			stdPr := pr.(ui.StdPrinter)
 			if err := common.SpinnerOperation(stdPr, "Creating snapshot...", func() error {
-				return clictx.Docker.StreamTarZstdFromVolume(ctx, volName, f)
+				return docker.StreamTarZstdFromVolume(ctx, volName, f)
 			}); err != nil {
 				return err
 			}
 
 			// Compute stats and checksum
-			uncompressed, fileCount, err := clictx.Docker.TarStatsFromVolume(ctx, volName)
+			uncompressed, fileCount, err := docker.TarStatsFromVolume(ctx, volName)
 			if err != nil {
 				// Non-fatal, but helpful; continue without stats
 				uncompressed, fileCount = 0, 0
@@ -219,6 +218,7 @@ func newRestoreCmd() *cobra.Command {
 				return err
 			}
 			pr := clictx.Printer
+			docker := clictx.GetDefaultClient()
 			volName := args[0]
 			snapPath := args[1]
 
@@ -227,7 +227,7 @@ func newRestoreCmd() *cobra.Command {
 				return apperr.New("cli.volume.restore", apperr.InvalidInput, "volume %q is not defined in manifest", volName)
 			}
 			// Ensure volume exists in context
-			exists, err := clictx.Docker.VolumeExists(ctx, volName)
+			exists, err := docker.VolumeExists(ctx, volName)
 			if err != nil {
 				return err
 			}
@@ -260,7 +260,7 @@ func newRestoreCmd() *cobra.Command {
 						}
 					}
 					// Verify spec hash (warn if mismatch)
-					if details, derr := clictx.Docker.InspectVolume(ctx, volName); derr == nil {
+					if details, derr := docker.InspectVolume(ctx, volName); derr == nil {
 						if h := computeSpecHash(details); h != meta.SpecHash {
 							pr.Warn("snapshot spec hash (%s) differs from current volume (%s)", meta.SpecHash, h)
 						}
@@ -271,7 +271,7 @@ func newRestoreCmd() *cobra.Command {
 			}
 
 			// Check if volume is empty (before stopping containers, unless --force)
-			empty, err := clictx.Docker.IsVolumeEmpty(ctx, volName)
+			empty, err := docker.IsVolumeEmpty(ctx, volName)
 			if err != nil {
 				return err
 			}
@@ -280,11 +280,11 @@ func newRestoreCmd() *cobra.Command {
 			}
 
 			// Check containers using volume and track which were running
-			allUsers, err := clictx.Docker.ListContainersUsingVolume(ctx, volName)
+			allUsers, err := docker.ListContainersUsingVolume(ctx, volName)
 			if err != nil {
 				return err
 			}
-			runningUsers, err := clictx.Docker.ListRunningContainersUsingVolume(ctx, volName)
+			runningUsers, err := docker.ListRunningContainersUsingVolume(ctx, volName)
 			if err != nil {
 				return err
 			}
@@ -298,7 +298,7 @@ func newRestoreCmd() *cobra.Command {
 
 			// Stop containers now that all validations passed
 			if len(allUsers) > 0 {
-				if err := clictx.Docker.StopContainers(ctx, allUsers); err != nil {
+				if err := docker.StopContainers(ctx, allUsers); err != nil {
 					return err
 				}
 				// Set up deferred restart of running containers to handle restore failures
@@ -309,14 +309,14 @@ func newRestoreCmd() *cobra.Command {
 							toStart = append(toStart, name)
 						}
 						sort.Strings(toStart)
-						_ = clictx.Docker.StartContainers(context.Background(), toStart)
+						_ = docker.StartContainers(context.Background(), toStart)
 					}
 				}()
 			}
 
 			// Clear volume if needed (requires stopped containers)
 			if !empty && force {
-				if err := clictx.Docker.ClearVolume(ctx, volName); err != nil {
+				if err := docker.ClearVolume(ctx, volName); err != nil {
 					return err
 				}
 			}
@@ -330,7 +330,7 @@ func newRestoreCmd() *cobra.Command {
 				}
 				defer func() { _ = in.Close() }()
 				if err := common.SpinnerOperation(stdPr, "Restoring snapshot...", func() error {
-					return clictx.Docker.ExtractZstdTarToVolume(ctx, volName, in)
+					return docker.ExtractZstdTarToVolume(ctx, volName, in)
 				}); err != nil {
 					return err
 				}
@@ -341,7 +341,7 @@ func newRestoreCmd() *cobra.Command {
 				}
 				defer func() { _ = in.Close() }()
 				if err := common.SpinnerOperation(stdPr, "Restoring snapshot...", func() error {
-					return clictx.Docker.ExtractTarToVolume(ctx, volName, "/dst", io.Reader(in))
+					return docker.ExtractTarToVolume(ctx, volName, "/dst", io.Reader(in))
 				}); err != nil {
 					return err
 				}

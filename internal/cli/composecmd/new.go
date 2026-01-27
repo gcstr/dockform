@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/cli/common"
@@ -55,8 +56,27 @@ func newRenderCmd() *cobra.Command {
 			detector := planner.NewServiceStateDetector(nil)
 			inline := detector.BuildInlineEnv(cmd.Context(), stack, cfg.Sops)
 
+			// Get docker client for the stack's daemon
+			// Stack keys are in "daemon/stack" format, or we use the first daemon
+			var contextName, identifier string
+			parts := strings.SplitN(stackName, "/", 2)
+			if len(parts) == 2 {
+				if daemon, ok := cfg.Daemons[parts[0]]; ok {
+					contextName = daemon.Context
+					identifier = daemon.Identifier
+				}
+			}
+			// Fall back to first daemon if stack key doesn't have daemon prefix
+			if contextName == "" {
+				for _, daemon := range cfg.Daemons {
+					contextName = daemon.Context
+					identifier = daemon.Identifier
+					break
+				}
+			}
+
 			// Compose raw config
-			docker := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
+			docker := dockercli.New(contextName).WithIdentifier(identifier)
 			raw, err := docker.ComposeConfigRaw(cmd.Context(), stack.Root, stack.Files, stack.Profiles, stack.EnvFile, inline)
 			if err != nil {
 				return err

@@ -143,13 +143,15 @@ func newRekeyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if cfg.Secrets == nil || len(cfg.Secrets.Sops) == 0 {
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No secret files found in manifest. Add secret files to the 'secrets.sops' section to use rekey."); err != nil {
+			// Collect all SOPS secret files from stacks
+			allSopsFiles := cfg.GetAllSopsSecrets()
+			if len(allSopsFiles) == 0 {
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No secret files found in manifest. Secrets are now defined per-stack via SopsSecrets field."); err != nil {
 					return err
 				}
 				return nil
 			}
-			for _, p := range cfg.Secrets.Sops {
+			for _, p := range allSopsFiles {
 				path := p
 				if !filepath.IsAbs(path) {
 					path = filepath.Join(cfg.BaseDir, path)
