@@ -140,9 +140,12 @@ exit 0
 	_ = os.Setenv("PATH", dir+string(os.PathListSeparator)+old)
 	t.Cleanup(func() { _ = os.Setenv("PATH", old) })
 
-	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Stacks: map[string]manifest.Stack{
-		"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
-	}}
+	cfg := manifest.Config{
+		Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "demo"}},
+		Stacks: map[string]manifest.Stack{
+			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}, Daemon: "default"},
+		},
+	}
 	d := dockercli.New("").WithIdentifier("demo")
 	log := filepath.Join(t.TempDir(), "log.txt")
 	if err := os.Setenv("DOCKER_STUB_LOG", log); err != nil {

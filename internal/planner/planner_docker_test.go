@@ -105,10 +105,13 @@ func TestPlanner_BuildPlan_AddRemoveStart(t *testing.T) {
 	defer withPlannerStub(t, "basic", log)()
 	appRoot := t.TempDir()
 	cfg := manifest.Config{
-		Docker:   manifest.DockerConfig{Identifier: "demo"},
-		Stacks:   map[string]manifest.Stack{"app": {Root: appRoot, Files: []string{"compose.yml"}}},
-		Filesets: map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app"}},
-		Networks: map[string]manifest.NetworkSpec{"n1": {}},
+		Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "demo"}},
+		Stacks: map[string]manifest.Stack{
+			"default/app": {Root: appRoot, Files: []string{"compose.yml"}, Daemon: "default"},
+		},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
+			"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app", Daemon: "default"},
+		},
 	}
 	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
@@ -118,8 +121,7 @@ func TestPlanner_BuildPlan_AddRemoveStart(t *testing.T) {
 	out := pln.String()
 	contains(t, out, "↑ v1 will be created")
 	contains(t, out, "× vOld will be deleted")
-	contains(t, out, "↑ n1 will be created")
-	contains(t, out, "× nOld will be deleted")
+	// Networks are now managed by compose, not explicitly declared
 	contains(t, out, "↑ nginx will be created")
 	// Removed containers section; expect service deletion under Applications
 	if !strings.Contains(out, "× other will be deleted") {
@@ -134,7 +136,7 @@ func TestPlanner_BuildPlan_IdentifierMismatch(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "mismatch", log)()
 	appRoot := t.TempDir()
-	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Stacks: map[string]manifest.Stack{"app": {Root: appRoot, Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "demo"}}, Stacks: map[string]manifest.Stack{"default/app": {Root: appRoot, Files: []string{"compose.yml"}, Daemon: "default"}}}
 	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
@@ -155,7 +157,7 @@ func TestPlanner_BuildPlan_ConfigDriftAndMatch(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "drift", log)()
 	appRoot := t.TempDir()
-	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Stacks: map[string]manifest.Stack{"app": {Root: appRoot, Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "demo"}}, Stacks: map[string]manifest.Stack{"default/app": {Root: appRoot, Files: []string{"compose.yml"}, Daemon: "default"}}}
 	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
@@ -187,7 +189,7 @@ func TestPlanner_Prune_RemovesUnmanaged(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "basic", log)()
 	appRoot := t.TempDir()
-	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Stacks: map[string]manifest.Stack{"app": {Root: appRoot, Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "demo"}}, Stacks: map[string]manifest.Stack{"default/app": {Root: appRoot, Files: []string{"compose.yml"}, Daemon: "default"}}}
 	d := dockercli.New("").WithIdentifier("demo")
 	if err := NewWithDocker(d).Prune(context.Background(), cfg); err != nil {
 		t.Fatalf("prune: %v", err)
@@ -197,8 +199,8 @@ func TestPlanner_Prune_RemovesUnmanaged(t *testing.T) {
 	s := string(b)
 	containerRemoved := strings.Contains(s, "rm container other_name") || strings.Contains(s, "rm container -f other_name")
 	volumeRemoved := strings.Contains(s, "rm volume vOld")
-	networkRemoved := strings.Contains(s, "rm network nOld")
-	if !containerRemoved || !volumeRemoved || !networkRemoved {
+	// Networks are now managed by compose, not explicitly removed during prune
+	if !containerRemoved || !volumeRemoved {
 		t.Fatalf("expected prune removes in log, got: %s", s)
 	}
 }

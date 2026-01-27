@@ -23,40 +23,39 @@ func TestParallelVsSequentialSameResults(t *testing.T) {
 
 	// Create test configuration with multiple applications
 	cfg := manifest.Config{
-		Docker: manifest.DockerConfig{
-			Context:    "default",
-			Identifier: "parallel-test",
+		Daemons: map[string]manifest.DaemonConfig{
+			"default": {
+				Context:    "default",
+				Identifier: "parallel-test",
+			},
 		},
 		Stacks: map[string]manifest.Stack{
-			"app1": {
-				Root:  "/tmp/app1",
-				Files: []string{"docker-compose.yml"},
+			"default/app1": {
+				Root:   "/tmp/app1",
+				Files:  []string{"docker-compose.yml"},
+				Daemon: "default",
 				Environment: &manifest.Environment{
 					Inline: []string{"ENV=test"},
 				},
 			},
-			"app2": {
-				Root:  "/tmp/app2",
-				Files: []string{"docker-compose.yml"},
+			"default/app2": {
+				Root:   "/tmp/app2",
+				Files:  []string{"docker-compose.yml"},
+				Daemon: "default",
 				Environment: &manifest.Environment{
 					Inline: []string{"ENV=prod"},
 				},
 			},
-			"app3": {
-				Root:  "/tmp/app3",
-				Files: []string{"docker-compose.yml"},
+			"default/app3": {
+				Root:   "/tmp/app3",
+				Files:  []string{"docker-compose.yml"},
+				Daemon: "default",
 				Environment: &manifest.Environment{
 					Inline: []string{"ENV=dev"},
 				},
 			},
 		},
-		Volumes: map[string]manifest.TopLevelResourceSpec{
-			"shared-vol": {},
-		},
-		Networks: map[string]manifest.NetworkSpec{
-			"app-network": {},
-		},
-		Filesets: map[string]manifest.FilesetSpec{
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
 			"assets": {
 				Source:       "./assets",
 				SourceAbs:    "/tmp/assets",

@@ -29,41 +29,39 @@ func benchmarkBuildPlan(b *testing.B, parallel bool) {
 
 	// Create a test configuration with multiple applications and filesets
 	cfg := manifest.Config{
-		Docker: manifest.DockerConfig{
-			Context:    "default",
-			Identifier: "benchmark-test",
+		Daemons: map[string]manifest.DaemonConfig{
+			"default": {
+				Context:    "default",
+				Identifier: "benchmark-test",
+			},
 		},
 		Stacks: map[string]manifest.Stack{
-			"app1": {
-				Root:  "/tmp/app1",
-				Files: []string{"docker-compose.yml"},
+			"default/app1": {
+				Root:   "/tmp/app1",
+				Files:  []string{"docker-compose.yml"},
+				Daemon: "default",
 				Environment: &manifest.Environment{
 					Inline: []string{"PORT=3000"},
 				},
 			},
-			"app2": {
-				Root:  "/tmp/app2",
-				Files: []string{"docker-compose.yml"},
+			"default/app2": {
+				Root:   "/tmp/app2",
+				Files:  []string{"docker-compose.yml"},
+				Daemon: "default",
 				Environment: &manifest.Environment{
 					Inline: []string{"PORT=3001"},
 				},
 			},
-			"app3": {
-				Root:  "/tmp/app3",
-				Files: []string{"docker-compose.yml"},
+			"default/app3": {
+				Root:   "/tmp/app3",
+				Files:  []string{"docker-compose.yml"},
+				Daemon: "default",
 				Environment: &manifest.Environment{
 					Inline: []string{"PORT=3002"},
 				},
 			},
 		},
-		Volumes: map[string]manifest.TopLevelResourceSpec{
-			"shared-vol1": {},
-			"shared-vol2": {},
-		},
-		Networks: map[string]manifest.NetworkSpec{
-			"app-network": {},
-		},
-		Filesets: map[string]manifest.FilesetSpec{
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
 			"assets1": {
 				Source:       "./assets1",
 				SourceAbs:    "/tmp/assets1",
@@ -126,14 +124,13 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 	// Create a large configuration with many applications and filesets
 	applications := make(map[string]manifest.Stack)
 	filesets := make(map[string]manifest.FilesetSpec)
-	volumes := make(map[string]manifest.TopLevelResourceSpec)
-	networks := make(map[string]manifest.NetworkSpec)
 
 	// Add 10 applications
 	for i := 0; i < 10; i++ {
-		applications[fmt.Sprintf("app%d", i)] = manifest.Stack{
-			Root:  fmt.Sprintf("/tmp/app%d", i),
-			Files: []string{"docker-compose.yml"},
+		applications[fmt.Sprintf("default/app%d", i)] = manifest.Stack{
+			Root:   fmt.Sprintf("/tmp/app%d", i),
+			Files:  []string{"docker-compose.yml"},
+			Daemon: "default",
 			Environment: &manifest.Environment{
 				Inline: []string{fmt.Sprintf("PORT=%d", 3000+i)},
 			},
@@ -151,25 +148,15 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 		}
 	}
 
-	// Add 5 volumes
-	for i := 0; i < 5; i++ {
-		volumes[fmt.Sprintf("shared-vol%d", i)] = manifest.TopLevelResourceSpec{}
-	}
-
-	// Add 5 networks
-	for i := 0; i < 5; i++ {
-		networks[fmt.Sprintf("app-network%d", i)] = manifest.NetworkSpec{}
-	}
-
 	cfg := manifest.Config{
-		Docker: manifest.DockerConfig{
-			Context:    "default",
-			Identifier: "benchmark-large",
+		Daemons: map[string]manifest.DaemonConfig{
+			"default": {
+				Context:    "default",
+				Identifier: "benchmark-large",
+			},
 		},
-		Stacks:   applications,
-		Volumes:  volumes,
-		Networks: networks,
-		Filesets: filesets,
+		Stacks:             applications,
+		DiscoveredFilesets: filesets,
 	}
 
 	ctx := context.Background()

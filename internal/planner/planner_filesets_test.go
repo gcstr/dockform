@@ -91,9 +91,12 @@ func TestBuildPlan_Filesets_DiffChanges(t *testing.T) {
 	_ = os.Setenv("REMOTE_JSON", remoteJSON)
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
-	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: ""}, Filesets: map[string]manifest.FilesetSpec{
-		"web": {SourceAbs: src, TargetVolume: "data", TargetPath: "/target"},
-	}}
+	cfg := manifest.Config{
+		Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: ""}},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
+			"web": {SourceAbs: src, TargetVolume: "data", TargetPath: "/target", Daemon: "default"},
+		},
+	}
 	d := dockercli.New("")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
@@ -134,9 +137,12 @@ func TestBuildPlan_Filesets_NoChanges(t *testing.T) {
 	_ = os.Setenv("REMOTE_JSON", remoteJSON)
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
-	cfg := manifest.Config{Filesets: map[string]manifest.FilesetSpec{
-		"site": {SourceAbs: src, TargetVolume: "data", TargetPath: "/site"},
-	}}
+	cfg := manifest.Config{
+		Daemons: map[string]manifest.DaemonConfig{"default": {}},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
+			"site": {SourceAbs: src, TargetVolume: "data", TargetPath: "/site", Daemon: "default"},
+		},
+	}
 	d := dockercli.New("")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
@@ -178,9 +184,10 @@ func TestApply_Filesets_SyncAndRestart(t *testing.T) {
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
 	cfg := manifest.Config{
-		Docker:   manifest.DockerConfig{Identifier: "demo"},
-		Filesets: map[string]manifest.FilesetSpec{"data": {SourceAbs: src, TargetVolume: "data", TargetPath: "/opt/data", RestartServices: manifest.RestartTargets{Services: []string{"nginx"}}}},
-		Networks: map[string]manifest.NetworkSpec{},
+		Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "demo"}},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
+			"data": {SourceAbs: src, TargetVolume: "data", TargetPath: "/opt/data", RestartServices: manifest.RestartTargets{Services: []string{"nginx"}}, Daemon: "default"},
+		},
 	}
 	d := dockercli.New("").WithIdentifier("demo")
 	if err := NewWithDocker(d).Apply(context.Background(), cfg); err != nil {
