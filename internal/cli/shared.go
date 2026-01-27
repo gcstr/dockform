@@ -8,17 +8,25 @@ import (
 	"github.com/gcstr/dockform/internal/ui"
 )
 
-// displayDockerInfo shows the Docker context and identifier information
+// displayDockerInfo shows the daemon configuration information for multi-daemon schema.
 func displayDockerInfo(pr ui.Printer, cfg *manifest.Config) {
-	ctxName := strings.TrimSpace(cfg.Docker.Context)
-	if ctxName == "" {
-		ctxName = "default"
+	if len(cfg.Daemons) == 0 {
+		pr.Plain("\n│ No daemons configured")
+		return
 	}
 
-	// Render with a simple left border, no header
-	lines := []string{
-		fmt.Sprintf("│ Context: %s", ui.Italic(ctxName)),
-		fmt.Sprintf("│ Identifier: %s", ui.Italic(cfg.Docker.Identifier)),
+	var lines []string
+	lines = append(lines, "")
+	for name, daemon := range cfg.Daemons {
+		ctxName := strings.TrimSpace(daemon.Context)
+		if ctxName == "" {
+			ctxName = "default"
+		}
+		lines = append(lines, fmt.Sprintf("│ Daemon: %s", ui.Italic(name)))
+		lines = append(lines, fmt.Sprintf("│   Context: %s", ui.Italic(ctxName)))
+		if daemon.Identifier != "" {
+			lines = append(lines, fmt.Sprintf("│   Identifier: %s", ui.Italic(daemon.Identifier)))
+		}
 	}
-	pr.Plain("\n%s", strings.Join(lines, "\n"))
+	pr.Plain("%s", strings.Join(lines, "\n"))
 }

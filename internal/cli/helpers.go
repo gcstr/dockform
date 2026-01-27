@@ -23,9 +23,17 @@ import (
 type CLIContext struct {
 	Ctx     context.Context
 	Config  *manifest.Config
-	Docker  *dockercli.Client
+	Factory *dockercli.DefaultClientFactory
 	Printer ui.Printer
 	Planner *planner.Planner
+}
+
+// GetDefaultClient returns a Docker client for the first daemon (for single-daemon operations).
+func (ctx *CLIContext) GetDefaultClient() *dockercli.Client {
+	for _, daemon := range ctx.Config.Daemons {
+		return ctx.Factory.GetClient(daemon.Context, daemon.Identifier)
+	}
+	return ctx.Factory.GetClient("", "")
 }
 
 // LoadConfigWithWarnings loads the configuration from the --config flag and displays warnings.
@@ -154,30 +162,65 @@ func readDockerContextLabel(path string) string {
 	if err != nil {
 		return ""
 	}
+	// Try new multi-daemon schema first
 	var tmp struct {
-		Docker struct {
+		Daemons map[string]struct {
 			Context string `yaml:"context"`
-		} `yaml:"docker"`
+		} `yaml:"daemons"`
 	}
 	if yerr := yaml.Unmarshal([]byte(b), &tmp); yerr != nil {
 		return ""
 	}
-	return tmp.Docker.Context
+	// Return comma-separated list of daemon names
+	var names []string
+	for name := range tmp.Daemons {
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	if len(names) == 1 {
+		return names[0]
+	}
+	return strings.Join(names, ", ")
 }
 
-// CreateDockerClient creates a Docker client using config context and identifier.
+// CreateClientFactory creates a Docker client factory for multi-daemon support.
+func CreateClientFactory() *dockercli.DefaultClientFactory {
+	return dockercli.NewClientFactory()
+}
+
+// CreateDockerClient creates a Docker client for the first daemon in the config.
+// Deprecated: Use CreateClientFactory for multi-daemon support.
 func CreateDockerClient(cfg *manifest.Config) *dockercli.Client {
-	return dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
+	for _, daemon := range cfg.Daemons {
+		return dockercli.New(daemon.Context).WithIdentifier(daemon.Identifier)
+	}
+	return dockercli.New("").WithIdentifier("")
+}
+
+// ValidateWithFactory runs validation against the configuration using a client factory.
+func ValidateWithFactory(ctx context.Context, cfg *manifest.Config, factory *dockercli.DefaultClientFactory) error {
+	return validator.Validate(ctx, *cfg, factory)
 }
 
 // ValidateWithDocker runs validation against the configuration and Docker client.
+// Deprecated: Use ValidateWithFactory for multi-daemon support.
 func ValidateWithDocker(ctx context.Context, cfg *manifest.Config, docker *dockercli.Client) error {
-	return validator.Validate(ctx, *cfg, docker)
+	// Create a temporary factory wrapping this client for backward compatibility
+	factory := dockercli.NewClientFactory()
+	return validator.Validate(ctx, *cfg, factory)
+}
+
+// CreatePlannerWithFactory creates a planner with client factory and printer configured.
+func CreatePlannerWithFactory(factory *dockercli.DefaultClientFactory, pr ui.Printer) *planner.Planner {
+	return planner.NewWithFactory(factory).WithPrinter(pr)
 }
 
 // CreatePlanner creates a planner with Docker client and printer configured.
+// Deprecated: Use CreatePlannerWithFactory for multi-daemon support.
 func CreatePlanner(docker *dockercli.Client, pr ui.Printer) *planner.Planner {
-	return planner.NewWithDocker(docker).WithPrinter(pr)
+	return planner.NewWithFactory(dockercli.NewClientFactory()).WithPrinter(pr)
 }
 
 // maskSecretsSimple redacts secret-like values from a YAML string based on stack config.
@@ -218,7 +261,7 @@ func RunWithRollingOrDirect(cmd *cobra.Command, verbose bool, fn func(runCtx con
 	return out, true, err
 }
 
-// SetupCLIContext performs the standard CLI setup: load config, create Docker client, validate, and create planner.
+// SetupCLIContext performs the standard CLI setup: load config, create client factory, validate, and create planner.
 func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 
@@ -228,29 +271,29 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 		return nil, err
 	}
 
-	// Display Docker info
+	// Display daemon info
 	displayDockerInfo(pr, cfg)
 
-	// Create Docker client
-	docker := CreateDockerClient(cfg)
+	// Create client factory for multi-daemon support
+	factory := CreateClientFactory()
 
 	// Validate in spinner
 	err = SpinnerOperation(pr, "Validating...", func() error {
-		return ValidateWithDocker(cmd.Context(), cfg, docker)
+		return ValidateWithFactory(cmd.Context(), cfg, factory)
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Create planner
-	planner := CreatePlanner(docker, pr)
+	// Create planner with factory
+	plan := CreatePlannerWithFactory(factory, pr)
 
 	return &CLIContext{
 		Ctx:     cmd.Context(),
 		Config:  cfg,
-		Docker:  docker,
+		Factory: factory,
 		Printer: pr,
-		Planner: planner,
+		Planner: plan,
 	}, nil
 }
 
