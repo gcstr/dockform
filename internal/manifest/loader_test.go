@@ -14,10 +14,11 @@ func TestResolveConfigPath_DirectoryPreferenceOrder(t *testing.T) {
 	// Both files exist; resolver should pick dockform.yml first
 	yamlPath := filepath.Join(dir, "dockform.yaml")
 	ymlPath := filepath.Join(dir, "dockform.yml")
-	if err := os.WriteFile(yamlPath, []byte("docker:\n  identifier: x\n"), 0o644); err != nil {
+	content := "daemons:\n  default:\n    identifier: x\n"
+	if err := os.WriteFile(yamlPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("write yaml: %v", err)
 	}
-	if err := os.WriteFile(ymlPath, []byte("docker:\n  identifier: x\n"), 0o644); err != nil {
+	if err := os.WriteFile(ymlPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("write yml: %v", err)
 	}
 
@@ -44,7 +45,7 @@ func TestResolveConfigPath_DirectoryNoFiles(t *testing.T) {
 func TestResolveConfigPath_FileGiven(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dockform.yml")
-	if err := os.WriteFile(path, []byte("docker:\n  identifier: x\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("daemons:\n  default:\n    identifier: x\n"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	got, err := resolveConfigPath(path)
@@ -76,7 +77,7 @@ func TestResolveConfigPath_EmptyPathUsesCWD(t *testing.T) {
 		t.Fatalf("chdir: %v", err)
 	}
 	path := filepath.Join(dir, "dockform.yml")
-	if err := os.WriteFile(path, []byte("docker:\n  identifier: x\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("daemons:\n  default:\n    identifier: x\n"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	got, err := resolveConfigPath("")
@@ -94,7 +95,7 @@ func TestResolveConfigPath_EmptyPathUsesCWD(t *testing.T) {
 func TestLoadWithWarnings_SetsBaseDirAndReportsMissing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dockform.yml")
-	content := "docker:\n  identifier: myapp\n  context: ${CTX}\nstacks:\n  web:\n    root: website\n"
+	content := "daemons:\n  default:\n    identifier: myapp\n    context: ${CTX}\nstacks:\n  default/web:\n    root: website\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
@@ -105,10 +106,12 @@ func TestLoadWithWarnings_SetsBaseDirAndReportsMissing(t *testing.T) {
 	if cfg.BaseDir != dir {
 		t.Fatalf("BaseDir mismatch: %q", cfg.BaseDir)
 	}
-	if cfg.Docker.Context != "default" {
-		t.Fatalf("expected default docker.context, got %q", cfg.Docker.Context)
+	daemon := cfg.Daemons["default"]
+	// Empty context interpolates to empty string which normalizes to empty (not "default")
+	if daemon.Context != "" {
+		t.Fatalf("expected empty daemon.context after interpolation, got %q", daemon.Context)
 	}
-	stack := cfg.Stacks["web"]
+	stack := cfg.Stacks["default/web"]
 	expectedRoot := filepath.Clean(filepath.Join(dir, "website"))
 	if stack.Root != expectedRoot {
 		t.Fatalf("stack root not resolved; want %q got %q", expectedRoot, stack.Root)
@@ -121,7 +124,7 @@ func TestLoadWithWarnings_SetsBaseDirAndReportsMissing(t *testing.T) {
 func TestLoadWithWarnings_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dockform.yml")
-	bad := "docker:\n  identifier: [\n"
+	bad := "daemons:\n  default:\n    identifier: [\n"
 	if err := os.WriteFile(path, []byte(bad), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}

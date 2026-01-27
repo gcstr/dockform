@@ -65,17 +65,18 @@ func createSampleManifest(t *testing.T) (string, string) {
 	}
 	manifestPath := filepath.Join(root, "dockform.yml")
 	content := strings.Join([]string{
-		"docker:",
-		"  context: default",
-		"  identifier: demo",
+		"daemons:",
+		"  default:",
+		"    context: default",
+		"    identifier: demo",
 		"stacks:",
-		"  app:",
+		"  default/app:",
 		"    root: stack",
 		"    files:",
 		"      - docker-compose.yml",
-		"environment:",
-		"  inline:",
-		"    - API_KEY=${API_KEY}",
+		"    environment:",
+		"      inline:",
+		"        - API_KEY=${API_KEY}",
 	}, "\n") + "\n"
 	writeManifest(t, manifestPath, content)
 	return manifestPath, root
@@ -388,18 +389,23 @@ exit 0
 	}
 	defer clitest.WithCustomDockerStub(t, stub)()
 
-	cfg := &manifest.Config{Docker: manifest.DockerConfig{Context: "default", Identifier: "demo"}}
-	client := CreateDockerClient(cfg)
-	if client == nil {
-		t.Fatalf("expected docker client")
+	cfg := &manifest.Config{
+		Daemons: map[string]manifest.DaemonConfig{
+			"default": {Context: "default", Identifier: "demo"},
+		},
 	}
-	if err := ValidateWithDocker(context.Background(), cfg, client); err != nil {
-		t.Fatalf("ValidateWithDocker: %v", err)
+	factory := CreateClientFactory()
+	if factory == nil {
+		t.Fatalf("expected client factory")
+	}
+	if err := ValidateWithFactory(context.Background(), cfg, factory); err != nil {
+		t.Fatalf("ValidateWithFactory: %v", err)
 	}
 }
 
-func TestCreatePlanner(t *testing.T) {
-	p := CreatePlanner(nil, ui.StdPrinter{})
+func TestCreatePlannerWithFactory(t *testing.T) {
+	factory := CreateClientFactory()
+	p := CreatePlannerWithFactory(factory, ui.StdPrinter{})
 	if p == nil {
 		t.Fatalf("expected planner")
 	}
@@ -492,9 +498,11 @@ func TestRunWithRollingOrDirectPaths(t *testing.T) {
 
 func TestCLIContextOperations(t *testing.T) {
 	cfg := &manifest.Config{
-		Docker: manifest.DockerConfig{Identifier: "demo"},
+		Daemons: map[string]manifest.DaemonConfig{
+			"default": {Identifier: "demo"},
+		},
 		Stacks: map[string]manifest.Stack{
-			"app": {Root: ".", Files: nil},
+			"default/app": {Root: ".", Files: nil, Daemon: "default"},
 		},
 	}
 	std := ui.StdPrinter{Out: io.Discard, Err: io.Discard}
@@ -701,7 +709,7 @@ exit 0
 	if err != nil {
 		t.Fatalf("SetupCLIContext: %v", err)
 	}
-	if ctx == nil || ctx.Config == nil || ctx.Docker == nil || ctx.Planner == nil {
+	if ctx == nil || ctx.Config == nil || ctx.Factory == nil || ctx.Planner == nil {
 		t.Fatalf("expected cli context to be fully populated")
 	}
 }
