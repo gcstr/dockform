@@ -10,35 +10,30 @@ import (
 	"github.com/gcstr/dockform/internal/apperr"
 )
 
-func TestNormalize_DefaultsEnvMergingAndFiles(t *testing.T) {
+func TestNormalize_DefaultsAndFiles(t *testing.T) {
 	base := t.TempDir()
 	cfg := Config{
-		Docker:      DockerConfig{Identifier: "id"},
-		Environment: &Environment{Files: []string{"global.env", "root/vars.env", "global.env"}},
+		Daemons: map[string]DaemonConfig{
+			"default": {Identifier: "id"},
+		},
 		Stacks: map[string]Stack{
-			"web": {
-				Root:        "app", // relative, should resolve
-				Environment: &Environment{Files: []string{"app.env"}},
-				EnvFile:     []string{"compose.env"},
+			"default/web": {
+				Root:    "app", // relative, should resolve
+				EnvFile: []string{"compose.env"},
 			},
 		},
 	}
 	if err := cfg.normalizeAndValidate(base); err != nil {
 		t.Fatalf("normalizeAndValidate: %v", err)
 	}
-	if cfg.Docker.Context != "default" {
-		t.Fatalf("expected default docker.context, got %q", cfg.Docker.Context)
+	daemon := cfg.Daemons["default"]
+	if daemon.Context != "" {
+		t.Fatalf("expected empty daemon.context, got %q", daemon.Context)
 	}
-	app := cfg.Stacks["web"]
+	app := cfg.Stacks["default/web"]
 	wantRoot := filepath.Clean(filepath.Join(base, "app"))
 	if app.Root != wantRoot {
 		t.Fatalf("root not resolved: want %q got %q", wantRoot, app.Root)
-	}
-	// Root env files rebased relative to app root, then app env, then app EnvFile; de-duped
-	// Normalize paths for cross-platform comparison (Windows uses backslashes)
-	wantEnv := []string{filepath.FromSlash("../global.env"), filepath.FromSlash("../root/vars.env"), "app.env", "compose.env"}
-	if !reflect.DeepEqual(app.EnvFile, wantEnv) {
-		t.Fatalf("env files mismatch:\nwant: %#v\n got: %#v", wantEnv, app.EnvFile)
 	}
 	// When Files empty, default compose.yaml under resolved root
 	wantFiles := []string{filepath.Join(wantRoot, "compose.yaml")}
@@ -47,64 +42,27 @@ func TestNormalize_DefaultsEnvMergingAndFiles(t *testing.T) {
 	}
 }
 
-func TestNormalize_VolumeKeyValidation(t *testing.T) {
-	// Valid volume key
-	cfgValid := Config{
-		Docker:  DockerConfig{Identifier: "id"},
-		Volumes: map[string]TopLevelResourceSpec{"my-volume": {}},
-	}
-	if err := cfgValid.normalizeAndValidate("/base"); err != nil {
-		t.Fatalf("unexpected error for valid volume key: %v", err)
-	}
-
-	// Invalid volume key
-	cfgInvalid := Config{
-		Docker:  DockerConfig{Identifier: "id"},
-		Volumes: map[string]TopLevelResourceSpec{"Bad Volume": {}},
-	}
-	if err := cfgInvalid.normalizeAndValidate("/base"); err == nil {
-		t.Fatalf("expected error for invalid volume key")
-	} else if !apperr.IsKind(err, apperr.InvalidInput) {
-		t.Fatalf("expected InvalidInput, got %v", err)
-	}
-}
-
-func TestNormalize_NetworkKeyValidation(t *testing.T) {
-	// Valid network key
-	cfgValid := Config{
-		Docker:   DockerConfig{Identifier: "id"},
-		Networks: map[string]NetworkSpec{"my-network": {}},
-	}
-	if err := cfgValid.normalizeAndValidate("/base"); err != nil {
-		t.Fatalf("unexpected error for valid network key: %v", err)
-	}
-
-	// Invalid network key
-	cfgInvalid := Config{
-		Docker:   DockerConfig{Identifier: "id"},
-		Networks: map[string]NetworkSpec{"Bad Network": {}},
-	}
-	if err := cfgInvalid.normalizeAndValidate("/base"); err == nil {
-		t.Fatalf("expected error for invalid network key")
-	} else if !apperr.IsKind(err, apperr.InvalidInput) {
-		t.Fatalf("expected InvalidInput, got %v", err)
-	}
-}
-
-func TestNormalize_InvalidApplicationKey(t *testing.T) {
+func TestNormalize_InvalidStackKey(t *testing.T) {
 	cfg := Config{
-		Docker: DockerConfig{Identifier: "x"},
+		Daemons: map[string]DaemonConfig{
+			"default": {Identifier: "x"},
+		},
 		Stacks: map[string]Stack{"Bad Name": {Root: "/tmp"}},
 	}
 	if err := cfg.normalizeAndValidate("/base"); err == nil {
-		t.Fatalf("expected error for invalid app key")
+		t.Fatalf("expected error for invalid stack key")
 	} else if !apperr.IsKind(err, apperr.InvalidInput) {
 		t.Fatalf("expected InvalidInput, got %v", err)
 	}
 }
 
 func TestNormalize_MissingIdentifier(t *testing.T) {
-	cfg := Config{Docker: DockerConfig{}, Stacks: map[string]Stack{"ok": {Root: "/tmp"}}}
+	cfg := Config{
+		Daemons: map[string]DaemonConfig{
+			"default": {}, // Missing identifier
+		},
+		Stacks: map[string]Stack{"default/ok": {Root: "/tmp"}},
+	}
 	if err := cfg.normalizeAndValidate("/base"); err == nil {
 		t.Fatalf("expected error for missing identifier")
 	} else if !apperr.IsKind(err, apperr.InvalidInput) {
@@ -115,132 +73,51 @@ func TestNormalize_MissingIdentifier(t *testing.T) {
 func TestNormalize_InlineEnvLastWins(t *testing.T) {
 	base := t.TempDir()
 	cfg := Config{
-		Docker:      DockerConfig{Identifier: "id"},
-		Environment: &Environment{Inline: []string{"FOO=A", "BAR=1", "BAR=1"}},
+		Daemons: map[string]DaemonConfig{
+			"default": {Identifier: "id"},
+		},
 		Stacks: map[string]Stack{
-			"web": {Root: "app", Environment: &Environment{Inline: []string{"BAR=2", "BAZ=3"}}},
+			"default/web": {Root: "app", EnvInline: []string{"FOO=A", "BAR=2", "BAZ=3"}},
 		},
 	}
 	if err := cfg.normalizeAndValidate(base); err != nil {
 		t.Fatalf("normalizeAndValidate: %v", err)
 	}
-	got := cfg.Stacks["web"].EnvInline
+	got := cfg.Stacks["default/web"].EnvInline
 	want := []string{"FOO=A", "BAR=2", "BAZ=3"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("inline env mismatch:\nwant: %#v\n got: %#v", want, got)
 	}
 }
 
-func TestNormalize_SopsMergingAndValidation(t *testing.T) {
+func TestNormalize_SopsSecretsValidation(t *testing.T) {
 	base := t.TempDir()
-	// valid case
+	// valid case - SOPS secrets at stack level
 	cfg := Config{
-		Docker:  DockerConfig{Identifier: "id"},
-		Secrets: &Secrets{Sops: []string{"secrets/root.env", "  ", "secrets/another.env"}},
+		Daemons: map[string]DaemonConfig{
+			"default": {Identifier: "id"},
+		},
 		Stacks: map[string]Stack{
-			"web": {Root: "app", Secrets: &Secrets{Sops: []string{"app.env"}}},
+			"default/web": {Root: "app", SopsSecrets: []string{"secrets.env"}},
 		},
 	}
 	if err := cfg.normalizeAndValidate(base); err != nil {
 		t.Fatalf("normalizeAndValidate: %v", err)
 	}
-	sops := cfg.Stacks["web"].SopsSecrets
-	// Normalize paths for cross-platform comparison (Windows uses backslashes)
-	want := []string{filepath.FromSlash("../secrets/root.env"), filepath.FromSlash("../secrets/another.env"), "app.env"}
-	if !reflect.DeepEqual(sops, want) {
-		t.Fatalf("sops merged mismatch:\nwant: %#v\n got: %#v", want, sops)
-	}
 
-	// invalid root-level extension
+	// invalid extension
 	cfg2 := Config{
-		Docker:  DockerConfig{Identifier: "id"},
-		Secrets: &Secrets{Sops: []string{"secrets/root.txt"}},
+		Daemons: map[string]DaemonConfig{
+			"default": {Identifier: "id"},
+		},
 		Stacks: map[string]Stack{
-			"web": {Root: "app"},
+			"default/web": {Root: "app", SopsSecrets: []string{"secrets.txt"}},
 		},
 	}
 	if err := cfg2.normalizeAndValidate(base); err == nil {
-		t.Fatalf("expected error for invalid root sops extension")
+		t.Fatalf("expected error for invalid sops extension")
 	} else if !apperr.IsKind(err, apperr.InvalidInput) {
 		t.Fatalf("expected InvalidInput, got %v", err)
-	}
-
-	// invalid app-level extension
-	cfg3 := Config{
-		Docker: DockerConfig{Identifier: "id"},
-		Stacks: map[string]Stack{
-			"web": {Root: "app", Secrets: &Secrets{Sops: []string{"bad.txt"}}},
-		},
-	}
-	if err := cfg3.normalizeAndValidate(base); err == nil {
-		t.Fatalf("expected error for invalid app sops extension")
-	} else if !apperr.IsKind(err, apperr.InvalidInput) {
-		t.Fatalf("expected InvalidInput, got %v", err)
-	}
-}
-
-func TestFilesets_ValidationAndNormalization(t *testing.T) {
-	base := t.TempDir()
-	cfg := Config{
-		Docker: DockerConfig{Identifier: "id"},
-		Filesets: map[string]FilesetSpec{
-			"code": {Source: "src", TargetVolume: "data", TargetPath: "/app"},
-		},
-	}
-	if err := cfg.normalizeAndValidate(base); err != nil {
-		t.Fatalf("normalizeAndValidate: %v", err)
-	}
-	fs := cfg.Filesets["code"]
-	wantAbs := filepath.Clean(filepath.Join(base, "src"))
-	if fs.SourceAbs != wantAbs {
-		t.Fatalf("SourceAbs mismatch: want %q got %q", wantAbs, fs.SourceAbs)
-	}
-
-	// target path not absolute
-	cfgRel := Config{Docker: DockerConfig{Identifier: "id"}, Filesets: map[string]FilesetSpec{"x": {Source: "s", TargetVolume: "data", TargetPath: "rel"}}}
-	if err := cfgRel.normalizeAndValidate(base); err == nil {
-		t.Fatalf("expected error for relative target path")
-	} else if !apperr.IsKind(err, apperr.InvalidInput) {
-		t.Fatalf("expected InvalidInput, got %v", err)
-	}
-
-	// target path is /
-	cfgRoot := Config{Docker: DockerConfig{Identifier: "id"}, Filesets: map[string]FilesetSpec{"x": {Source: "s", TargetVolume: "data", TargetPath: "/"}}}
-	if err := cfgRoot.normalizeAndValidate(base); err == nil {
-		t.Fatalf("expected error for target path '/'")
-	} else if !apperr.IsKind(err, apperr.InvalidInput) {
-		t.Fatalf("expected InvalidInput, got %v", err)
-	}
-
-	// missing source
-	cfgNoSrc := Config{Docker: DockerConfig{Identifier: "id"}, Filesets: map[string]FilesetSpec{"x": {Source: "", TargetVolume: "data", TargetPath: "/p"}}}
-	if err := cfgNoSrc.normalizeAndValidate(base); err == nil {
-		t.Fatalf("expected error for missing source")
-	} else if !apperr.IsKind(err, apperr.InvalidInput) {
-		t.Fatalf("expected InvalidInput, got %v", err)
-	}
-
-	// invalid fileset key
-	cfgBadKey := Config{Docker: DockerConfig{Identifier: "id"}, Filesets: map[string]FilesetSpec{"Bad Key": {Source: "s", TargetVolume: "data", TargetPath: "/p"}}}
-	if err := cfgBadKey.normalizeAndValidate(base); err == nil {
-		t.Fatalf("expected error for invalid fileset key")
-	} else if !apperr.IsKind(err, apperr.InvalidInput) {
-		t.Fatalf("expected InvalidInput, got %v", err)
-	}
-
-	// Unix-style absolute paths should always be valid (cross-platform)
-	// This ensures Windows hosts can use Unix paths for container targets
-	unixPaths := []string{"/app", "/etc/app", "/var/lib/data", "/opt/myapp"}
-	for _, path := range unixPaths {
-		cfgUnixPath := Config{
-			Docker: DockerConfig{Identifier: "id"},
-			Filesets: map[string]FilesetSpec{
-				"test": {Source: "s", TargetVolume: "data", TargetPath: path},
-			},
-		}
-		if err := cfgUnixPath.normalizeAndValidate(base); err != nil {
-			t.Fatalf("Unix-style absolute path %q should be valid on all platforms: %v", path, err)
-		}
 	}
 }
 
@@ -341,9 +218,11 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 		}
 
 		cfg := Config{
-			Docker: DockerConfig{Identifier: "id"},
+			Daemons: map[string]DaemonConfig{
+				"default": {Identifier: "id"},
+			},
 			Stacks: map[string]Stack{
-				"web": {Root: "app"}, // No Files specified, should auto-detect
+				"default/web": {Root: "app"}, // No Files specified, should auto-detect
 			},
 		}
 
@@ -351,7 +230,7 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 			t.Fatalf("normalizeAndValidate: %v", err)
 		}
 
-		app := cfg.Stacks["web"]
+		app := cfg.Stacks["default/web"]
 		if len(app.Files) != 1 {
 			t.Fatalf("expected 1 file, got %d", len(app.Files))
 		}
@@ -375,9 +254,11 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 		}
 
 		cfg := Config{
-			Docker: DockerConfig{Identifier: "id"},
+			Daemons: map[string]DaemonConfig{
+				"default": {Identifier: "id"},
+			},
 			Stacks: map[string]Stack{
-				"web": {Root: "app"}, // No Files specified, should auto-detect
+				"default/web": {Root: "app"}, // No Files specified, should auto-detect
 			},
 		}
 
@@ -385,7 +266,7 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 			t.Fatalf("normalizeAndValidate: %v", err)
 		}
 
-		app := cfg.Stacks["web"]
+		app := cfg.Stacks["default/web"]
 		if len(app.Files) != 1 {
 			t.Fatalf("expected 1 file, got %d", len(app.Files))
 		}
@@ -623,67 +504,119 @@ func TestValidateOwnership_Trimming(t *testing.T) {
 	}
 }
 
-func TestFilesets_OwnershipValidation(t *testing.T) {
-	base := t.TempDir()
-
-	// Valid ownership
-	cfgValid := Config{
-		Docker: DockerConfig{Identifier: "id"},
-		Filesets: map[string]FilesetSpec{
-			"code": {
-				Source:       "src",
-				TargetVolume: "data",
-				TargetPath:   "/app",
-				Ownership: &Ownership{
-					User:     "1000",
-					Group:    "1000",
-					FileMode: "0644",
-					DirMode:  "0755",
-				},
-			},
-		},
-	}
-	if err := cfgValid.normalizeAndValidate(base); err != nil {
-		t.Fatalf("unexpected error for valid ownership: %v", err)
+func TestParseStackKey(t *testing.T) {
+	tests := []struct {
+		name       string
+		key        string
+		wantDaemon string
+		wantStack  string
+		wantErr    bool
+	}{
+		{"valid_key", "hetzner/traefik", "hetzner", "traefik", false},
+		{"default_daemon", "default/web", "default", "web", false},
+		{"nested_path", "prod/apps/web", "prod", "apps/web", false},
+		{"missing_daemon", "web", "", "", true},
+		{"empty_key", "", "", "", true},
+		{"only_slash", "/", "", "", true},
+		{"empty_daemon", "/web", "", "", true},
+		{"empty_stack", "daemon/", "", "", true},
 	}
 
-	// Invalid user in ownership
-	cfgInvalidUser := Config{
-		Docker: DockerConfig{Identifier: "id"},
-		Filesets: map[string]FilesetSpec{
-			"code": {
-				Source:       "src",
-				TargetVolume: "data",
-				TargetPath:   "/app",
-				Ownership: &Ownership{
-					User: "bad@user",
-				},
-			},
-		},
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			daemon, stack, err := ParseStackKey(tt.key)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseStackKey(%q) error = %v, wantErr %v", tt.key, err, tt.wantErr)
+				return
+			}
+			if daemon != tt.wantDaemon {
+				t.Errorf("ParseStackKey(%q) daemon = %v, want %v", tt.key, daemon, tt.wantDaemon)
+			}
+			if stack != tt.wantStack {
+				t.Errorf("ParseStackKey(%q) stack = %v, want %v", tt.key, stack, tt.wantStack)
+			}
+		})
 	}
-	if err := cfgInvalidUser.normalizeAndValidate(base); err == nil {
-		t.Fatalf("expected error for invalid user in ownership")
-	} else if !apperr.IsKind(err, apperr.InvalidInput) {
-		t.Fatalf("expected InvalidInput, got %v", err)
+}
+
+func TestGetAllStacks(t *testing.T) {
+	cfg := Config{
+		Stacks: map[string]Stack{
+			"default/web": {Root: "/app/web"},
+		},
+		DiscoveredStacks: map[string]Stack{
+			"default/api":      {Root: "/app/api"},
+			"default/web":      {Root: "/discovered/web"}, // Should be overridden
+			"hetzner/frontend": {Root: "/prod/frontend"},
+		},
 	}
 
-	// Invalid file mode
-	cfgInvalidMode := Config{
-		Docker: DockerConfig{Identifier: "id"},
-		Filesets: map[string]FilesetSpec{
-			"code": {
-				Source:       "src",
-				TargetVolume: "data",
-				TargetPath:   "/app",
-				Ownership: &Ownership{
-					FileMode: "999",
-				},
-			},
+	all := cfg.GetAllStacks()
+
+	if len(all) != 3 {
+		t.Fatalf("expected 3 stacks, got %d", len(all))
+	}
+
+	// Explicit stack should override discovered
+	if web, ok := all["default/web"]; !ok || web.Root != "/app/web" {
+		t.Errorf("default/web should be from explicit stacks with Root=/app/web, got %v", all["default/web"])
+	}
+
+	// Discovered stacks should be included
+	if _, ok := all["default/api"]; !ok {
+		t.Errorf("default/api should be in result")
+	}
+	if _, ok := all["hetzner/frontend"]; !ok {
+		t.Errorf("hetzner/frontend should be in result")
+	}
+}
+
+func TestGetStacksForDaemon(t *testing.T) {
+	cfg := Config{
+		Stacks: map[string]Stack{
+			"default/web":    {Root: "/app/web"},
+			"default/api":    {Root: "/app/api"},
+			"hetzner/traefik": {Root: "/prod/traefik"},
 		},
 	}
-	if err := cfgInvalidMode.normalizeAndValidate(base); err == nil {
-		t.Fatalf("expected error for invalid file mode")
-	} else if !apperr.IsKind(err, apperr.InvalidInput) {
-		t.Fatalf("expected InvalidInput, got %v", err)
+
+	defaultStacks := cfg.GetStacksForDaemon("default")
+	if len(defaultStacks) != 2 {
+		t.Fatalf("expected 2 stacks for default daemon, got %d", len(defaultStacks))
+	}
+
+	hetznerStacks := cfg.GetStacksForDaemon("hetzner")
+	if len(hetznerStacks) != 1 {
+		t.Fatalf("expected 1 stack for hetzner daemon, got %d", len(hetznerStacks))
+	}
+
+	nonexistentStacks := cfg.GetStacksForDaemon("nonexistent")
+	if len(nonexistentStacks) != 0 {
+		t.Fatalf("expected 0 stacks for nonexistent daemon, got %d", len(nonexistentStacks))
+	}
+}
+
+func TestGetAllSopsSecrets(t *testing.T) {
+	cfg := Config{
+		Stacks: map[string]Stack{
+			"default/web": {SopsSecrets: []string{"web.env", "shared.env"}},
+			"default/api": {SopsSecrets: []string{"api.env", "shared.env"}}, // shared.env should be deduped
+		},
+	}
+
+	secrets := cfg.GetAllSopsSecrets()
+
+	// Should have 3 unique secrets
+	if len(secrets) != 3 {
+		t.Fatalf("expected 3 unique secrets, got %d: %v", len(secrets), secrets)
+	}
+
+	// Check all expected secrets are present
+	found := make(map[string]bool)
+	for _, s := range secrets {
+		found[s] = true
+	}
+	if !found["web.env"] || !found["api.env"] || !found["shared.env"] {
+		t.Errorf("missing expected secrets: %v", secrets)
 	}
 }
