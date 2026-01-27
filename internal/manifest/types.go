@@ -251,7 +251,7 @@ var (
 func ParseStackKey(key string) (daemon, stack string, err error) {
 	parts := strings.SplitN(key, "/", 2)
 	if len(parts) != 2 {
-		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key must be in 'daemon/stack' format: "+key)
+		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key must be in 'daemon/stack' format: %s", key)
 	}
 	return parts[0], parts[1], nil
 }
@@ -337,5 +337,22 @@ func (c *Config) GetFilesetsForDaemon(daemonName string) map[string]FilesetSpec 
 			result[key] = fileset
 		}
 	}
+	return result
+}
+
+// GetAllSopsSecrets collects all unique SOPS secret file paths from all stacks.
+func (c *Config) GetAllSopsSecrets() []string {
+	seen := make(map[string]struct{})
+	var result []string
+
+	for _, stack := range c.GetAllStacks() {
+		for _, sopsPath := range stack.SopsSecrets {
+			if _, exists := seen[sopsPath]; !exists {
+				seen[sopsPath] = struct{}{}
+				result = append(result, sopsPath)
+			}
+		}
+	}
+
 	return result
 }
