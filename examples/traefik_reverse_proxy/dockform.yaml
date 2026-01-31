@@ -1,23 +1,14 @@
-docker:
-  context: default
-  identifier: traefik-rp
+daemons:
+  default:
+    context: default
+    identifier: traefik-rp
 
 stacks:
-  traefik:
+  default/traefik:
     root: traefik
-    project: 
+    project:
       name: traefik-rp
-  nginx:
+  default/nginx:
     root: nginx
-    project: 
+    project:
       name: traefik-rp
-
-filesets:
-  html:
-    source: nginx/html
-    target_volume: html
-    target_path: /usr/share/nginx/html
-  traefik:
-    source: traefik/config
-    target_volume: traefik_config
-    target_path: /etc/traefik

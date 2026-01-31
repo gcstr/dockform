@@ -1,29 +1,19 @@
 # Manifest File Overview
 
 ```yaml
-docker:
-  context: default
-  identifier: overview
+daemons:
+  default:
+    context: default
+    identifier: overview
 
 sops:
   age:
     key_file: ${AGE_KEY_FILE}
-    recipients: 
+    recipients:
       - age1vmn3nv333mprv02cn8qyafxaz94zg368lnk5gsclmme9ryludysswn5rgr
 
-secrets:
-  sops:
-    - secrets.env
-
-environment:
-  files:
-    - global.env
-  inline:
-    - GFOO=bar
-    - GBAZ=qux
-
 stacks:
-  website:
+  default/website:
     root: website
     files:
       - docker-compose.yaml
@@ -38,24 +28,8 @@ stacks:
     secrets:
       sops:
         - secrets.env
-
-filesets:
-  files:
-    source: website/assets/
-    target_volume: demo-volume-1
-    target_path: /assets
-    restart_services:
-      - nginx
-    exclude:
-      - "**/.DS_Store"
-      - "*.bak"
-      - "tmp/**"
-      - "secrets/"
-      # - "**/*.svg"
-
-volumes:
-  my-volume:
-
-networks:
-  demo-network:
 ```
+
+Filesets and secrets can also be auto-discovered using convention-over-configuration.
+Place compose files, secrets, and volume directories under `<daemon>/<stack>/` and they
+will be picked up automatically without explicit manifest entries.

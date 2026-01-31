@@ -19,56 +19,61 @@
 
 # Dockform
 
-Dockform is a thin layer on top of docker compose for declarative configurations.  
-Manage volumes, network, secrets, and even configuration files in a fully declarative way.
+Dockform is a thin layer on top of docker compose for declarative configurations.
+Manage volumes, secrets, and configuration files across one or more Docker daemons in a fully declarative way.
 
 The state is defined in a single manifest file:
 
 ```yaml
-docker:
-  context: orbstack
-  identifier: staging
-
-environment:
-  inline:
-    - GLOBAL_VAR=value
-    - ENVIRONMENT=production
+daemons:
+  hetzner-one:
+    context: hetzner-one
+    identifier: staging
 
 sops:
   age:
     key_file: ${AGE_KEY_FILE}
 
 stacks:
-  traefik:
+  hetzner-one/traefik:
     root: traefik
-  linkwarden:
+  hetzner-one/linkwarden:
     root: linkwarden
     secrets:
       sops:
         - secrets.env
-  vaultwarden:
+  hetzner-one/vaultwarden:
     root: vaultwarden
-  web:
+  hetzner-one/web:
     root: web
+```
 
-networks:
-  traefik:
+Or use **convention-over-configuration** to auto-discover stacks from your directory structure with a minimal manifest:
 
-volumes:
-  vw-data:
-  linkwarden_pgdata:
-  linkwarden_data:
-  linkwarden_meili_data:
+```yaml
+daemons:
+  hetzner-one:
+    context: hetzner-one
+    identifier: staging
 
-filesets:
-  traefik:
-    source: traefik/config
-    target_volume: traefik_config
-    target_path: /etc/traefik
-    restart_services:
-      - traefik
-    exclude:
-      - "**/.DS_Store"
+sops:
+  age:
+    key_file: ${AGE_KEY_FILE}
+```
+
+```
+project/
+├── dockform.yaml
+└── hetzner-one/
+    ├── traefik/
+    │   ├── compose.yaml
+    │   ├── secrets.env         # Auto-discovered SOPS secrets
+    │   └── volumes/
+    │       └── config/         # Auto-discovered fileset → traefik_config
+    ├── linkwarden/
+    │   └── compose.yaml
+    └── web/
+        └── compose.yaml
 ```
 
 ## Docs
@@ -78,9 +83,13 @@ Please visit https://dockform.io for the full documentation.
 ## Features
 
 - Declarative configuration in a single YAML file
+- Multi-daemon support for managing multiple Docker hosts
+- Convention-over-configuration: auto-discover stacks from directory structure
+- Deployment groups for targeted operations (`--daemon`, `--stack`, `--deployment`)
+- Parallel daemon execution by default
 - Idempotent operations
 - Transparent config files management
-- Git-friendly secrets 
+- Git-friendly secrets via SOPS
 - Unobtrusive and familiar workflow
 
 ## Install
@@ -123,7 +132,7 @@ Plan
 dockform plan
 ```
 
-And finally, apply the state to your docker daemon
+And finally, apply the state to your Docker daemon(s)
 
 ```sh
 dockform apply 
@@ -134,7 +143,7 @@ dockform apply
 ## Why not X?
 
 There are many tools that can help manage containers and deployments, and each solves different problems in different ways. Dockform does **not** try to replace them all. Instead, it focuses on solving **one specific problem**:
-**small, docker-compose–based deployments on single servers**, in a way that is structured, declarative, and ergonomic.
+**docker-compose-based deployments across one or more servers**, in a way that is structured, declarative, and ergonomic.
 
 > Dockform never modifies your existing Docker Compose files. Instead, it works alongside them, adding support for things that are usually left to ad-hoc scripts and manual commands—like managing secrets, configs, networks, and volumes—in a way that’s Git-friendly and predictable.
 
@@ -142,7 +151,7 @@ There are many tools that can help manage containers and deployments, and each s
 
 Orchestrators are powerful and mature solutions. Kubernetes in particular has become the industry standard. These tools shine in **multi-node, distributed, and highly available environments**.
 
-But they are overkill when you just want to deploy a few containers to a single machine. Dockform is not an orchestrator: it deliberately avoids the complexity of cluster scheduling and orchestration. Instead, it supports **Compose-based deployments on single hosts**, where simplicity and speed matter more than cluster-level resilience.
+But they are overkill when you just want to deploy a few containers to one or a handful of machines. Dockform is not an orchestrator: it deliberately avoids the complexity of cluster scheduling and orchestration. Instead, it supports **Compose-based deployments across multiple Docker contexts**, where simplicity and speed matter more than cluster-level resilience.
 
 ### Portainer, Dockage, and similar platforms
 
@@ -178,11 +187,10 @@ Dockform focuses on being **Compose-native**, managing only what is relevant to 
 
 ### Dockform
 
-Dockform is not a one-size-fits-all solution. It’s designed for a narrow but common scenario: **single-server, Compose-based deployments that need structure and reproducibility**.
+Dockform is not a one-size-fits-all solution. It's designed for a narrow but common scenario: **Compose-based deployments that need structure and reproducibility**, whether on a single server or across multiple Docker hosts.
 
 Dockform is probably **not a good fit** if your project:
 
-* Requires distributed deployments across multiple nodes
 * Needs orchestrator-level features (replicas, autoscaling, service discovery)
 * Doesn’t use Docker Compose as a base
 * Relies heavily on GUI-driven management instead of code
