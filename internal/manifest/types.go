@@ -32,8 +32,10 @@ type Config struct {
 
 // DaemonConfig defines a Docker daemon/context to manage.
 type DaemonConfig struct {
-	Context    string `yaml:"context"`    // Docker context name
-	Identifier string `yaml:"identifier"` // Resource label (io.dockform.identifier)
+	Context    string                          `yaml:"context"`    // Docker context name
+	Identifier string                          `yaml:"identifier"` // Resource label (io.dockform.identifier)
+	Volumes    map[string]TopLevelResourceSpec `yaml:"volumes"`    // Explicit volumes to create
+	Networks   map[string]NetworkSpec          `yaml:"networks"`   // Explicit networks to create
 }
 
 // DeploymentConfig defines a named deployment group for targeting multiple daemons/stacks.
@@ -160,6 +162,9 @@ type NetworkSpec struct {
 	IPRange      string            `yaml:"ip_range"`
 	AuxAddresses map[string]string `yaml:"aux_addresses"`
 }
+
+// TopLevelResourceSpec is an empty marker for explicitly declared volumes.
+type TopLevelResourceSpec struct{}
 
 // Ownership defines optional ownership and permission settings for fileset files.
 type Ownership struct {

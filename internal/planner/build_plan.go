@@ -123,10 +123,14 @@ func (p *Planner) buildDaemonPlan(ctx context.Context, cfg manifest.Config, daem
 			"networks_found", len(existingNetworks))
 	}
 
-	// Plan volumes - combine volumes from filesets
+	// Plan volumes - combine volumes from filesets + explicit daemon volumes
 	desiredVolumes := map[string]struct{}{}
 	for _, fileset := range daemonFilesets {
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
+	}
+	// Add explicit volumes declared in daemon config
+	for volName := range daemon.Volumes {
+		desiredVolumes[volName] = struct{}{}
 	}
 
 	volNames := sortedKeys(desiredVolumes)
@@ -151,12 +155,32 @@ func (p *Planner) buildDaemonPlan(ctx context.Context, cfg manifest.Config, daem
 		}
 	}
 
-	// Plan networks (from compose files - we don't have explicit network declarations anymore)
-	// Networks will be created by compose up, but we track existing ones
+	// Plan networks - combine explicit daemon networks + track existing ones
+	desiredNetworks := map[string]struct{}{}
+	for netName := range daemon.Networks {
+		desiredNetworks[netName] = struct{}{}
+	}
+
+	netNames := sortedKeys(desiredNetworks)
+	for _, name := range netNames {
+		exists := false
+		if existingNetworks != nil {
+			_, exists = existingNetworks[name]
+		}
+		if exists {
+			resourcePlan.Networks = append(resourcePlan.Networks,
+				NewResource(ResourceNetwork, name, ActionNoop, "exists"))
+		} else {
+			resourcePlan.Networks = append(resourcePlan.Networks,
+				NewResource(ResourceNetwork, name, ActionCreate, ""))
+		}
+	}
+	// Plan removals for labeled networks no longer needed
 	for name := range existingNetworks {
-		// For now, we keep existing labeled networks
-		resourcePlan.Networks = append(resourcePlan.Networks,
-			NewResource(ResourceNetwork, name, ActionNoop, "exists"))
+		if _, want := desiredNetworks[name]; !want {
+			resourcePlan.Networks = append(resourcePlan.Networks,
+				NewResource(ResourceNetwork, name, ActionDelete, ""))
+		}
 	}
 
 	// Build stack resources
@@ -568,10 +592,9 @@ func (p *Planner) aggregateDaemonPlan(aggregated *ResourcePlan, daemonPlan *Daem
 		aggregated.Stacks[fullKey] = resources
 	}
 
-	// Filesets - prefix with daemon name for unique keys
+	// Filesets - keys already include daemon prefix from discovery (daemon/stack/volume)
 	for filesetName, resources := range dp.Filesets {
-		fullKey := daemonPlan.DaemonName + "/" + filesetName
-		aggregated.Filesets[fullKey] = resources
+		aggregated.Filesets[filesetName] = resources
 	}
 
 	// Containers
