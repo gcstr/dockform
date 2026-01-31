@@ -8,21 +8,5 @@ stacks:
     root: .
     files:
       - docker-compose.yaml
-    daemon: default
     project:
       name: df_e2e_${DOCKFORM_RUN_ID}
-
-discovered_filesets:
-  files:
-    source: files-src
-    target_volume: df_e2e_${DOCKFORM_RUN_ID}_fsvol2
-    target_path: /assets
-    daemon: default
-    restart_services:
-      services:
-        - sleeper
-    exclude:
-      - "**/.DS_Store"
-      - "*.bak"
-      - "tmp/**"
-      - "secrets/"

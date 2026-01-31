@@ -107,9 +107,9 @@ func TestLoadWithWarnings_SetsBaseDirAndReportsMissing(t *testing.T) {
 		t.Fatalf("BaseDir mismatch: %q", cfg.BaseDir)
 	}
 	daemon := cfg.Daemons["default"]
-	// Empty context interpolates to empty string which normalizes to empty (not "default")
-	if daemon.Context != "" {
-		t.Fatalf("expected empty daemon.context after interpolation, got %q", daemon.Context)
+	// Empty context (from unset ${CTX}) defaults to daemon name during normalization
+	if daemon.Context != "default" {
+		t.Fatalf("expected daemon.context to default to 'default', got %q", daemon.Context)
 	}
 	stack := cfg.Stacks["default/web"]
 	expectedRoot := filepath.Clean(filepath.Join(dir, "website"))

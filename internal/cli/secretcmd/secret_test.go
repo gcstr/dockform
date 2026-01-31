@@ -46,7 +46,7 @@ func TestSecret_Create_Success(t *testing.T) {
 	t.Setenv("SOPS_AGE_KEY_FILE", keyPath)
 	cfgPath := filepath.Join(dir, "dockform.yml")
 	// Minimal config with required docker.identifier and sops key; recipients can be empty as they will be derived from key file
-	cfg := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n"
+	cfg := "daemons:\n  default:\n    identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestSecret_Create_FileExists_Error(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, _ := writeTempAgeKey(t, dir)
 	cfgPath := filepath.Join(dir, "dockform.yml")
-	cfg := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n"
+	cfg := "daemons:\n  default:\n    identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestSecret_Create_FileExists_Error(t *testing.T) {
 func TestSecret_Create_MissingKeyConfig_Error(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "dockform.yml")
-	if err := os.WriteFile(cfgPath, []byte("docker:\n  identifier: test-id\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("daemons:\n  default:\n    identifier: test-id\n"), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	target := filepath.Join(dir, "secrets.env")
@@ -131,7 +131,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 	t.Setenv("SOPS_AGE_KEY_FILE", keyPath)
 	// First, create an encrypted secret using create
 	cfgCreatePath := filepath.Join(dir, "create.yml")
-	cfgCreate := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\n"
+	cfgCreate := "daemons:\n  default:\n    identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\n"
 	if err := os.WriteFile(cfgCreatePath, []byte(cfgCreate), 0o644); err != nil {
 		t.Fatalf("write create config: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 
 	// Now, run rekey pointing to the created secret path via config
 	cfgRekeyPath := filepath.Join(dir, "rekey.yml")
-	cfgRekey := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\nsecrets:\n  sops:\n    - secrets.env\n"
+	cfgRekey := "daemons:\n  default:\n    identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\nstacks:\n  default/app:\n    root: .\n    secrets:\n      sops:\n        - secrets.env\n"
 	if err := os.WriteFile(cfgRekeyPath, []byte(cfgRekey), 0o644); err != nil {
 		t.Fatalf("write rekey config: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestSecret_Rekey_DecryptError(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, recipient := writeTempAgeKey(t, dir)
 	cfgPath := filepath.Join(dir, "cfg.yml")
-	cfg := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\nsecrets:\n  sops:\n    - missing.env\n"
+	cfg := "daemons:\n  default:\n    identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\nstacks:\n  default/app:\n    root: .\n    secrets:\n      sops:\n        - missing.env\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write cfg: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestSecret_Rekey_NoSecretsConfigured(t *testing.T) {
 	keyPath, recipient := writeTempAgeKey(t, dir)
 	cfgPath := filepath.Join(dir, "cfg.yml")
 	// Config with sops setup but no secrets.sops entries
-	cfg := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\n"
+	cfg := "daemons:\n  default:\n    identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write cfg: %v", err)
 	}

@@ -15,36 +15,44 @@ import (
 func volumeConfigPath(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	appRoot := filepath.Join(dir, "website")
-	if err := os.MkdirAll(appRoot, 0o755); err != nil {
-		t.Fatalf("mkdir app root: %v", err)
+
+	// Convention structure: default/website/ is a daemon/stack directory
+	daemonDir := filepath.Join(dir, "default")
+	stackDir := filepath.Join(daemonDir, "website")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatalf("mkdir stack dir: %v", err)
 	}
-	// Minimal compose file
-	composePath := filepath.Join(appRoot, "docker-compose.yaml")
-	composeContent := `version: '3'
-services:
+
+	// Compose file inside the convention stack dir
+	composePath := filepath.Join(stackDir, "compose.yaml")
+	composeContent := `services:
   web:
     image: nginx:alpine
     volumes:
-      - app-data:/data
+      - website_data:/data
 volumes:
-  app-data: {}
+  website_data: {}
 `
 	if err := os.WriteFile(composePath, []byte(composeContent), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
-	// Config with volume
+
+	// Convention volumes: default/website/volumes/data/
+	volumesDir := filepath.Join(stackDir, "volumes", "data")
+	if err := os.MkdirAll(volumesDir, 0o755); err != nil {
+		t.Fatalf("mkdir volumes dir: %v", err)
+	}
+	// Need at least one file for the directory to matter
+	if err := os.WriteFile(filepath.Join(volumesDir, "placeholder"), []byte(""), 0o644); err != nil {
+		t.Fatalf("write placeholder: %v", err)
+	}
+
+	// Config - convention discovery will find the stack and fileset
 	cfg := strings.Join([]string{
-		"docker:",
-		"  context: default",
-		"  identifier: demo",
-		"stacks:",
-		"  website:",
-		"    root: website",
-		"    files:",
-		"      - docker-compose.yaml",
-		"volumes:",
-		"  app-data: {}",
+		"daemons:",
+		"  default:",
+		"    context: default",
+		"    identifier: demo",
 	}, "\n") + "\n"
 	cfgPath := filepath.Join(dir, "dockform.yml")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
@@ -76,11 +84,11 @@ case "$cmd" in
     sub="$1"; shift
     case "$sub" in
       ls)
-        echo "app-data"
+        echo "website_data"
         exit 0 ;;
       inspect)
         # Return JSON with volume details
-        echo '{"Name":"app-data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/app-data/_data","Labels":{},"Options":{}}'
+        echo '{"Name":"website_data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/website_data/_data","Labels":{},"Options":{}}'
         exit 0 ;;
     esac
     ;;
@@ -126,7 +134,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "app-data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("volume restore execute: %v\nOutput: %s", err, out.String())
@@ -135,7 +143,7 @@ exit 0
 	got := out.String()
 
 	// Verify success message
-	if !strings.Contains(got, "Restored snapshot into volume app-data") {
+	if !strings.Contains(got, "Restored snapshot into volume website_data") {
 		t.Errorf("expected success message; got: %s", got)
 	}
 }
@@ -163,10 +171,10 @@ case "$cmd" in
     sub="$1"; shift
     case "$sub" in
       ls)
-        echo "app-data"
+        echo "website_data"
         exit 0 ;;
       inspect)
-        echo '{"Name":"app-data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/app-data/_data","Labels":{},"Options":{}}'
+        echo '{"Name":"website_data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/website_data/_data","Labels":{},"Options":{}}'
         exit 0 ;;
     esac
     ;;
@@ -203,7 +211,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "app-data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
 
 	err := root.Execute()
 	if err == nil {
@@ -240,10 +248,10 @@ case "$cmd" in
     sub="$1"; shift
     case "$sub" in
       ls)
-        echo "app-data"
+        echo "website_data"
         exit 0 ;;
       inspect)
-        echo '{"Name":"app-data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/app-data/_data","Labels":{},"Options":{}}'
+        echo '{"Name":"website_data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/website_data/_data","Labels":{},"Options":{}}'
         exit 0 ;;
     esac
     ;;
@@ -269,7 +277,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "app-data", snapshotPath, "-c", cfgPath, "--stop-containers"})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath, "--stop-containers"})
 
 	err := root.Execute()
 	if err == nil {
@@ -306,10 +314,10 @@ case "$cmd" in
     sub="$1"; shift
     case "$sub" in
       ls)
-        echo "app-data"
+        echo "website_data"
         exit 0 ;;
       inspect)
-        echo '{"Name":"app-data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/app-data/_data","Labels":{},"Options":{}}'
+        echo '{"Name":"website_data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/website_data/_data","Labels":{},"Options":{}}'
         exit 0 ;;
     esac
     ;;
@@ -339,7 +347,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "app-data", snapshotPath, "-c", cfgPath})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath})
 
 	err := root.Execute()
 	if err == nil {
@@ -376,10 +384,10 @@ case "$cmd" in
     sub="$1"; shift
     case "$sub" in
       ls)
-        echo "app-data"
+        echo "website_data"
         exit 0 ;;
       inspect)
-        echo '{"Name":"app-data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/app-data/_data","Labels":{},"Options":{}}'
+        echo '{"Name":"website_data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/website_data/_data","Labels":{},"Options":{}}'
         exit 0 ;;
     esac
     ;;
@@ -433,7 +441,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "app-data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("volume restore execute: %v\nOutput: %s", err, out.String())
@@ -442,7 +450,7 @@ exit 0
 	got := out.String()
 
 	// Verify success
-	if !strings.Contains(got, "Restored snapshot into volume app-data") {
+	if !strings.Contains(got, "Restored snapshot into volume website_data") {
 		t.Errorf("expected success message; got: %s", got)
 	}
 
@@ -474,10 +482,10 @@ case "$cmd" in
     sub="$1"; shift
     case "$sub" in
       ls)
-        echo "app-data"
+        echo "website_data"
         exit 0 ;;
       inspect)
-        echo '{"Name":"app-data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/app-data/_data","Labels":{},"Options":{}}'
+        echo '{"Name":"website_data","Driver":"local","Mountpoint":"/var/lib/docker/volumes/website_data/_data","Labels":{},"Options":{}}'
         exit 0 ;;
     esac
     ;;
@@ -530,7 +538,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "app-data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
 
 	err := root.Execute()
 	if err == nil {

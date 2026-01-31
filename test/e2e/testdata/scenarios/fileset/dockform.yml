@@ -8,16 +8,5 @@ stacks:
     root: .
     files:
       - docker-compose.yaml
-    daemon: default
     project:
       name: df_e2e_${DOCKFORM_RUN_ID}
-
-discovered_filesets:
-  sample:
-    source: files-src
-    target_volume: df_e2e_${DOCKFORM_RUN_ID}_fsvol
-    target_path: /data
-    daemon: default
-    exclude:
-      - ignore/
-      - "**/*.tmp"

@@ -158,16 +158,15 @@ func BasicConfigPath(t *testing.T) string {
 		t.Fatalf("write compose: %v", err)
 	}
 	cfg := strings.Join([]string{
-		"docker:",
-		"  context: default",
-		"  identifier: demo",
+		"daemons:",
+		"  default:",
+		"    context: default",
+		"    identifier: demo",
 		"stacks:",
-		"  website:",
+		"  default/website:",
 		"    root: website",
 		"    files:",
 		"      - docker-compose.yaml",
-		"networks:",
-		"  demo-network: {}",
 	}, "\n") + "\n"
 	cfgPath := filepath.Join(dir, "dockform.yml")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {

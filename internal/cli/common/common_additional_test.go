@@ -182,7 +182,7 @@ func TestSelectManifestPathNonTTYReturnsFalse(t *testing.T) {
 	cmd.SetIn(bytes.NewReader(nil))
 	cmd.SetOut(io.Discard)
 	cmd.Flags().String("config", "", "")
-	okPath, ok, err := SelectManifestPath(cmd, ui.StdPrinter{}, ".", 1, "")
+	okPath, ok, err := SelectManifestPath(cmd, ui.StdPrinter{}, t.TempDir(), 1, "")
 	if err != nil {
 		t.Fatalf("SelectManifestPath non-tty: %v", err)
 	}
@@ -693,7 +693,7 @@ exit 0
 
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "dockform.yml")
-	writeManifest(t, manifestPath, "docker:\n  context: default\n  identifier: demo\n")
+	writeManifest(t, manifestPath, "daemons:\n  default:\n    context: default\n    identifier: demo\n")
 
 	cmd := &cobra.Command{}
 	cmd.Flags().String("config", "", "")

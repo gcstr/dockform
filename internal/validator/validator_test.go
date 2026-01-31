@@ -554,7 +554,7 @@ func TestValidate_Succeeds_WhenNoSopsConfigured(t *testing.T) {
 	}
 
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
-	mustWrite(filepath.Join(tmp, "secrets.env"), "KEY=value\n")
+	mustWrite(filepath.Join(tmp, "website", "secrets.env"), "KEY=value\n")
 
 	// SOPS secrets but no sops config section at all - should pass (treated as plaintext)
 	yml := []byte(`daemons:

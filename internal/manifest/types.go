@@ -253,6 +253,12 @@ func ParseStackKey(key string) (daemon, stack string, err error) {
 	if len(parts) != 2 {
 		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key must be in 'daemon/stack' format: %s", key)
 	}
+	if parts[0] == "" {
+		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key has empty daemon name: %s", key)
+	}
+	if parts[1] == "" {
+		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key has empty stack name: %s", key)
+	}
 	return parts[0], parts[1], nil
 }
 

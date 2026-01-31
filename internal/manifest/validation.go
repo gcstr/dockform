@@ -165,6 +165,11 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		}
 		stack.EnvInline = mergedInline
 
+		// Merge SOPS secrets from YAML Secrets.Sops into computed SopsSecrets
+		if stack.Secrets != nil && len(stack.Secrets.Sops) > 0 {
+			stack.SopsSecrets = append(stack.SopsSecrets, stack.Secrets.Sops...)
+		}
+
 		// Validate SOPS secrets have .env extension
 		for _, sp := range stack.SopsSecrets {
 			if !strings.HasSuffix(strings.ToLower(sp), ".env") {

@@ -27,8 +27,9 @@ func TestNormalize_DefaultsAndFiles(t *testing.T) {
 		t.Fatalf("normalizeAndValidate: %v", err)
 	}
 	daemon := cfg.Daemons["default"]
-	if daemon.Context != "" {
-		t.Fatalf("expected empty daemon.context, got %q", daemon.Context)
+	// Context defaults to daemon name when not specified
+	if daemon.Context != "default" {
+		t.Fatalf("expected daemon.context to default to daemon name 'default', got %q", daemon.Context)
 	}
 	app := cfg.Stacks["default/web"]
 	wantRoot := filepath.Clean(filepath.Join(base, "app"))
@@ -77,7 +78,7 @@ func TestNormalize_InlineEnvLastWins(t *testing.T) {
 			"default": {Identifier: "id"},
 		},
 		Stacks: map[string]Stack{
-			"default/web": {Root: "app", EnvInline: []string{"FOO=A", "BAR=2", "BAZ=3"}},
+			"default/web": {Root: "app", Environment: &Environment{Inline: []string{"FOO=A", "BAR=2", "BAZ=3"}}},
 		},
 	}
 	if err := cfg.normalizeAndValidate(base); err != nil {

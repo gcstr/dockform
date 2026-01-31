@@ -3,34 +3,11 @@ daemons:
     context: default
     identifier: demo
 
-discovered_filesets:
-  files:
-    source: website/assets/
-    target_volume: demo-volume-1
-    target_path: /assets
-    daemon: default
-    restart_services:
-      services:
-        - nginx
-    exclude:
-      - "**/.DS_Store"
-      - "*.bak"
-      - "tmp/**"
-      - "secrets/"
-
-environment:
-  files:
-    - global.env
-  inline:
-    - GFOO=bar
-    - GBAZ=qux
-
 stacks:
   default/website:
     root: website
     files:
       - docker-compose.yaml
-    daemon: default
     project:
       name: website
     environment:
@@ -39,4 +16,3 @@ stacks:
       inline:
         - FOO=bar
         - BAZ=qux
-

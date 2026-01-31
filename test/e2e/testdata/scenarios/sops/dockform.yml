@@ -8,7 +8,6 @@ stacks:
     root: .
     files:
       - docker-compose.yaml
-    daemon: default
     project:
       name: df_e2e_${DOCKFORM_RUN_ID}
     secrets:
