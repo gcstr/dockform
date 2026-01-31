@@ -71,5 +71,8 @@ func New() *cobra.Command {
 	// Add sequential flag
 	cmd.Flags().Bool("sequential", false, "Use sequential processing instead of the default parallel processing (slower but uses less CPU and Docker daemon resources)")
 
+	// Add targeting flags
+	common.AddTargetFlags(cmd)
+
 	return cmd
 }

@@ -32,15 +32,14 @@ func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *
 		"stacks", len(allStacks),
 		"filesets", len(allFilesets))
 
-	// Process each daemon
-	daemonNames := sortedKeys(cfg.Daemons)
-	for _, daemonName := range daemonNames {
+	// Process each daemon (parallel by default, sequential with --sequential)
+	err := p.ExecuteAcrossDaemons(ctx, &cfg, func(ctx context.Context, daemonName string) error {
 		daemon := cfg.Daemons[daemonName]
 
 		// Get Docker client for this daemon
 		client := p.getClientForDaemon(daemonName, &cfg)
 		if client == nil {
-			return st.Fail(apperr.New("planner.Apply", apperr.Precondition, "docker client not available for daemon %s", daemonName))
+			return apperr.New("planner.Apply", apperr.Precondition, "docker client not available for daemon %s", daemonName)
 		}
 
 		// Get execution context for this daemon if available
@@ -49,10 +48,10 @@ func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *
 			daemonExecCtx = plan.ExecutionContext.ByDaemon[daemonName]
 		}
 
-		// Apply changes for this daemon
-		if err := p.applyDaemon(ctx, cfg, daemonName, daemon, client, daemonExecCtx); err != nil {
-			return st.Fail(err)
-		}
+		return p.applyDaemon(ctx, cfg, daemonName, daemon, client, daemonExecCtx)
+	})
+	if err != nil {
+		return st.Fail(err)
 	}
 
 	st.OK(true)

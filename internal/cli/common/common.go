@@ -190,6 +190,25 @@ func readDaemonContextLabels(path string) string {
 	return strings.Join(names, ", ")
 }
 
+// AddTargetFlags adds deployment targeting flags to a command.
+func AddTargetFlags(cmd *cobra.Command) {
+	cmd.Flags().StringSlice("daemon", nil, "Target specific daemon(s)")
+	cmd.Flags().StringSlice("stack", nil, "Target specific stack(s) in daemon/stack format")
+	cmd.Flags().String("deployment", "", "Target a named deployment group")
+}
+
+// ReadTargetOptions reads targeting flags from a command.
+func ReadTargetOptions(cmd *cobra.Command) TargetOptions {
+	daemons, _ := cmd.Flags().GetStringSlice("daemon")
+	stacks, _ := cmd.Flags().GetStringSlice("stack")
+	deployment, _ := cmd.Flags().GetString("deployment")
+	return TargetOptions{
+		Daemons:    daemons,
+		Stacks:     stacks,
+		Deployment: deployment,
+	}
+}
+
 // CreateClientFactory creates a Docker client factory for multi-daemon support.
 func CreateClientFactory() *dockercli.DefaultClientFactory {
 	return dockercli.NewClientFactory()
@@ -294,6 +313,17 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	cfg, err := LoadConfigWithWarnings(cmd, pr)
 	if err != nil {
 		return nil, err
+	}
+
+	// Apply target filtering if flags are registered
+	if cmd.Flags().Lookup("deployment") != nil {
+		opts := ReadTargetOptions(cmd)
+		if !opts.IsEmpty() {
+			cfg, err = ResolveTargets(cfg, opts)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// Display daemon info

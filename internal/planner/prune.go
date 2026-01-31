@@ -17,72 +17,77 @@ func (p *Planner) Prune(ctx context.Context, cfg manifest.Config) error {
 
 // PruneWithPlan removes unmanaged resources, optionally reusing execution context from a pre-built plan.
 func (p *Planner) PruneWithPlan(ctx context.Context, cfg manifest.Config, plan *Plan) error {
-	if p.docker == nil {
+	if p.docker == nil && p.factory == nil {
 		return apperr.New("planner.Prune", apperr.Precondition, "docker client not configured")
 	}
 
-	// Desired services set across all stacks
+	return p.ExecuteAcrossDaemons(ctx, &cfg, func(ctx context.Context, daemonName string) error {
+		client := p.getClientForDaemon(daemonName, &cfg)
+		if client == nil {
+			return apperr.New("planner.Prune", apperr.Precondition, "docker client not available for daemon %s", daemonName)
+		}
+
+		return p.pruneDaemon(ctx, cfg, daemonName, client, plan)
+	})
+}
+
+// pruneDaemon removes unmanaged resources for a single daemon.
+func (p *Planner) pruneDaemon(ctx context.Context, cfg manifest.Config, daemonName string, client DockerClient, plan *Plan) error {
+	daemonStacks := cfg.GetStacksForDaemon(daemonName)
+	daemonFilesets := cfg.GetFilesetsForDaemon(daemonName)
+
+	// Desired services set for this daemon
 	desiredServices := map[string]struct{}{}
 
-	// Get all stacks (discovered + explicit)
-	allStacks := cfg.GetAllStacks()
-
-	// If we have execution context, use the pre-computed service lists where available
 	if plan != nil && plan.ExecutionContext != nil {
-		// Iterate over all daemons and their stacks
-		for daemonName, daemonCtx := range plan.ExecutionContext.ByDaemon {
-			daemonStacks := cfg.GetStacksForDaemon(daemonName)
+		if daemonCtx := plan.ExecutionContext.ByDaemon[daemonName]; daemonCtx != nil {
 			for stackName, stack := range daemonStacks {
 				if execData := daemonCtx.Stacks[stackName]; execData != nil && execData.Services != nil {
-					// Use cached service list from execution context
 					for _, svc := range execData.Services {
 						desiredServices[svc.Name] = struct{}{}
 					}
 				} else {
-					// Fallback: collect fresh for stacks missing from execution context
-					p.collectDesiredServicesForStack(ctx, stack, cfg.Sops, desiredServices)
+					collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices)
 				}
+			}
+		} else {
+			for _, stack := range daemonStacks {
+				collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices)
 			}
 		}
 	} else {
-		// Fallback: detect services fresh (original behavior)
-		for _, stack := range allStacks {
-			p.collectDesiredServicesForStack(ctx, stack, cfg.Sops, desiredServices)
+		for _, stack := range daemonStacks {
+			collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices)
 		}
 	}
 
 	// Remove labeled containers not in desired set
-	if all, err := p.docker.ListComposeContainersAll(ctx); err == nil {
+	if all, err := client.ListComposeContainersAll(ctx); err == nil {
 		for _, it := range all {
 			if _, want := desiredServices[it.Service]; !want {
-				_ = p.docker.RemoveContainer(ctx, it.Name, true)
+				_ = client.RemoveContainer(ctx, it.Name, true)
 			}
 		}
 	}
 
-	// Remove labeled volumes not needed by any fileset
-	allFilesets := cfg.GetAllFilesets()
+	// Remove labeled volumes not needed by any fileset on this daemon
 	desiredVolumes := map[string]struct{}{}
-	for _, fileset := range allFilesets {
+	for _, fileset := range daemonFilesets {
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
 	}
-	if vols, err := p.docker.ListVolumes(ctx); err == nil {
+	if vols, err := client.ListVolumes(ctx); err == nil {
 		for _, v := range vols {
 			if _, want := desiredVolumes[v]; !want {
-				_ = p.docker.RemoveVolume(ctx, v)
+				_ = client.RemoveVolume(ctx, v)
 			}
 		}
 	}
-
-	// In the new schema, networks are managed by compose - we don't prune them explicitly
-	// They will be cleaned up when compose down is run
 
 	return nil
 }
 
 // collectDesiredServicesForStack collects service names for a single stack by querying compose config.
-// This is extracted as a helper to avoid code duplication.
-func (p *Planner) collectDesiredServicesForStack(ctx context.Context, stack manifest.Stack, sopsConfig *manifest.SopsConfig, desiredServices map[string]struct{}) {
+func collectDesiredServicesForStack(ctx context.Context, client DockerClient, stack manifest.Stack, sopsConfig *manifest.SopsConfig, desiredServices map[string]struct{}) {
 	inline := append([]string(nil), stack.EnvInline...)
 	ageKeyFile := ""
 	pgpDir := ""
@@ -107,7 +112,7 @@ func (p *Planner) collectDesiredServicesForStack(ctx context.Context, stack mani
 			inline = append(inline, pairs...)
 		}
 	}
-	if doc, err := p.docker.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, inline); err == nil {
+	if doc, err := client.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, inline); err == nil {
 		for s := range doc.Services {
 			desiredServices[s] = struct{}{}
 		}

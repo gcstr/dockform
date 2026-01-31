@@ -95,5 +95,6 @@ func New() *cobra.Command {
 	}
 	cmd.Flags().Bool("skip-confirmation", false, "Skip confirmation prompt and apply immediately")
 	cmd.Flags().Bool("sequential", false, "Use sequential processing instead of the default parallel processing (slower but uses less CPU and Docker daemon resources)")
+	common.AddTargetFlags(cmd)
 	return cmd
 }

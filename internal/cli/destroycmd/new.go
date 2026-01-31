@@ -90,5 +90,6 @@ regardless of what's in your current configuration file.`,
 		},
 	}
 	cmd.Flags().Bool("skip-confirmation", false, "Skip confirmation prompt and destroy immediately")
+	common.AddTargetFlags(cmd)
 	return cmd
 }
