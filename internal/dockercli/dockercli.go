@@ -248,16 +248,26 @@ func (c *Client) SyncDirToVolume(ctx context.Context, volumeName, targetPath, lo
 	return err
 }
 
+// normalizeVolumeMountPath returns a safe mount path for volumes.
+// Docker doesn't allow mounting at /, so we use /data instead.
+func normalizeVolumeMountPath(targetPath string) string {
+	if targetPath == "/" {
+		return "/data"
+	}
+	return targetPath
+}
+
 // ReadFileFromVolume returns the contents of a file inside a mounted volume target path.
 // If the file does not exist, it returns an empty string and no error.
 func (c *Client) ReadFileFromVolume(ctx context.Context, volumeName, targetPath, relFile string) (string, error) {
 	if volumeName == "" || !strings.HasPrefix(targetPath, "/") {
 		return "", apperr.New("dockercli.ReadFileFromVolume", apperr.InvalidInput, "invalid volume or target path")
 	}
-	full := path.Join(targetPath, relFile)
+	mountPath := normalizeVolumeMountPath(targetPath)
+	full := path.Join(mountPath, relFile)
 	cmd := []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"-v", fmt.Sprintf("%s:%s", volumeName, mountPath),
 		HelperImage, "sh", "-c",
 		"cat '" + full + "' 2>/dev/null || true",
 	}
@@ -273,11 +283,12 @@ func (c *Client) WriteFileToVolume(ctx context.Context, volumeName, targetPath, 
 	if volumeName == "" || !strings.HasPrefix(targetPath, "/") {
 		return apperr.New("dockercli.WriteFileToVolume", apperr.InvalidInput, "invalid volume or target path")
 	}
-	full := path.Join(targetPath, relFile)
+	mountPath := normalizeVolumeMountPath(targetPath)
+	full := path.Join(mountPath, relFile)
 	dir := path.Dir(full)
 	cmd := []string{
 		"run", "--rm", "-i",
-		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"-v", fmt.Sprintf("%s:%s", volumeName, mountPath),
 		HelperImage, "sh", "-c",
 		"mkdir -p '" + dir + "' && cat > '" + full + "'",
 	}
@@ -291,11 +302,12 @@ func (c *Client) ExtractTarToVolume(ctx context.Context, volumeName, targetPath 
 	if volumeName == "" || !strings.HasPrefix(targetPath, "/") {
 		return apperr.New("dockercli.ExtractTarToVolume", apperr.InvalidInput, "invalid volume or target path")
 	}
+	mountPath := normalizeVolumeMountPath(targetPath)
 	cmd := []string{
 		"run", "--rm", "-i",
-		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"-v", fmt.Sprintf("%s:%s", volumeName, mountPath),
 		HelperImage, "sh", "-c",
-		"mkdir -p '" + targetPath + "' && tar -xpf - -C '" + targetPath + "'",
+		"mkdir -p '" + mountPath + "' && tar -xpf - -C '" + mountPath + "'",
 	}
 	_, err := c.exec.RunWithStdin(ctx, r, cmd...)
 	return err
@@ -309,19 +321,20 @@ func (c *Client) RemovePathsFromVolume(ctx context.Context, volumeName, targetPa
 	if len(relPaths) == 0 {
 		return nil
 	}
+	mountPath := normalizeVolumeMountPath(targetPath)
 	// Build a safe rm command using printf with NUL and xargs -0 to avoid globbing
 	printfArgs := strings.Builder{}
 	for _, p := range relPaths {
 		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		full := path.Join(targetPath, p)
+		full := path.Join(mountPath, p)
 		printfArgs.WriteString(full)
 		printfArgs.WriteByte('\x00')
 	}
 	cmd := []string{
 		"run", "--rm", "-i",
-		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"-v", fmt.Sprintf("%s:%s", volumeName, mountPath),
 		HelperImage, "sh", "-eu", "-c",
 		"xargs -0 rm -rf -- 2>/dev/null || true",
 	}
@@ -359,7 +372,8 @@ func (c *Client) RunVolumeScript(ctx context.Context, volumeName, targetPath, sc
 	}
 
 	// Mount volume at targetPath (same as ExtractTarToVolume does)
-	cmd = append(cmd, "-v", fmt.Sprintf("%s:%s", volumeName, targetPath))
+	mountPath := normalizeVolumeMountPath(targetPath)
+	cmd = append(cmd, "-v", fmt.Sprintf("%s:%s", volumeName, mountPath))
 
 	// Use helper image and run script with sh
 	cmd = append(cmd, HelperImage, "sh", "-c", script)

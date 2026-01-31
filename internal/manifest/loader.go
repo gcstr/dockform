@@ -217,7 +217,7 @@ func discoverFilesets(cfg *Config, daemonName, stackName, stackDir string, ident
 			Source:          sourceDir,
 			SourceAbs:       sourceDir,
 			TargetVolume:    targetVolume,
-			TargetPath:      "/", // Default to root of volume
+			TargetPath:      "/", // Default to root of volume (normalized to /data during mount)
 			RestartServices: RestartTargets{Attached: true},
 			ApplyMode:       "hot",
 			Daemon:          daemonName,
