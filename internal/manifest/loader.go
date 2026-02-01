@@ -90,31 +90,31 @@ func discoverResources(cfg *Config, baseDir string) error {
 		cfg.DiscoveredFilesets = make(map[string]FilesetSpec)
 	}
 
-	// Discover stacks for each declared daemon
-	for daemonName, daemon := range cfg.Daemons {
-		daemonDir := filepath.Join(baseDir, daemonName)
+	// Discover stacks for each declared context
+	for contextName := range cfg.Contexts {
+		contextDir := filepath.Join(baseDir, contextName)
 
-		// Check if daemon directory exists
-		info, err := os.Stat(daemonDir)
+		// Check if context directory exists
+		info, err := os.Stat(contextDir)
 		if err != nil {
 			if os.IsNotExist(err) {
-				// Daemon directory doesn't exist - that's fine, just skip discovery
+				// Context directory doesn't exist - that's fine, just skip discovery
 				continue
 			}
-			return apperr.Wrap("manifest.discoverResources", apperr.Internal, err, "stat daemon dir %s", daemonDir)
+			return apperr.Wrap("manifest.discoverResources", apperr.Internal, err, "stat context dir %s", contextDir)
 		}
 		if !info.IsDir() {
 			// Not a directory - skip
 			continue
 		}
 
-		// Find daemon-level secrets
-		daemonSecrets := findSecretsFile(daemonDir, cfg.Conventions.GetSecretsFile())
+		// Find context-level secrets
+		contextSecrets := findSecretsFile(contextDir, cfg.Conventions.GetSecretsFile())
 
 		// List subdirectories as potential stacks
-		entries, err := os.ReadDir(daemonDir)
+		entries, err := os.ReadDir(contextDir)
 		if err != nil {
-			return apperr.Wrap("manifest.discoverResources", apperr.Internal, err, "read daemon dir %s", daemonDir)
+			return apperr.Wrap("manifest.discoverResources", apperr.Internal, err, "read context dir %s", contextDir)
 		}
 
 		for _, entry := range entries {
@@ -122,7 +122,7 @@ func discoverResources(cfg *Config, baseDir string) error {
 				continue
 			}
 			stackName := entry.Name()
-			stackDir := filepath.Join(daemonDir, stackName)
+			stackDir := filepath.Join(contextDir, stackName)
 
 			// Look for compose file
 			composeFile := findComposeFile(stackDir, cfg.Conventions.GetComposeFiles())
@@ -132,25 +132,25 @@ func discoverResources(cfg *Config, baseDir string) error {
 			}
 
 			// Found a stack! Create the discovered stack entry
-			stackKey := MakeStackKey(daemonName, stackName)
+			stackKey := MakeStackKey(contextName, stackName)
 
 			stack := Stack{
-				Root:   stackDir,
-				Files:  []string{composeFile},
-				Daemon: daemonName,
+				Root:    stackDir,
+				Files:   []string{composeFile},
+				Context: contextName,
 			}
 
 			// Find stack-level secrets
 			stackSecrets := findSecretsFile(stackDir, cfg.Conventions.GetSecretsFile())
 
-			// Merge secrets: daemon-level first, then stack-level (stack wins)
+			// Merge secrets: context-level first, then stack-level (stack wins)
 			var sopsSecrets []string
-			if daemonSecrets != "" {
-				// Rebase daemon secrets relative to stack dir
-				if rel, err := filepath.Rel(stackDir, daemonSecrets); err == nil {
+			if contextSecrets != "" {
+				// Rebase context secrets relative to stack dir
+				if rel, err := filepath.Rel(stackDir, contextSecrets); err == nil {
 					sopsSecrets = append(sopsSecrets, rel)
 				} else {
-					sopsSecrets = append(sopsSecrets, daemonSecrets)
+					sopsSecrets = append(sopsSecrets, contextSecrets)
 				}
 			}
 			if stackSecrets != "" {
@@ -170,7 +170,7 @@ func discoverResources(cfg *Config, baseDir string) error {
 			cfg.DiscoveredStacks[stackKey] = stack
 
 			// Discover filesets from volumes/ directory
-			if err := discoverFilesets(cfg, daemonName, stackName, stackDir, daemon.Identifier); err != nil {
+			if err := discoverFilesets(cfg, contextName, stackName, stackDir); err != nil {
 				return err
 			}
 		}
@@ -180,7 +180,7 @@ func discoverResources(cfg *Config, baseDir string) error {
 }
 
 // discoverFilesets discovers filesets from the volumes/ directory of a stack.
-func discoverFilesets(cfg *Config, daemonName, stackName, stackDir string, identifier string) error {
+func discoverFilesets(cfg *Config, contextName, stackName, stackDir string) error {
 	volumesDir := filepath.Join(stackDir, cfg.Conventions.GetVolumesDir())
 
 	info, err := os.Stat(volumesDir)
@@ -210,8 +210,8 @@ func discoverFilesets(cfg *Config, daemonName, stackName, stackDir string, ident
 		// Convention: target volume is <stack>_<volumeName>
 		targetVolume := stackName + "_" + volumeName
 
-		// Fileset key: daemon/stack/volumeName
-		filesetKey := fmt.Sprintf("%s/%s/%s", daemonName, stackName, volumeName)
+		// Fileset key: context/stack/volumeName
+		filesetKey := fmt.Sprintf("%s/%s/%s", contextName, stackName, volumeName)
 
 		fileset := FilesetSpec{
 			Source:          sourceDir,
@@ -220,7 +220,7 @@ func discoverFilesets(cfg *Config, daemonName, stackName, stackDir string, ident
 			TargetPath:      "/", // Default to root of volume (normalized to /data during mount)
 			RestartServices: RestartTargets{Attached: true},
 			ApplyMode:       "hot",
-			Daemon:          daemonName,
+			Context:         contextName,
 			Stack:           stackName,
 		}
 

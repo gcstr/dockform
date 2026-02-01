@@ -6,40 +6,38 @@ import (
 	"github.com/gcstr/dockform/internal/filesets"
 )
 
-// Plan represents a structured plan with resources organized by daemon and type.
+// Plan represents a structured plan with resources organized by context and type.
 type Plan struct {
-	// Resources organized by daemon
-	ByDaemon map[string]*DaemonPlan
+	// Resources organized by context
+	ByContext map[string]*ContextPlan
 
-	// Aggregated resource plan (for display - combines all daemons)
+	// Aggregated resource plan (for display - combines all contexts)
 	Resources *ResourcePlan
 
-	// Multi-daemon execution context
-	ExecutionContext *MultiDaemonExecutionContext
+	// Multi-context execution context
+	ExecutionContext *MultiContextExecutionContext
 }
 
-// DaemonPlan represents the plan for a single daemon.
-type DaemonPlan struct {
-	DaemonName string
-	Context    string
-	Identifier string
-	Resources  *ResourcePlan
+// ContextPlan represents the plan for a single context.
+type ContextPlan struct {
+	ContextName string
+	Identifier  string
+	Resources   *ResourcePlan
 }
 
-// MultiDaemonExecutionContext contains pre-computed data for all daemons.
-type MultiDaemonExecutionContext struct {
-	// Per-daemon execution contexts
-	ByDaemon map[string]*DaemonExecutionContext
+// MultiContextExecutionContext contains pre-computed data for all contexts.
+type MultiContextExecutionContext struct {
+	// Per-context execution contexts
+	ByContext map[string]*ContextExecutionContext
 }
 
-// DaemonExecutionContext contains pre-computed data needed to execute the plan
-// for a single daemon. This allows Apply to reuse state detection results from
+// ContextExecutionContext contains pre-computed data needed to execute the plan
+// for a single context. This allows Apply to reuse state detection results from
 // BuildPlan, avoiding duplicate Docker API calls, SOPS decryption, and compose
 // config parsing.
-type DaemonExecutionContext struct {
-	DaemonName string
-	Context    string // Docker context
-	Identifier string
+type ContextExecutionContext struct {
+	ContextName string
+	Identifier  string
 
 	// Per-stack execution data (keys are stack names without daemon prefix)
 	Stacks map[string]*StackExecutionData
@@ -79,23 +77,23 @@ func (pln *Plan) String() string {
 	return RenderResourcePlan(pln.Resources)
 }
 
-// GetDaemonContext returns the execution context for a specific daemon.
-func (pln *Plan) GetDaemonContext(daemonName string) *DaemonExecutionContext {
-	if pln.ExecutionContext == nil || pln.ExecutionContext.ByDaemon == nil {
+// GetContextExecutionContext returns the execution context for a specific context.
+func (pln *Plan) GetContextExecutionContext(contextName string) *ContextExecutionContext {
+	if pln.ExecutionContext == nil || pln.ExecutionContext.ByContext == nil {
 		return nil
 	}
-	return pln.ExecutionContext.ByDaemon[daemonName]
+	return pln.ExecutionContext.ByContext[contextName]
 }
 
-// GetDaemonNames returns sorted list of daemon names in the plan.
-func (pln *Plan) GetDaemonNames() []string {
-	if pln.ByDaemon == nil {
+// GetContextNames returns sorted list of context names in the plan.
+func (pln *Plan) GetContextNames() []string {
+	if pln.ByContext == nil {
 		return nil
 	}
-	return sortedKeys(pln.ByDaemon)
+	return sortedKeys(pln.ByContext)
 }
 
-// CountChanges returns the total number of changes across all daemons.
+// CountChanges returns the total number of changes across all contexts.
 func (pln *Plan) CountChanges() (add, update, remove int) {
 	if pln.Resources == nil {
 		return 0, 0, 0
@@ -109,18 +107,17 @@ func (pln *Plan) IsEmpty() bool {
 	return add == 0 && update == 0 && remove == 0
 }
 
-// NewMultiDaemonExecutionContext creates a new empty multi-daemon execution context.
-func NewMultiDaemonExecutionContext() *MultiDaemonExecutionContext {
-	return &MultiDaemonExecutionContext{
-		ByDaemon: make(map[string]*DaemonExecutionContext),
+// NewMultiContextExecutionContext creates a new empty multi-context execution context.
+func NewMultiContextExecutionContext() *MultiContextExecutionContext {
+	return &MultiContextExecutionContext{
+		ByContext: make(map[string]*ContextExecutionContext),
 	}
 }
 
-// NewDaemonExecutionContext creates a new empty daemon execution context.
-func NewDaemonExecutionContext(daemonName, context, identifier string) *DaemonExecutionContext {
-	return &DaemonExecutionContext{
-		DaemonName:       daemonName,
-		Context:          context,
+// NewContextExecutionContext creates a new empty context execution context.
+func NewContextExecutionContext(contextName, identifier string) *ContextExecutionContext {
+	return &ContextExecutionContext{
+		ContextName:      contextName,
 		Identifier:       identifier,
 		Stacks:           make(map[string]*StackExecutionData),
 		Filesets:         make(map[string]*FilesetExecutionData),
@@ -139,6 +136,6 @@ func sortedKeys[T any](m map[string]T) []string {
 	return keys
 }
 
-// Legacy support: ExecutionContext for single-daemon backward compatibility
-// This is used during the transition period and maps to the first daemon's context.
-type ExecutionContext = DaemonExecutionContext
+// Legacy support: ExecutionContext for single-context backward compatibility
+// This is used during the transition period and maps to the first context's execution context.
+type ExecutionContext = ContextExecutionContext

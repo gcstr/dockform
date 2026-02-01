@@ -30,33 +30,33 @@ func NewFilesetManagerWithClient(client DockerClient, progress ProgressReporter)
 	return &FilesetManager{docker: client, progress: progress}
 }
 
-// SyncFilesetsForDaemon synchronizes filesets for a specific daemon into their target volumes.
+// SyncFilesetsForContext synchronizes filesets for a specific context into their target volumes.
 // Returns services that need restart.
-func (fm *FilesetManager) SyncFilesetsForDaemon(ctx context.Context, cfg manifest.Config, daemonName string, existingVolumes map[string]struct{}, execCtx *DaemonExecutionContext) (map[string]struct{}, error) {
-	log := logger.FromContext(ctx).With("component", "fileset", "daemon", daemonName)
+func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manifest.Config, contextName string, existingVolumes map[string]struct{}, execCtx *ContextExecutionContext) (map[string]struct{}, error) {
+	log := logger.FromContext(ctx).With("component", "fileset", "context", contextName)
 	restartPending := map[string]struct{}{}
 	if fm.docker == nil {
-		return nil, apperr.New("filesetmanager.SyncFilesetsForDaemon", apperr.Precondition, "docker client not configured")
+		return nil, apperr.New("filesetmanager.SyncFilesetsForContext", apperr.Precondition, "docker client not configured")
 	}
 
-	// Get filesets for this daemon
-	daemonFilesets := cfg.GetFilesetsForDaemon(daemonName)
-	if len(daemonFilesets) == 0 {
+	// Get filesets for this context
+	contextFilesets := cfg.GetFilesetsForContext(contextName)
+	if len(contextFilesets) == 0 {
 		return restartPending, nil
 	}
 
 	// Process filesets in deterministic order
-	filesetNames := make([]string, 0, len(daemonFilesets))
-	for name := range daemonFilesets {
+	filesetNames := make([]string, 0, len(contextFilesets))
+	for name := range contextFilesets {
 		filesetNames = append(filesetNames, name)
 	}
 	sort.Strings(filesetNames)
 
 	for _, name := range filesetNames {
-		fileset := daemonFilesets[name]
+		fileset := contextFilesets[name]
 
 		if fileset.SourceAbs == "" {
-			return nil, apperr.New("filesetmanager.SyncFilesetsForDaemon", apperr.InvalidInput, "fileset %s: resolved source path is empty", name)
+			return nil, apperr.New("filesetmanager.SyncFilesetsForContext", apperr.InvalidInput, "fileset %s: resolved source path is empty", name)
 		}
 
 		var local, remote filesets.Index
@@ -74,7 +74,7 @@ func (fm *FilesetManager) SyncFilesetsForDaemon(ctx context.Context, cfg manifes
 			var err error
 			local, err = filesets.BuildLocalIndex(fileset.SourceAbs, fileset.TargetPath, fileset.Exclude)
 			if err != nil {
-				return nil, apperr.Wrap("filesetmanager.SyncFilesetsForDaemon", apperr.Internal, err, "index local filesets for %s", name)
+				return nil, apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.Internal, err, "index local filesets for %s", name)
 			}
 
 			// Only read from volume if it exists to avoid implicit creation
@@ -178,8 +178,8 @@ func (fm *FilesetManager) SyncFilesetsForDaemon(ctx context.Context, cfg manifes
 }
 
 // SyncFilesets synchronizes all filesets into their target volumes and returns services that need restart.
-// Deprecated: Use SyncFilesetsForDaemon for multi-daemon support.
-func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config, existingVolumes map[string]struct{}, execCtx *DaemonExecutionContext) (map[string]struct{}, error) {
+// Deprecated: Use SyncFilesetsForContext for multi-context support.
+func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config, existingVolumes map[string]struct{}, execCtx *ContextExecutionContext) (map[string]struct{}, error) {
 	log := logger.FromContext(ctx).With("component", "fileset")
 	restartPending := map[string]struct{}{}
 	if fm.docker == nil {

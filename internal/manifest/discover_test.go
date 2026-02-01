@@ -6,13 +6,13 @@ import (
 	"testing"
 )
 
-func TestDiscoverResources_DaemonDirWithStacks(t *testing.T) {
+func TestDiscoverResources_ContextDirWithStacks(t *testing.T) {
 	base := t.TempDir()
 
-	// Create daemon directory with two stacks
-	daemonDir := filepath.Join(base, "prod")
-	stackDir1 := filepath.Join(daemonDir, "web")
-	stackDir2 := filepath.Join(daemonDir, "api")
+	// Create context directory with two stacks
+	contextDir := filepath.Join(base, "prod")
+	stackDir1 := filepath.Join(contextDir, "web")
+	stackDir2 := filepath.Join(contextDir, "api")
 
 	mustMkdir(t, stackDir1)
 	mustMkdir(t, stackDir2)
@@ -22,8 +22,9 @@ func TestDiscoverResources_DaemonDirWithStacks(t *testing.T) {
 	mustWriteFile(t, filepath.Join(stackDir2, "docker-compose.yml"), "services:\n  api: {}\n")
 
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"prod": {Context: "prod", Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"prod": {},
 		},
 	}
 
@@ -40,8 +41,8 @@ func TestDiscoverResources_DaemonDirWithStacks(t *testing.T) {
 	if !ok {
 		t.Fatal("expected discovered stack prod/web")
 	}
-	if web.Daemon != "prod" {
-		t.Errorf("expected daemon 'prod', got %q", web.Daemon)
+	if web.Context != "prod" {
+		t.Errorf("expected context 'prod', got %q", web.Context)
 	}
 	if len(web.Files) != 1 || filepath.Base(web.Files[0]) != "compose.yaml" {
 		t.Errorf("expected compose.yaml, got %v", web.Files)
@@ -56,16 +57,17 @@ func TestDiscoverResources_DaemonDirWithStacks(t *testing.T) {
 	}
 }
 
-func TestDiscoverResources_NoDaemonDir(t *testing.T) {
+func TestDiscoverResources_NoContextDir(t *testing.T) {
 	base := t.TempDir()
 
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"missing": {Context: "missing", Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"missing": {},
 		},
 	}
 
-	// Should not error when daemon directory doesn't exist
+	// Should not error when context directory doesn't exist
 	if err := discoverResources(&cfg, base); err != nil {
 		t.Fatalf("discoverResources: %v", err)
 	}
@@ -78,16 +80,17 @@ func TestDiscoverResources_NoDaemonDir(t *testing.T) {
 func TestDiscoverResources_SkipDirsWithoutCompose(t *testing.T) {
 	base := t.TempDir()
 
-	daemonDir := filepath.Join(base, "default")
-	stackDir := filepath.Join(daemonDir, "nocompose")
+	contextDir := filepath.Join(base, "default")
+	stackDir := filepath.Join(contextDir, "nocompose")
 	mustMkdir(t, stackDir)
 
 	// Create a directory without compose files
 	mustWriteFile(t, filepath.Join(stackDir, "README.md"), "not a stack")
 
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"default": {Context: "default", Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"default": {},
 		},
 	}
 
@@ -103,22 +106,23 @@ func TestDiscoverResources_SkipDirsWithoutCompose(t *testing.T) {
 func TestDiscoverResources_SecretsDiscovery(t *testing.T) {
 	base := t.TempDir()
 
-	daemonDir := filepath.Join(base, "prod")
-	stackDir := filepath.Join(daemonDir, "web")
+	contextDir := filepath.Join(base, "prod")
+	stackDir := filepath.Join(contextDir, "web")
 	mustMkdir(t, stackDir)
 
 	// Create compose file
 	mustWriteFile(t, filepath.Join(stackDir, "compose.yaml"), "services:\n  web: {}\n")
 
-	// Create daemon-level secrets
-	mustWriteFile(t, filepath.Join(daemonDir, "secrets.env"), "SECRET=val")
+	// Create context-level secrets
+	mustWriteFile(t, filepath.Join(contextDir, "secrets.env"), "SECRET=val")
 
 	// Create stack-level secrets
 	mustWriteFile(t, filepath.Join(stackDir, "secrets.env"), "STACK_SECRET=val")
 
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"prod": {Context: "prod", Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"prod": {},
 		},
 	}
 
@@ -128,23 +132,24 @@ func TestDiscoverResources_SecretsDiscovery(t *testing.T) {
 
 	stack := cfg.DiscoveredStacks["prod/web"]
 	if len(stack.SopsSecrets) != 2 {
-		t.Fatalf("expected 2 sops secrets (daemon + stack), got %d: %v", len(stack.SopsSecrets), stack.SopsSecrets)
+		t.Fatalf("expected 2 sops secrets (context + stack), got %d: %v", len(stack.SopsSecrets), stack.SopsSecrets)
 	}
 }
 
 func TestDiscoverResources_EnvironmentFileDiscovery(t *testing.T) {
 	base := t.TempDir()
 
-	daemonDir := filepath.Join(base, "default")
-	stackDir := filepath.Join(daemonDir, "app")
+	contextDir := filepath.Join(base, "default")
+	stackDir := filepath.Join(contextDir, "app")
 	mustMkdir(t, stackDir)
 
 	mustWriteFile(t, filepath.Join(stackDir, "compose.yaml"), "services:\n  app: {}\n")
 	mustWriteFile(t, filepath.Join(stackDir, "environment.env"), "FOO=bar")
 
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"default": {Context: "default", Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"default": {},
 		},
 	}
 
@@ -161,8 +166,8 @@ func TestDiscoverResources_EnvironmentFileDiscovery(t *testing.T) {
 func TestDiscoverFilesets_VolumesDir(t *testing.T) {
 	base := t.TempDir()
 
-	daemonDir := filepath.Join(base, "default")
-	stackDir := filepath.Join(daemonDir, "app")
+	contextDir := filepath.Join(base, "default")
+	stackDir := filepath.Join(contextDir, "app")
 	volumesDir := filepath.Join(stackDir, "volumes")
 	configDir := filepath.Join(volumesDir, "config")
 	dataDir := filepath.Join(volumesDir, "data")
@@ -174,8 +179,9 @@ func TestDiscoverFilesets_VolumesDir(t *testing.T) {
 	mustWriteFile(t, filepath.Join(stackDir, "compose.yaml"), "services:\n  app: {}\n")
 
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"default": {Context: "default", Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"default": {},
 		},
 	}
 
@@ -197,8 +203,8 @@ func TestDiscoverFilesets_VolumesDir(t *testing.T) {
 	if configFs.TargetPath != "/" {
 		t.Errorf("expected target_path '/', got %q", configFs.TargetPath)
 	}
-	if configFs.Daemon != "default" {
-		t.Errorf("expected daemon 'default', got %q", configFs.Daemon)
+	if configFs.Context != "default" {
+		t.Errorf("expected context 'default', got %q", configFs.Context)
 	}
 	if configFs.Stack != "app" {
 		t.Errorf("expected stack 'app', got %q", configFs.Stack)
@@ -219,15 +225,16 @@ func TestDiscoverFilesets_VolumesDir(t *testing.T) {
 func TestDiscoverFilesets_NoVolumesDir(t *testing.T) {
 	base := t.TempDir()
 
-	daemonDir := filepath.Join(base, "default")
-	stackDir := filepath.Join(daemonDir, "app")
+	contextDir := filepath.Join(base, "default")
+	stackDir := filepath.Join(contextDir, "app")
 	mustMkdir(t, stackDir)
 
 	mustWriteFile(t, filepath.Join(stackDir, "compose.yaml"), "services:\n  app: {}\n")
 
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"default": {Context: "default", Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"default": {},
 		},
 	}
 
@@ -243,8 +250,8 @@ func TestDiscoverFilesets_NoVolumesDir(t *testing.T) {
 func TestDiscoverResources_CustomConventions(t *testing.T) {
 	base := t.TempDir()
 
-	daemonDir := filepath.Join(base, "default")
-	stackDir := filepath.Join(daemonDir, "app")
+	contextDir := filepath.Join(base, "default")
+	stackDir := filepath.Join(contextDir, "app")
 	mustMkdir(t, stackDir)
 
 	// Use custom compose file name
@@ -252,8 +259,9 @@ func TestDiscoverResources_CustomConventions(t *testing.T) {
 	mustWriteFile(t, filepath.Join(stackDir, "env.txt"), "FOO=bar")
 
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"default": {Context: "default", Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"default": {},
 		},
 		Conventions: ConventionsConfig{
 			ComposeFiles:    []string{"stack.yml"},
@@ -282,15 +290,16 @@ func TestDiscoverResources_CustomConventions(t *testing.T) {
 func TestDiscoverResources_DisabledConventions(t *testing.T) {
 	base := t.TempDir()
 
-	daemonDir := filepath.Join(base, "default")
-	stackDir := filepath.Join(daemonDir, "app")
+	contextDir := filepath.Join(base, "default")
+	stackDir := filepath.Join(contextDir, "app")
 	mustMkdir(t, stackDir)
 	mustWriteFile(t, filepath.Join(stackDir, "compose.yaml"), "services:\n  app: {}\n")
 
 	disabled := false
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"default": {Context: "default", Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"default": {},
 		},
 		Conventions: ConventionsConfig{Enabled: &disabled},
 	}

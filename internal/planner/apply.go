@@ -16,7 +16,7 @@ func (p *Planner) Apply(ctx context.Context, cfg manifest.Config) error {
 	return p.ApplyWithPlan(ctx, cfg, nil)
 }
 
-// ApplyWithPlan applies the desired state for all daemons, optionally reusing execution context from a pre-built plan.
+// ApplyWithPlan applies the desired state for all contexts, optionally reusing execution context from a pre-built plan.
 // If plan is non-nil and contains ExecutionContext, this avoids redundant Docker API calls, SOPS decryption,
 // and compose config parsing by reusing the state detection results from BuildPlan.
 func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *Plan) error {
@@ -26,29 +26,29 @@ func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *
 	allStacks := cfg.GetAllStacks()
 	allFilesets := cfg.GetAllFilesets()
 
-	st := logger.StartStep(log, "apply_infrastructure", "multi-daemon",
+	st := logger.StartStep(log, "apply_infrastructure", "multi-context",
 		"resource_kind", "infrastructure",
-		"daemons", len(cfg.Daemons),
+		"contexts", len(cfg.Contexts),
 		"stacks", len(allStacks),
 		"filesets", len(allFilesets))
 
-	// Process each daemon (parallel by default, sequential with --sequential)
-	err := p.ExecuteAcrossDaemons(ctx, &cfg, func(ctx context.Context, daemonName string) error {
-		daemon := cfg.Daemons[daemonName]
+	// Process each context (parallel by default, sequential with --sequential)
+	err := p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
+		contextConfig := cfg.Contexts[contextName]
 
-		// Get Docker client for this daemon
-		client := p.getClientForDaemon(daemonName, &cfg)
+		// Get Docker client for this context
+		client := p.getClientForContext(contextName, &cfg)
 		if client == nil {
-			return apperr.New("planner.Apply", apperr.Precondition, "docker client not available for daemon %s", daemonName)
+			return apperr.New("planner.Apply", apperr.Precondition, "docker client not available for context %s", contextName)
 		}
 
-		// Get execution context for this daemon if available
-		var daemonExecCtx *DaemonExecutionContext
+		// Get execution context for this context if available
+		var contextExecCtx *ContextExecutionContext
 		if plan != nil && plan.ExecutionContext != nil {
-			daemonExecCtx = plan.ExecutionContext.ByDaemon[daemonName]
+			contextExecCtx = plan.ExecutionContext.ByContext[contextName]
 		}
 
-		return p.applyDaemon(ctx, cfg, daemonName, daemon, client, daemonExecCtx)
+		return p.applyContext(ctx, cfg, contextName, contextConfig, client, contextExecCtx)
 	})
 	if err != nil {
 		return st.Fail(err)
@@ -58,21 +58,20 @@ func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *
 	return nil
 }
 
-// applyDaemon applies changes for a single daemon.
-func (p *Planner) applyDaemon(ctx context.Context, cfg manifest.Config, daemonName string, daemon manifest.DaemonConfig, client DockerClient, execCtx *DaemonExecutionContext) error {
-	log := logger.FromContext(ctx).With("component", "planner", "daemon", daemonName)
+// applyContext applies changes for a single context.
+func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, contextName string, contextConfig manifest.ContextConfig, client DockerClient, execCtx *ContextExecutionContext) error {
+	log := logger.FromContext(ctx).With("component", "planner", "context", contextName)
 
-	// Get stacks and filesets for this daemon
-	daemonStacks := cfg.GetStacksForDaemon(daemonName)
-	daemonFilesets := cfg.GetFilesetsForDaemon(daemonName)
+	// Get stacks and filesets for this context
+	contextStacks := cfg.GetStacksForContext(contextName)
+	contextFilesets := cfg.GetFilesetsForContext(contextName)
 
-	st := logger.StartStep(log, "apply_daemon", daemonName,
-		"context", daemon.Context,
-		"identifier", daemon.Identifier,
-		"stacks", len(daemonStacks),
-		"filesets", len(daemonFilesets))
+	st := logger.StartStep(log, "apply_context", contextName,
+		"identifier", cfg.Identifier,
+		"stacks", len(contextStacks),
+		"filesets", len(contextFilesets))
 
-	identifier := daemon.Identifier
+	identifier := cfg.Identifier
 	labels := map[string]string{}
 	if identifier != "" {
 		labels["io.dockform.identifier"] = identifier
@@ -84,26 +83,26 @@ func (p *Planner) applyDaemon(ctx context.Context, cfg manifest.Config, daemonNa
 	if execCtx != nil {
 		progressEstimator = progressEstimator.WithExecutionContext(execCtx)
 	}
-	if err := progressEstimator.EstimateAndStartProgressForDaemon(ctx, cfg, daemonName, identifier); err != nil {
+	if err := progressEstimator.EstimateAndStartProgressForContext(ctx, cfg, contextName, identifier); err != nil {
 		return st.Fail(err)
 	}
 
 	// Create missing volumes
 	resourceManager := NewResourceManagerWithClient(client, progress)
-	existingVolumes, err := resourceManager.EnsureVolumesExistForDaemon(ctx, cfg, daemonName, labels)
+	existingVolumes, err := resourceManager.EnsureVolumesExistForContext(ctx, cfg, contextName, labels)
 	if err != nil {
 		return st.Fail(err)
 	}
 
 	// Synchronize filesets
 	filesetManager := NewFilesetManagerWithClient(client, progress)
-	restartPending, err := filesetManager.SyncFilesetsForDaemon(ctx, cfg, daemonName, existingVolumes, execCtx)
+	restartPending, err := filesetManager.SyncFilesetsForContext(ctx, cfg, contextName, existingVolumes, execCtx)
 	if err != nil {
 		return st.Fail(err)
 	}
 
 	// Apply stack changes (reusing execution context if available)
-	if err := p.applyStackChangesForDaemon(ctx, cfg, daemonName, daemonStacks, identifier, client, restartPending, progress, execCtx); err != nil {
+	if err := p.applyStackChangesForContext(ctx, cfg, contextName, contextStacks, identifier, client, restartPending, progress, execCtx); err != nil {
 		return st.Fail(err)
 	}
 
@@ -117,8 +116,8 @@ func (p *Planner) applyDaemon(ctx context.Context, cfg manifest.Config, daemonNa
 	return nil
 }
 
-// applyStackChangesForDaemon processes stacks for a daemon and performs compose up for those that need updates.
-func (p *Planner) applyStackChangesForDaemon(ctx context.Context, cfg manifest.Config, daemonName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, restartPending map[string]struct{}, progress ProgressReporter, execCtx *DaemonExecutionContext) error {
+// applyStackChangesForContext processes stacks for a context and performs compose up for those that need updates.
+func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.Config, contextName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, restartPending map[string]struct{}, progress ProgressReporter, execCtx *ContextExecutionContext) error {
 	detector := NewServiceStateDetector(client)
 
 	// Process stacks in sorted order for deterministic behavior
@@ -139,7 +138,7 @@ func (p *Planner) applyStackChangesForDaemon(ctx context.Context, cfg manifest.C
 		if execCtx != nil && execCtx.Stacks[stackName] != nil {
 			// Reuse pre-computed data to avoid redundant state detection
 			log := logger.FromContext(ctx)
-			log.Info("apply_stack_reuse_cache", "daemon", daemonName, "stack", stackName, "msg", "reusing execution context from plan")
+			log.Info("apply_stack_reuse_cache", "context", contextName, "stack", stackName, "msg", "reusing execution context from plan")
 			execData := execCtx.Stacks[stackName]
 			services = execData.Services
 			inline = execData.InlineEnv
@@ -149,7 +148,7 @@ func (p *Planner) applyStackChangesForDaemon(ctx context.Context, cfg manifest.C
 			var err error
 			services, err = detector.DetectAllServicesState(ctx, stackName, stack, identifier, cfg.Sops)
 			if err != nil {
-				return apperr.Wrap("planner.Apply", apperr.External, err, "failed to detect service states for stack %s/%s", daemonName, stackName)
+				return apperr.Wrap("planner.Apply", apperr.External, err, "failed to detect service states for stack %s/%s", contextName, stackName)
 			}
 			inline = detector.BuildInlineEnv(ctx, stack, cfg.Sops)
 			needsApply = NeedsApply(services)
@@ -172,10 +171,10 @@ func (p *Planner) applyStackChangesForDaemon(ctx context.Context, cfg manifest.C
 
 		// Perform compose up
 		if progress != nil {
-			progress.SetAction("docker compose up for " + daemonName + "/" + stackName)
+			progress.SetAction("docker compose up for " + contextName + "/" + stackName)
 		}
 		if _, err := client.ComposeUp(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline); err != nil {
-			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s/%s", daemonName, stackName)
+			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s/%s", contextName, stackName)
 		}
 
 		// Best-effort: ensure identifier label is present on containers

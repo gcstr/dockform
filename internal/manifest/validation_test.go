@@ -13,8 +13,9 @@ import (
 func TestNormalize_DefaultsAndFiles(t *testing.T) {
 	base := t.TempDir()
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"default": {Identifier: "id"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"default":  {},
 		},
 		Stacks: map[string]Stack{
 			"default/web": {
@@ -26,11 +27,8 @@ func TestNormalize_DefaultsAndFiles(t *testing.T) {
 	if err := cfg.normalizeAndValidate(base); err != nil {
 		t.Fatalf("normalizeAndValidate: %v", err)
 	}
-	daemon := cfg.Daemons["default"]
-	// Context defaults to daemon name when not specified
-	if daemon.Context != "default" {
-		t.Fatalf("expected daemon.context to default to daemon name 'default', got %q", daemon.Context)
-	}
+	_ = cfg.Contexts["default"] // context exists
+	// In new schema, context name IS the Docker context
 	app := cfg.Stacks["default/web"]
 	wantRoot := filepath.Clean(filepath.Join(base, "app"))
 	if app.Root != wantRoot {
@@ -45,8 +43,9 @@ func TestNormalize_DefaultsAndFiles(t *testing.T) {
 
 func TestNormalize_InvalidStackKey(t *testing.T) {
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"default": {Identifier: "x"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"default":  {},
 		},
 		Stacks: map[string]Stack{"Bad Name": {Root: "/tmp"}},
 	}
@@ -59,7 +58,8 @@ func TestNormalize_InvalidStackKey(t *testing.T) {
 
 func TestNormalize_MissingIdentifier(t *testing.T) {
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
 			"default": {}, // Missing identifier
 		},
 		Stacks: map[string]Stack{"default/ok": {Root: "/tmp"}},
@@ -74,8 +74,9 @@ func TestNormalize_MissingIdentifier(t *testing.T) {
 func TestNormalize_InlineEnvLastWins(t *testing.T) {
 	base := t.TempDir()
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"default": {Identifier: "id"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"default":  {},
 		},
 		Stacks: map[string]Stack{
 			"default/web": {Root: "app", Environment: &Environment{Inline: []string{"FOO=A", "BAR=2", "BAZ=3"}}},
@@ -95,8 +96,9 @@ func TestNormalize_SopsSecretsValidation(t *testing.T) {
 	base := t.TempDir()
 	// valid case - SOPS secrets at stack level
 	cfg := Config{
-		Daemons: map[string]DaemonConfig{
-			"default": {Identifier: "id"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"default":  {},
 		},
 		Stacks: map[string]Stack{
 			"default/web": {Root: "app", SopsSecrets: []string{"secrets.env"}},
@@ -108,8 +110,9 @@ func TestNormalize_SopsSecretsValidation(t *testing.T) {
 
 	// invalid extension
 	cfg2 := Config{
-		Daemons: map[string]DaemonConfig{
-			"default": {Identifier: "id"},
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"default":  {},
 		},
 		Stacks: map[string]Stack{
 			"default/web": {Root: "app", SopsSecrets: []string{"secrets.txt"}},
@@ -219,8 +222,9 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 		}
 
 		cfg := Config{
-			Daemons: map[string]DaemonConfig{
-				"default": {Identifier: "id"},
+			Identifier: "test",
+		Contexts: map[string]ContextConfig{
+				"default":  {},
 			},
 			Stacks: map[string]Stack{
 				"default/web": {Root: "app"}, // No Files specified, should auto-detect
@@ -255,8 +259,9 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 		}
 
 		cfg := Config{
-			Daemons: map[string]DaemonConfig{
-				"default": {Identifier: "id"},
+			Identifier: "test",
+		Contexts: map[string]ContextConfig{
+				"default":  {},
 			},
 			Stacks: map[string]Stack{
 				"default/web": {Root: "app"}, // No Files specified, should auto-detect
@@ -581,19 +586,19 @@ func TestGetStacksForDaemon(t *testing.T) {
 		},
 	}
 
-	defaultStacks := cfg.GetStacksForDaemon("default")
+	defaultStacks := cfg.GetStacksForContext("default")
 	if len(defaultStacks) != 2 {
-		t.Fatalf("expected 2 stacks for default daemon, got %d", len(defaultStacks))
+		t.Fatalf("expected 2 stacks for default context, got %d", len(defaultStacks))
 	}
 
-	hetznerStacks := cfg.GetStacksForDaemon("hetzner")
+	hetznerStacks := cfg.GetStacksForContext("hetzner")
 	if len(hetznerStacks) != 1 {
-		t.Fatalf("expected 1 stack for hetzner daemon, got %d", len(hetznerStacks))
+		t.Fatalf("expected 1 stack for hetzner context, got %d", len(hetznerStacks))
 	}
 
-	nonexistentStacks := cfg.GetStacksForDaemon("nonexistent")
+	nonexistentStacks := cfg.GetStacksForContext("nonexistent")
 	if len(nonexistentStacks) != 0 {
-		t.Fatalf("expected 0 stacks for nonexistent daemon, got %d", len(nonexistentStacks))
+		t.Fatalf("expected 0 stacks for nonexistent context, got %d", len(nonexistentStacks))
 	}
 }
 

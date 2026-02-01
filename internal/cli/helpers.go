@@ -28,10 +28,10 @@ type CLIContext struct {
 	Planner *planner.Planner
 }
 
-// GetDefaultClient returns a Docker client for the first daemon (for single-daemon operations).
+// GetDefaultClient returns a Docker client for the first context (for single-context operations).
 func (ctx *CLIContext) GetDefaultClient() *dockercli.Client {
-	for _, daemon := range ctx.Config.Daemons {
-		return ctx.Factory.GetClient(daemon.Context, daemon.Identifier)
+	for name := range ctx.Config.Contexts {
+		return ctx.Factory.GetClient(name, ctx.Config.Identifier)
 	}
 	return ctx.Factory.GetClient("", "")
 }
@@ -190,11 +190,11 @@ func CreateClientFactory() *dockercli.DefaultClientFactory {
 	return dockercli.NewClientFactory()
 }
 
-// CreateDockerClient creates a Docker client for the first daemon in the config.
-// Deprecated: Use CreateClientFactory for multi-daemon support.
+// CreateDockerClient creates a Docker client for the first context in the config.
+// Deprecated: Use CreateClientFactory for multi-context support.
 func CreateDockerClient(cfg *manifest.Config) *dockercli.Client {
-	for _, daemon := range cfg.Daemons {
-		return dockercli.New(daemon.Context).WithIdentifier(daemon.Identifier)
+	for name := range cfg.Contexts {
+		return dockercli.New(name).WithIdentifier(cfg.Identifier)
 	}
 	return dockercli.New("").WithIdentifier("")
 }

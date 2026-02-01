@@ -13,24 +13,24 @@ import (
 )
 
 // Validate performs comprehensive validation of the user config and environment.
-// For multi-daemon configs, it validates each daemon's context and all stacks.
+// For multi-context configs, it validates each context's context and all stacks.
 func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.DefaultClientFactory) error {
-	// 1) Validate each daemon's Docker context is reachable
-	for daemonName, daemon := range cfg.Daemons {
-		client := factory.GetClient(daemon.Context, daemon.Identifier)
+	// 1) Validate each context's Docker context is reachable
+	for contextName := range cfg.Contexts {
+		client := factory.GetClient(contextName, cfg.Identifier)
 		if err := client.CheckDaemon(ctx); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return apperr.Wrap("validator.Validate", apperr.Unavailable, err, "daemon %s (context=%s)", daemonName, daemon.Context)
+			return apperr.Wrap("validator.Validate", apperr.Unavailable, err, "context %s", contextName)
 		}
+	}
 
-		// Validate identifier format
-		if daemon.Identifier != "" {
-			validIdent := regexp.MustCompile(`^[A-Za-z0-9-]+$`)
-			if !validIdent.MatchString(daemon.Identifier) {
-				return apperr.New("validator.Validate", apperr.InvalidInput, "daemon %s identifier: must match [A-Za-z0-9-]+", daemonName)
-			}
+	// Validate identifier format (project-wide)
+	if cfg.Identifier != "" {
+		validIdent := regexp.MustCompile(`^[A-Za-z0-9-]+$`)
+		if !validIdent.MatchString(cfg.Identifier) {
+			return apperr.New("validator.Validate", apperr.InvalidInput, "identifier: must match [A-Za-z0-9-]+")
 		}
 	}
 
@@ -75,17 +75,17 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 
 	// 4) Validate all stacks (discovered + explicit)
 	for stackKey, stack := range allStacks {
-		daemonName, stackName, err := manifest.ParseStackKey(stackKey)
+		contextName, stackName, err := manifest.ParseStackKey(stackKey)
 		if err != nil {
 			return apperr.Wrap("validator.Validate", apperr.InvalidInput, err, "invalid stack key %s", stackKey)
 		}
 
-		// Get daemon config and client
-		daemon, ok := cfg.Daemons[daemonName]
+		// Get context config and client
+		_, ok := cfg.Contexts[contextName]
 		if !ok {
-			return apperr.New("validator.Validate", apperr.InvalidInput, "stack %s references unknown daemon %s", stackKey, daemonName)
+			return apperr.New("validator.Validate", apperr.InvalidInput, "stack %s references unknown context %s", stackKey, contextName)
 		}
-		client := factory.GetClient(daemon.Context, daemon.Identifier)
+		client := factory.GetClient(contextName, cfg.Identifier)
 
 		// Root must exist
 		if stack.Root != "" {
@@ -166,33 +166,27 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 	return nil
 }
 
-// ValidateDaemon validates a single daemon's configuration.
-// This is useful for targeted validation when using --daemon flag.
-func ValidateDaemon(ctx context.Context, cfg manifest.Config, daemonName string, client *dockercli.Client) error {
-	daemon, ok := cfg.Daemons[daemonName]
+// ValidateContext validates a single context's configuration.
+// This is useful for targeted validation when using --context flag.
+func ValidateContext(ctx context.Context, cfg manifest.Config, contextName string, client *dockercli.Client) error {
+	_, ok := cfg.Contexts[contextName]
 	if !ok {
-		return apperr.New("validator.ValidateDaemon", apperr.InvalidInput, "unknown daemon: %s", daemonName)
+		return apperr.New("validator.ValidateContext", apperr.InvalidInput, "unknown context: %s", contextName)
 	}
 
-	// Check daemon is reachable
+	// Check context is reachable
 	if err := client.CheckDaemon(ctx); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return apperr.Wrap("validator.ValidateDaemon", apperr.Unavailable, err, "daemon %s (context=%s)", daemonName, daemon.Context)
+		return apperr.Wrap("validator.ValidateContext", apperr.Unavailable, err, "context %s", contextName)
 	}
 
-	// Validate identifier format
-	if daemon.Identifier != "" {
-		validIdent := regexp.MustCompile(`^[A-Za-z0-9-]+$`)
-		if !validIdent.MatchString(daemon.Identifier) {
-			return apperr.New("validator.ValidateDaemon", apperr.InvalidInput, "daemon %s identifier: must match [A-Za-z0-9-]+", daemonName)
-		}
-	}
+	// Identifier validation is done at project level, not per-context
 
-	// Validate stacks for this daemon
-	for stackName, stack := range cfg.GetStacksForDaemon(daemonName) {
-		stackKey := manifest.MakeStackKey(daemonName, stackName)
+	// Validate stacks for this context
+	for stackName, stack := range cfg.GetStacksForContext(contextName) {
+		stackKey := manifest.MakeStackKey(contextName, stackName)
 
 		// Root must exist
 		if stack.Root != "" {

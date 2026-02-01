@@ -12,8 +12,8 @@ type ClientFactory interface {
 	// The identifier is used to scope resource discovery.
 	GetClient(contextName, identifier string) *Client
 
-	// GetClientForDaemon returns a Docker client configured for the specified daemon.
-	GetClientForDaemon(daemonName string, cfg *manifest.Config) *Client
+	// GetClientForContext returns a Docker client configured for the specified context.
+	GetClientForContext(contextName string, cfg *manifest.Config) *Client
 }
 
 // DefaultClientFactory is the standard implementation of ClientFactory.
@@ -62,14 +62,15 @@ func (f *DefaultClientFactory) GetClient(contextName, identifier string) *Client
 	return client
 }
 
-// GetClientForDaemon returns a Docker client configured for the specified daemon.
-func (f *DefaultClientFactory) GetClientForDaemon(daemonName string, cfg *manifest.Config) *Client {
-	daemon, ok := cfg.Daemons[daemonName]
+// GetClientForContext returns a Docker client configured for the specified context.
+func (f *DefaultClientFactory) GetClientForContext(contextName string, cfg *manifest.Config) *Client {
+	_, ok := cfg.Contexts[contextName]
 	if !ok {
-		// Fallback: return a client with daemon name as context (shouldn't happen in normal use)
-		return f.GetClient(daemonName, daemonName)
+		// Fallback: return a client with context name (shouldn't happen in normal use)
+		return f.GetClient(contextName, cfg.Identifier)
 	}
-	return f.GetClient(daemon.Context, daemon.Identifier)
+	// In the new schema, context name IS the Docker context, and identifier is project-wide
+	return f.GetClient(contextName, cfg.Identifier)
 }
 
 // GetAllClients returns all cached clients. Useful for cleanup or bulk operations.

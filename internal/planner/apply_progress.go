@@ -12,7 +12,7 @@ import (
 type ProgressEstimator struct {
 	docker   DockerClient
 	progress ProgressReporter
-	execCtx  *DaemonExecutionContext
+	execCtx  *ContextExecutionContext
 }
 
 // NewProgressEstimator creates a new progress estimator.
@@ -26,7 +26,7 @@ func NewProgressEstimatorWithClient(client DockerClient, progress ProgressReport
 }
 
 // WithExecutionContext sets the execution context for reusing pre-computed data.
-func (pe *ProgressEstimator) WithExecutionContext(execCtx *DaemonExecutionContext) *ProgressEstimator {
+func (pe *ProgressEstimator) WithExecutionContext(execCtx *ContextExecutionContext) *ProgressEstimator {
 	pe.execCtx = execCtx
 	return pe
 }
@@ -39,9 +39,9 @@ func (pe *ProgressEstimator) EstimateAndStartProgress(ctx context.Context, cfg m
 	return nil
 }
 
-// EstimateAndStartProgressForDaemon is a no-op for spinner-based progress tracking.
-// This is the daemon-specific version for multi-daemon apply.
-func (pe *ProgressEstimator) EstimateAndStartProgressForDaemon(ctx context.Context, cfg manifest.Config, daemonName string, identifier string) error {
+// EstimateAndStartProgressForContext is a no-op for spinner-based progress tracking.
+// This is the context-specific version for multi-context apply.
+func (pe *ProgressEstimator) EstimateAndStartProgressForContext(ctx context.Context, cfg manifest.Config, contextName string, identifier string) error {
 	// Spinner doesn't need total count estimation
 	return nil
 }

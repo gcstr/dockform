@@ -36,11 +36,8 @@ regardless of what's in your current configuration file.`,
 			identifier := common.GetFirstIdentifier(ctx.Config)
 			if override := os.Getenv("DOCKFORM_RUN_ID"); override != "" {
 				identifier = override
-				// Update all daemons to use the override identifier
-				for name, daemon := range ctx.Config.Daemons {
-					daemon.Identifier = override
-					ctx.Config.Daemons[name] = daemon
-				}
+				// Update project identifier to use the override
+				ctx.Config.Identifier = override
 			}
 
 			// Build destroy plan using the planner

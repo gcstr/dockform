@@ -87,7 +87,7 @@ func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth
 		return "", false, nil
 	}
 
-	// Build labels by reading daemon names from each file
+	// Build labels by reading context names from each file
 	labels := make([]string, 0, len(files))
 	for _, p := range files {
 		lb := readDaemonContextLabels(p)
@@ -162,23 +162,22 @@ func findManifestFiles(root string, maxDepth int) ([]string, error) {
 	return out, nil
 }
 
-// readDaemonContextLabels reads daemon names from a manifest file for display.
+// readDaemonContextLabels reads context names from a manifest file for display.
 func readDaemonContextLabels(path string) string {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
 	var tmp struct {
-		Daemons map[string]struct {
-			Context string `yaml:"context"`
-		} `yaml:"daemons"`
+		Contexts map[string]struct {
+		} `yaml:"contexts"`
 	}
 	if yerr := yaml.Unmarshal([]byte(b), &tmp); yerr != nil {
 		return ""
 	}
-	// Return comma-separated list of daemon names
+	// Return comma-separated list of context names
 	var names []string
-	for name := range tmp.Daemons {
+	for name := range tmp.Contexts {
 		names = append(names, name)
 	}
 	if len(names) == 0 {
@@ -192,24 +191,24 @@ func readDaemonContextLabels(path string) string {
 
 // AddTargetFlags adds deployment targeting flags to a command.
 func AddTargetFlags(cmd *cobra.Command) {
-	cmd.Flags().StringSlice("daemon", nil, "Target specific daemon(s)")
-	cmd.Flags().StringSlice("stack", nil, "Target specific stack(s) in daemon/stack format")
+	cmd.Flags().StringSlice("context", nil, "Target specific context(s)")
+	cmd.Flags().StringSlice("stack", nil, "Target specific stack(s) in context/stack format")
 	cmd.Flags().String("deployment", "", "Target a named deployment group")
 }
 
 // ReadTargetOptions reads targeting flags from a command.
 func ReadTargetOptions(cmd *cobra.Command) TargetOptions {
-	daemons, _ := cmd.Flags().GetStringSlice("daemon")
+	contexts, _ := cmd.Flags().GetStringSlice("context")
 	stacks, _ := cmd.Flags().GetStringSlice("stack")
 	deployment, _ := cmd.Flags().GetString("deployment")
 	return TargetOptions{
-		Daemons:    daemons,
+		Contexts:   contexts,
 		Stacks:     stacks,
 		Deployment: deployment,
 	}
 }
 
-// CreateClientFactory creates a Docker client factory for multi-daemon support.
+// CreateClientFactory creates a Docker client factory for multi-context support.
 func CreateClientFactory() *dockercli.DefaultClientFactory {
 	return dockercli.NewClientFactory()
 }
@@ -224,51 +223,41 @@ func CreatePlannerWithFactory(factory *dockercli.DefaultClientFactory, pr ui.Pri
 	return planner.NewWithFactory(factory).WithPrinter(pr)
 }
 
-// DisplayDaemonInfo shows the daemon configuration information
+// DisplayDaemonInfo shows the context configuration information
 func DisplayDaemonInfo(pr ui.Printer, cfg *manifest.Config) {
-	if len(cfg.Daemons) == 0 {
-		pr.Plain("\n│ No daemons configured")
+	if len(cfg.Contexts) == 0 {
+		pr.Plain("\n│ No contexts configured")
 		return
 	}
 
 	var lines []string
 	lines = append(lines, "")
-	for name, daemon := range cfg.Daemons {
-		ctxName := strings.TrimSpace(daemon.Context)
-		if ctxName == "" {
-			ctxName = "default"
-		}
-		lines = append(lines, fmt.Sprintf("│ Daemon: %s", ui.Italic(name)))
-		lines = append(lines, fmt.Sprintf("│   Context: %s", ui.Italic(ctxName)))
-		if daemon.Identifier != "" {
-			lines = append(lines, fmt.Sprintf("│   Identifier: %s", ui.Italic(daemon.Identifier)))
-		}
+	for name := range cfg.Contexts {
+		lines = append(lines, fmt.Sprintf("│ Context: %s", ui.Italic(name)))
+	}
+	if cfg.Identifier != "" {
+		lines = append(lines, fmt.Sprintf("│ Identifier: %s", ui.Italic(cfg.Identifier)))
 	}
 	pr.Plain("%s", strings.Join(lines, "\n"))
 }
 
-// GetFirstIdentifier returns the identifier of the first daemon (for destroy confirmation).
+// GetFirstIdentifier returns the project identifier (for destroy confirmation).
 func GetFirstIdentifier(cfg *manifest.Config) string {
-	for _, daemon := range cfg.Daemons {
-		if daemon.Identifier != "" {
-			return daemon.Identifier
-		}
-	}
-	return ""
+	return cfg.Identifier
 }
 
-// GetFirstDaemon returns the name and config of the first daemon.
-func GetFirstDaemon(cfg *manifest.Config) (string, manifest.DaemonConfig) {
-	for name, daemon := range cfg.Daemons {
-		return name, daemon
+// GetFirstDaemon returns the name and config of the first context.
+func GetFirstDaemon(cfg *manifest.Config) (string, manifest.ContextConfig) {
+	for name, context := range cfg.Contexts {
+		return name, context
 	}
-	return "", manifest.DaemonConfig{}
+	return "", manifest.ContextConfig{}
 }
 
-// GetDefaultClient returns a Docker client for the first daemon (for single-daemon operations).
+// GetDefaultClient returns a Docker client for the first context (for single-context operations).
 func (ctx *CLIContext) GetDefaultClient() *dockercli.Client {
-	_, daemon := GetFirstDaemon(ctx.Config)
-	return ctx.Factory.GetClient(daemon.Context, daemon.Identifier)
+	name, _ := GetFirstDaemon(ctx.Config)
+	return ctx.Factory.GetClient(name, ctx.Config.Identifier)
 }
 
 // SpinnerOperation runs an operation with a spinner, automatically handling start/stop.
@@ -326,10 +315,10 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 		}
 	}
 
-	// Display daemon info
+	// Display context info
 	DisplayDaemonInfo(pr, cfg)
 
-	// Create client factory for multi-daemon support
+	// Create client factory for multi-context support
 	factory := CreateClientFactory()
 
 	// Validate in spinner

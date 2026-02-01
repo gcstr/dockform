@@ -29,13 +29,13 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 
 	var mu sync.Mutex
 
-	err := p.ExecuteAcrossDaemons(ctx, &cfg, func(ctx context.Context, daemonName string) error {
-		client := p.getClientForDaemon(daemonName, &cfg)
+	err := p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
+		client := p.getClientForContext(contextName, &cfg)
 		if client == nil {
-			return apperr.New("planner.BuildDestroyPlan", apperr.Precondition, "docker client not available for daemon %s", daemonName)
+			return apperr.New("planner.BuildDestroyPlan", apperr.Precondition, "docker client not available for context %s", contextName)
 		}
 
-		localRP, err := p.buildDestroyPlanForDaemon(ctx, client, daemonName, allFilesets, volumeToFileset)
+		localRP, err := p.buildDestroyPlanForContext(ctx, client, contextName, allFilesets, volumeToFileset)
 		if err != nil {
 			return err
 		}
@@ -52,8 +52,8 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 	return &Plan{Resources: rp}, nil
 }
 
-// buildDestroyPlanForDaemon discovers labeled resources on a single daemon.
-func (p *Planner) buildDestroyPlanForDaemon(ctx context.Context, client DockerClient, daemonName string, allFilesets map[string]manifest.FilesetSpec, volumeToFileset map[string]string) (*ResourcePlan, error) {
+// buildDestroyPlanForContext discovers labeled resources on a single context.
+func (p *Planner) buildDestroyPlanForContext(ctx context.Context, client DockerClient, contextName string, allFilesets map[string]manifest.FilesetSpec, volumeToFileset map[string]string) (*ResourcePlan, error) {
 	rp := &ResourcePlan{
 		Stacks:   make(map[string][]Resource),
 		Filesets: make(map[string][]Resource),
@@ -62,7 +62,7 @@ func (p *Planner) buildDestroyPlanForDaemon(ctx context.Context, client DockerCl
 	// Discover all labeled containers and group by stack
 	containers, err := client.ListComposeContainersAll(ctx)
 	if err != nil {
-		return nil, apperr.Wrap("planner.BuildDestroyPlan", apperr.External, err, "daemon %s: list containers", daemonName)
+		return nil, apperr.Wrap("planner.BuildDestroyPlan", apperr.External, err, "context %s: list containers", contextName)
 	}
 
 	stackServices := make(map[string]map[string]struct{})
@@ -79,7 +79,7 @@ func (p *Planner) buildDestroyPlanForDaemon(ctx context.Context, client DockerCl
 	}
 
 	for stack, services := range stackServices {
-		key := manifest.MakeStackKey(daemonName, stack)
+		key := manifest.MakeStackKey(contextName, stack)
 		rp.Stacks[key] = []Resource{}
 		for svc := range services {
 			res := NewResource(ResourceService, svc, ActionDelete, "will be destroyed")
@@ -90,7 +90,7 @@ func (p *Planner) buildDestroyPlanForDaemon(ctx context.Context, client DockerCl
 	// Discover all labeled networks
 	networks, err := client.ListNetworks(ctx)
 	if err != nil {
-		return nil, apperr.Wrap("planner.BuildDestroyPlan", apperr.External, err, "daemon %s: list networks", daemonName)
+		return nil, apperr.Wrap("planner.BuildDestroyPlan", apperr.External, err, "context %s: list networks", contextName)
 	}
 	for _, network := range networks {
 		res := NewResource(ResourceNetwork, network, ActionDelete, "will be destroyed")
@@ -100,7 +100,7 @@ func (p *Planner) buildDestroyPlanForDaemon(ctx context.Context, client DockerCl
 	// Discover all labeled volumes
 	volumes, err := client.ListVolumes(ctx)
 	if err != nil {
-		return nil, apperr.Wrap("planner.BuildDestroyPlan", apperr.External, err, "daemon %s: list volumes", daemonName)
+		return nil, apperr.Wrap("planner.BuildDestroyPlan", apperr.External, err, "context %s: list volumes", contextName)
 	}
 
 	for _, volume := range volumes {
@@ -142,18 +142,18 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 
 	allFilesets := cfg.GetAllFilesets()
 
-	return p.ExecuteAcrossDaemons(ctx, &cfg, func(ctx context.Context, daemonName string) error {
-		client := p.getClientForDaemon(daemonName, &cfg)
+	return p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
+		client := p.getClientForContext(contextName, &cfg)
 		if client == nil {
-			return apperr.New("planner.Destroy", apperr.Precondition, "docker client not available for daemon %s", daemonName)
+			return apperr.New("planner.Destroy", apperr.Precondition, "docker client not available for context %s", contextName)
 		}
 
-		return p.destroyDaemon(ctx, client, daemonName, allFilesets)
+		return p.destroyContext(ctx, client, contextName, allFilesets)
 	})
 }
 
-// destroyDaemon executes destruction for a single daemon.
-func (p *Planner) destroyDaemon(ctx context.Context, client DockerClient, daemonName string, allFilesets map[string]manifest.FilesetSpec) error {
+// destroyContext executes destruction for a single context.
+func (p *Planner) destroyContext(ctx context.Context, client DockerClient, contextName string, allFilesets map[string]manifest.FilesetSpec) error {
 	// Step 1: Remove containers
 	allContainers, _ := client.ListComposeContainersAll(ctx)
 	byProjSvc := make(map[string]map[string][]string)
@@ -161,7 +161,7 @@ func (p *Planner) destroyDaemon(ctx context.Context, client DockerClient, daemon
 		if it.Project == "" {
 			// Orphaned container
 			if p.spinner != nil {
-				p.spinner.SetLabel(fmt.Sprintf("removing container %s on %s", it.Name, daemonName))
+				p.spinner.SetLabel(fmt.Sprintf("removing container %s on %s", it.Name, contextName))
 			}
 			_ = client.RemoveContainer(ctx, it.Name, true)
 			continue
@@ -175,7 +175,7 @@ func (p *Planner) destroyDaemon(ctx context.Context, client DockerClient, daemon
 	for stackName, services := range byProjSvc {
 		for svcName, containerNames := range services {
 			if p.spinner != nil {
-				p.spinner.SetLabel(fmt.Sprintf("removing service %s/%s on %s", stackName, svcName, daemonName))
+				p.spinner.SetLabel(fmt.Sprintf("removing service %s/%s on %s", stackName, svcName, contextName))
 			}
 			for _, name := range containerNames {
 				_ = client.RemoveContainer(ctx, name, true)
@@ -187,7 +187,7 @@ func (p *Planner) destroyDaemon(ctx context.Context, client DockerClient, daemon
 	networks, _ := client.ListNetworks(ctx)
 	for _, network := range networks {
 		if p.spinner != nil {
-			p.spinner.SetLabel(fmt.Sprintf("removing network %s on %s", network, daemonName))
+			p.spinner.SetLabel(fmt.Sprintf("removing network %s on %s", network, contextName))
 		}
 		_ = client.RemoveNetwork(ctx, network)
 	}
@@ -196,7 +196,7 @@ func (p *Planner) destroyDaemon(ctx context.Context, client DockerClient, daemon
 	volumes, _ := client.ListVolumes(ctx)
 	for _, volume := range volumes {
 		if p.spinner != nil {
-			p.spinner.SetLabel(fmt.Sprintf("removing volume %s on %s", volume, daemonName))
+			p.spinner.SetLabel(fmt.Sprintf("removing volume %s on %s", volume, contextName))
 		}
 		_ = client.RemoveVolume(ctx, volume)
 	}

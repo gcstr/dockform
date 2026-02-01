@@ -21,28 +21,28 @@ func (p *Planner) PruneWithPlan(ctx context.Context, cfg manifest.Config, plan *
 		return apperr.New("planner.Prune", apperr.Precondition, "docker client not configured")
 	}
 
-	return p.ExecuteAcrossDaemons(ctx, &cfg, func(ctx context.Context, daemonName string) error {
-		client := p.getClientForDaemon(daemonName, &cfg)
+	return p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
+		client := p.getClientForContext(contextName, &cfg)
 		if client == nil {
-			return apperr.New("planner.Prune", apperr.Precondition, "docker client not available for daemon %s", daemonName)
+			return apperr.New("planner.Prune", apperr.Precondition, "docker client not available for context %s", contextName)
 		}
 
-		return p.pruneDaemon(ctx, cfg, daemonName, client, plan)
+		return p.pruneContext(ctx, cfg, contextName, client, plan)
 	})
 }
 
-// pruneDaemon removes unmanaged resources for a single daemon.
-func (p *Planner) pruneDaemon(ctx context.Context, cfg manifest.Config, daemonName string, client DockerClient, plan *Plan) error {
-	daemonStacks := cfg.GetStacksForDaemon(daemonName)
-	daemonFilesets := cfg.GetFilesetsForDaemon(daemonName)
+// pruneContext removes unmanaged resources for a single context.
+func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, contextName string, client DockerClient, plan *Plan) error {
+	contextStacks := cfg.GetStacksForContext(contextName)
+	contextFilesets := cfg.GetFilesetsForContext(contextName)
 
-	// Desired services set for this daemon
+	// Desired services set for this context
 	desiredServices := map[string]struct{}{}
 
 	if plan != nil && plan.ExecutionContext != nil {
-		if daemonCtx := plan.ExecutionContext.ByDaemon[daemonName]; daemonCtx != nil {
-			for stackName, stack := range daemonStacks {
-				if execData := daemonCtx.Stacks[stackName]; execData != nil && execData.Services != nil {
+		if contextCtx := plan.ExecutionContext.ByContext[contextName]; contextCtx != nil {
+			for stackName, stack := range contextStacks {
+				if execData := contextCtx.Stacks[stackName]; execData != nil && execData.Services != nil {
 					for _, svc := range execData.Services {
 						desiredServices[svc.Name] = struct{}{}
 					}
@@ -51,12 +51,12 @@ func (p *Planner) pruneDaemon(ctx context.Context, cfg manifest.Config, daemonNa
 				}
 			}
 		} else {
-			for _, stack := range daemonStacks {
+			for _, stack := range contextStacks {
 				collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices)
 			}
 		}
 	} else {
-		for _, stack := range daemonStacks {
+		for _, stack := range contextStacks {
 			collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices)
 		}
 	}
@@ -70,9 +70,9 @@ func (p *Planner) pruneDaemon(ctx context.Context, cfg manifest.Config, daemonNa
 		}
 	}
 
-	// Remove labeled volumes not needed by any fileset on this daemon
+	// Remove labeled volumes not needed by any fileset on this context
 	desiredVolumes := map[string]struct{}{}
-	for _, fileset := range daemonFilesets {
+	for _, fileset := range contextFilesets {
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
 	}
 	if vols, err := client.ListVolumes(ctx); err == nil {

@@ -35,7 +35,7 @@ func validateBindMountsInComposeFile(stackKey string, stack Stack) error {
 	}
 
 	// Build helpful error message
-	daemon, stackName, _ := ParseStackKey(stackKey)
+	context, stackName, _ := ParseStackKey(stackKey)
 
 	var msg strings.Builder
 	msg.WriteString(fmt.Sprintf("stack %s contains bind mounts with relative paths which will not work correctly with remote Docker contexts.\n\n", stackKey))
@@ -47,15 +47,15 @@ func validateBindMountsInComposeFile(stackKey string, stack Stack) error {
 	msg.WriteString("When using remote Docker contexts, these paths would be resolved on the remote server.\n\n")
 	msg.WriteString("Solution: Use Dockform filesets for syncing local files to remote volumes.\n\n")
 	msg.WriteString("Migration steps:\n")
-	msg.WriteString(fmt.Sprintf("  1. Create a 'volumes/' directory in your stack: %s/%s/volumes/\n", daemon, stackName))
+	msg.WriteString(fmt.Sprintf("  1. Create a 'volumes/' directory in your stack: %s/%s/volumes/\n", context, stackName))
 	msg.WriteString("  2. Move your bind mount directories into volumes/\n")
-	msg.WriteString(fmt.Sprintf("     Example: ./config → %s/%s/volumes/config/\n", daemon, stackName))
+	msg.WriteString(fmt.Sprintf("     Example: ./config → %s/%s/volumes/config/\n", context, stackName))
 	msg.WriteString("  3. Change compose volumes to use named volumes:\n")
 	msg.WriteString("     - Old: ./config:/app/config\n")
 	msg.WriteString(fmt.Sprintf("     - New: %s_config:/app/config\n", stackName))
 	msg.WriteString("  4. Declare the volume in dockform.yaml:\n")
-	msg.WriteString("     daemons:\n")
-	msg.WriteString(fmt.Sprintf("       %s:\n", daemon))
+	msg.WriteString("     contexts:\n")
+	msg.WriteString(fmt.Sprintf("       %s:\n", context))
 	msg.WriteString("         volumes:\n")
 	msg.WriteString(fmt.Sprintf("           %s_config: {}\n\n", stackName))
 	msg.WriteString("Dockform will auto-discover the fileset and sync files correctly to the remote server.\n")

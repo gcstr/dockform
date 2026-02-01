@@ -27,8 +27,8 @@ func findDefaultComposeFile(dir string) string {
 
 func (c *Config) normalizeAndValidate(baseDir string) error {
 	// Initialize maps if nil
-	if c.Daemons == nil {
-		c.Daemons = map[string]DaemonConfig{}
+	if c.Contexts == nil {
+		c.Contexts = map[string]ContextConfig{}
 	}
 	if c.Deployments == nil {
 		c.Deployments = map[string]DeploymentConfig{}
@@ -43,59 +43,53 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		c.DiscoveredFilesets = map[string]FilesetSpec{}
 	}
 
-	// Require at least one daemon
-	if len(c.Daemons) == 0 {
-		return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "at least one daemon must be defined under 'daemons:'")
+	// Require identifier
+	if strings.TrimSpace(c.Identifier) == "" {
+		return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "identifier is required at the top level of the manifest")
 	}
 
-	// Validate daemon configurations
-	for daemonName, daemon := range c.Daemons {
-		if !daemonKeyRegex.MatchString(daemonName) {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid daemon key %q: must match ^[a-z0-9_-]+$", daemonName)
-		}
+	// Require at least one context
+	if len(c.Contexts) == 0 {
+		return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "at least one context must be defined under 'contexts:'")
+	}
 
-		// Default context to daemon name if not specified
-		if daemon.Context == "" {
-			daemon.Context = daemonName
-			c.Daemons[daemonName] = daemon
-		}
-
-		// Require identifier
-		if strings.TrimSpace(daemon.Identifier) == "" {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "daemon %s: identifier is required", daemonName)
+	// Validate context configurations
+	for contextName := range c.Contexts {
+		if !contextKeyRegex.MatchString(contextName) {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid context key %q: must match ^[a-z0-9_-]+$", contextName)
 		}
 	}
 
 	// Validate deployment groups
 	for deployName, deploy := range c.Deployments {
-		// Validate referenced daemons exist
-		for _, dName := range deploy.Daemons {
-			if _, ok := c.Daemons[dName]; !ok {
-				return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "deployment %s: references unknown daemon %q", deployName, dName)
+		// Validate referenced contexts exist
+		for _, ctxName := range deploy.Contexts {
+			if _, ok := c.Contexts[ctxName]; !ok {
+				return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "deployment %s: references unknown context %q", deployName, ctxName)
 			}
 		}
-		// Validate referenced stacks format (daemon/stack)
+		// Validate referenced stacks format (context/stack)
 		for _, stackKey := range deploy.Stacks {
-			daemon, _, err := ParseStackKey(stackKey)
+			context, _, err := ParseStackKey(stackKey)
 			if err != nil {
 				return apperr.Wrap("manifest.normalizeAndValidate", apperr.InvalidInput, err, "deployment %s: invalid stack reference", deployName)
 			}
-			if _, ok := c.Daemons[daemon]; !ok {
-				return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "deployment %s: stack %q references unknown daemon %q", deployName, stackKey, daemon)
+			if _, ok := c.Contexts[context]; !ok {
+				return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "deployment %s: stack %q references unknown context %q", deployName, stackKey, context)
 			}
 		}
 	}
 
 	// Validate and normalize explicit stack overrides
 	for stackKey, stack := range c.Stacks {
-		daemon, stackName, err := ParseStackKey(stackKey)
+		context, stackName, err := ParseStackKey(stackKey)
 		if err != nil {
 			return apperr.Wrap("manifest.normalizeAndValidate", apperr.InvalidInput, err, "invalid stack key")
 		}
 
-		// Validate daemon exists
-		if _, ok := c.Daemons[daemon]; !ok {
-			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "stack %s: references unknown daemon %q", stackKey, daemon)
+		// Validate context exists
+		if _, ok := c.Contexts[context]; !ok {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "stack %s: references unknown context %q", stackKey, context)
 		}
 
 		// Validate stack name format
@@ -103,22 +97,22 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid stack name %q in key %q: must match ^[a-z0-9_.-]+$", stackName, stackKey)
 		}
 
-		// Set the daemon reference
-		stack.Daemon = daemon
+		// Set the context reference
+		stack.Context = context
 		c.Stacks[stackKey] = stack
 	}
 
 	// Normalize all stacks (discovered + explicit merged)
 	allStacks := c.GetAllStacks()
 	for stackKey, stack := range allStacks {
-		daemon, _, err := ParseStackKey(stackKey)
+		context, _, err := ParseStackKey(stackKey)
 		if err != nil {
 			continue // Skip invalid keys (shouldn't happen)
 		}
 
-		// Ensure daemon is set
-		if stack.Daemon == "" {
-			stack.Daemon = daemon
+		// Ensure context is set
+		if stack.Context == "" {
+			stack.Context = context
 		}
 
 		// Resolve root if not absolute

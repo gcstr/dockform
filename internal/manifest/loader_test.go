@@ -106,11 +106,8 @@ func TestLoadWithWarnings_SetsBaseDirAndReportsMissing(t *testing.T) {
 	if cfg.BaseDir != dir {
 		t.Fatalf("BaseDir mismatch: %q", cfg.BaseDir)
 	}
-	daemon := cfg.Daemons["default"]
-	// Empty context (from unset ${CTX}) defaults to daemon name during normalization
-	if daemon.Context != "default" {
-		t.Fatalf("expected daemon.context to default to 'default', got %q", daemon.Context)
-	}
+	_ = cfg.Contexts["default"] // context exists
+	// In new schema, context name IS the Docker context, no separate field
 	stack := cfg.Stacks["default/web"]
 	expectedRoot := filepath.Clean(filepath.Join(dir, "website"))
 	if stack.Root != expectedRoot {

@@ -8,41 +8,43 @@ import (
 )
 
 // Config is the root desired-state structure parsed from YAML.
-// This is the new multi-daemon schema with convention-over-configuration support.
+// This is the new multi-context schema with convention-over-configuration support.
 type Config struct {
+	// Project-wide identifier for resource labeling (io.dockform.identifier)
+	Identifier string `yaml:"identifier" validate:"required"`
+
 	// Global settings
 	Sops        *SopsConfig       `yaml:"sops"`
 	Conventions ConventionsConfig `yaml:"conventions"`
 
-	// Multi-daemon support
-	Daemons     map[string]DaemonConfig     `yaml:"daemons"`
+	// Multi-context support (maps context name to config)
+	Contexts    map[string]ContextConfig    `yaml:"contexts" validate:"required"`
 	Deployments map[string]DeploymentConfig `yaml:"deployments"`
 
 	// Explicit overrides (optional - conventions discover most of this)
-	// Stack keys are in "daemon/stack" format (e.g., "hetzner-one/traefik")
+	// Stack keys are in "context/stack" format (e.g., "hetzner-one/traefik")
 	Stacks map[string]Stack `yaml:"stacks" validate:"dive"`
 
 	// Computed
 	BaseDir string `yaml:"-"`
 
 	// Discovered resources (populated by convention discovery)
-	DiscoveredStacks   map[string]Stack       `yaml:"-"` // daemon/stack -> Stack
-	DiscoveredFilesets map[string]FilesetSpec `yaml:"-"` // daemon/stack/fileset -> FilesetSpec
+	DiscoveredStacks   map[string]Stack       `yaml:"-"` // context/stack -> Stack
+	DiscoveredFilesets map[string]FilesetSpec `yaml:"-"` // context/stack/fileset -> FilesetSpec
 }
 
-// DaemonConfig defines a Docker daemon/context to manage.
-type DaemonConfig struct {
-	Context    string                          `yaml:"context"`    // Docker context name
-	Identifier string                          `yaml:"identifier"` // Resource label (io.dockform.identifier)
-	Volumes    map[string]TopLevelResourceSpec `yaml:"volumes"`    // Explicit volumes to create
-	Networks   map[string]NetworkSpec          `yaml:"networks"`   // Explicit networks to create
+// ContextConfig defines a Docker context to manage.
+// The key in the Contexts map IS the docker context name.
+type ContextConfig struct {
+	Volumes  map[string]TopLevelResourceSpec `yaml:"volumes"`  // Explicit volumes to create
+	Networks map[string]NetworkSpec          `yaml:"networks"` // Explicit networks to create
 }
 
-// DeploymentConfig defines a named deployment group for targeting multiple daemons/stacks.
+// DeploymentConfig defines a named deployment group for targeting multiple contexts/stacks.
 type DeploymentConfig struct {
 	Description string   `yaml:"description"`
-	Daemons     []string `yaml:"daemons"` // Target all stacks in these daemons
-	Stacks      []string `yaml:"stacks"`  // Target specific stacks (daemon/stack format)
+	Contexts    []string `yaml:"contexts"` // Target all stacks in these contexts
+	Stacks      []string `yaml:"stacks"`   // Target specific stacks (context/stack format)
 }
 
 // ConventionsConfig controls convention-over-configuration behavior.
@@ -105,7 +107,7 @@ type Stack struct {
 	Project     *Project     `yaml:"project"` // Compose project name override
 
 	// Computed fields
-	Daemon      string   `yaml:"-"` // Which daemon this belongs to (from key prefix)
+	Context     string   `yaml:"-"` // Which context this belongs to (from key prefix)
 	EnvInline   []string `yaml:"-"` // Merged inline env vars
 	SopsSecrets []string `yaml:"-"` // Merged SOPS secret paths
 	RootAbs     string   `yaml:"-"` // Absolute path to stack root
@@ -187,7 +189,7 @@ type FilesetSpec struct {
 
 	// Computed fields
 	SourceAbs string `yaml:"-"`
-	Daemon    string `yaml:"-"` // Which daemon this belongs to
+	Context   string `yaml:"-"` // Which context this belongs to
 	Stack     string `yaml:"-"` // Which stack this belongs to (for restart discovery)
 }
 
@@ -248,18 +250,18 @@ func (r *RestartTargets) UnmarshalYAML(unmarshal func(interface{}) error) error 
 }
 
 var (
-	appKeyRegex    = regexp.MustCompile(`^[a-z0-9_.-]+$`)
-	daemonKeyRegex = regexp.MustCompile(`^[a-z0-9_-]+$`)
+	appKeyRegex     = regexp.MustCompile(`^[a-z0-9_.-]+$`)
+	contextKeyRegex = regexp.MustCompile(`^[a-z0-9_-]+$`)
 )
 
-// ParseStackKey splits a "daemon/stack" key into its components.
-func ParseStackKey(key string) (daemon, stack string, err error) {
+// ParseStackKey splits a "context/stack" key into its components.
+func ParseStackKey(key string) (context, stack string, err error) {
 	parts := strings.SplitN(key, "/", 2)
 	if len(parts) != 2 {
-		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key must be in 'daemon/stack' format: %s", key)
+		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key must be in 'context/stack' format: %s", key)
 	}
 	if parts[0] == "" {
-		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key has empty daemon name: %s", key)
+		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key has empty context name: %s", key)
 	}
 	if parts[1] == "" {
 		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key has empty stack name: %s", key)
@@ -267,9 +269,9 @@ func ParseStackKey(key string) (daemon, stack string, err error) {
 	return parts[0], parts[1], nil
 }
 
-// MakeStackKey creates a "daemon/stack" key from components.
-func MakeStackKey(daemon, stack string) string {
-	return daemon + "/" + stack
+// MakeStackKey creates a "context/stack" key from components.
+func MakeStackKey(context, stack string) string {
+	return context + "/" + stack
 }
 
 // GetAllStacks returns all stacks (discovered + explicit overrides merged).
@@ -325,26 +327,26 @@ func (c *Config) GetAllFilesets() map[string]FilesetSpec {
 	return c.DiscoveredFilesets
 }
 
-// GetStacksForDaemon returns all stacks belonging to a specific daemon.
-func (c *Config) GetStacksForDaemon(daemonName string) map[string]Stack {
+// GetStacksForContext returns all stacks belonging to a specific context.
+func (c *Config) GetStacksForContext(contextName string) map[string]Stack {
 	result := make(map[string]Stack)
 	for key, stack := range c.GetAllStacks() {
-		daemon, stackName, err := ParseStackKey(key)
+		context, stackName, err := ParseStackKey(key)
 		if err != nil {
 			continue
 		}
-		if daemon == daemonName {
+		if context == contextName {
 			result[stackName] = stack
 		}
 	}
 	return result
 }
 
-// GetFilesetsForDaemon returns all filesets belonging to a specific daemon.
-func (c *Config) GetFilesetsForDaemon(daemonName string) map[string]FilesetSpec {
+// GetFilesetsForContext returns all filesets belonging to a specific context.
+func (c *Config) GetFilesetsForContext(contextName string) map[string]FilesetSpec {
 	result := make(map[string]FilesetSpec)
 	for key, fileset := range c.GetAllFilesets() {
-		if fileset.Daemon == daemonName {
+		if fileset.Context == contextName {
 			result[key] = fileset
 		}
 	}

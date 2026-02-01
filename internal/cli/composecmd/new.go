@@ -57,20 +57,19 @@ func newRenderCmd() *cobra.Command {
 			inline := detector.BuildInlineEnv(cmd.Context(), stack, cfg.Sops)
 
 			// Get docker client for the stack's daemon
-			// Stack keys are in "daemon/stack" format, or we use the first daemon
-			var contextName, identifier string
+			// Stack keys are in "context/stack" format, or we use the first context
+			var contextName string
+			identifier := cfg.Identifier
 			parts := strings.SplitN(stackName, "/", 2)
 			if len(parts) == 2 {
-				if daemon, ok := cfg.Daemons[parts[0]]; ok {
-					contextName = daemon.Context
-					identifier = daemon.Identifier
+				if _, ok := cfg.Contexts[parts[0]]; ok {
+					contextName = parts[0]
 				}
 			}
-			// Fall back to first daemon if stack key doesn't have daemon prefix
+			// Fall back to first context if stack key doesn't have context prefix
 			if contextName == "" {
-				for _, daemon := range cfg.Daemons {
-					contextName = daemon.Context
-					identifier = daemon.Identifier
+				for name := range cfg.Contexts {
+					contextName = name
 					break
 				}
 			}

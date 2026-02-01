@@ -7,12 +7,12 @@ import (
 )
 
 // Planner creates a plan comparing desired and current docker state.
-// For multi-daemon support, it uses a ClientFactory to get clients per daemon.
+// For multi-context support, it uses a ClientFactory to get clients per context.
 type Planner struct {
-	// Single docker client (for backward compatibility and single-daemon operations)
+	// Single docker client (for backward compatibility and single-context operations)
 	docker DockerClient
 
-	// Client factory for multi-daemon operations
+	// Client factory for multi-context operations
 	factory *dockercli.DefaultClientFactory
 
 	pr            ui.Printer
@@ -25,7 +25,7 @@ func New() *Planner { return &Planner{parallel: true} }
 
 func NewWithDocker(client DockerClient) *Planner { return &Planner{docker: client, parallel: true} }
 
-// NewWithFactory creates a planner using a client factory for multi-daemon support.
+// NewWithFactory creates a planner using a client factory for multi-context support.
 func NewWithFactory(factory *dockercli.DefaultClientFactory) *Planner {
 	return &Planner{factory: factory, parallel: true}
 }
@@ -49,11 +49,11 @@ func (p *Planner) WithParallel(enabled bool) *Planner {
 	return p
 }
 
-// getClientForDaemon returns the Docker client for a specific daemon.
+// getClientForContext returns the Docker client for a specific context.
 // It first checks if a factory is configured, then falls back to the single client.
-func (p *Planner) getClientForDaemon(daemonName string, cfg *manifest.Config) DockerClient {
+func (p *Planner) getClientForContext(contextName string, cfg *manifest.Config) DockerClient {
 	if p.factory != nil {
-		return p.factory.GetClientForDaemon(daemonName, cfg)
+		return p.factory.GetClientForContext(contextName, cfg)
 	}
 	// Fallback to single client for backward compatibility
 	return p.docker

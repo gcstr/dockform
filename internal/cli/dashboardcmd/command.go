@@ -59,9 +59,9 @@ func dockerContextName(cfg *manifest.Config) string {
 	if cfg == nil {
 		return ""
 	}
-	// Get context from first daemon in multi-daemon schema
-	_, daemon := common.GetFirstDaemon(cfg)
-	return strings.TrimSpace(daemon.Context)
+	// Get context from first context in multi-context schema
+	name, _ := common.GetFirstDaemon(cfg)
+	return strings.TrimSpace(name)
 }
 
 func resolveManifestPath(cmd *cobra.Command, cfg *manifest.Config) string {

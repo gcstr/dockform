@@ -24,28 +24,28 @@ func NewResourceManagerWithClient(client DockerClient, progress ProgressReporter
 	return &ResourceManager{docker: client, progress: progress}
 }
 
-// EnsureVolumesExistForDaemon creates any missing volumes for a specific daemon.
-// Volumes are derived from filesets targeting this daemon.
-func (rm *ResourceManager) EnsureVolumesExistForDaemon(ctx context.Context, cfg manifest.Config, daemonName string, labels map[string]string) (map[string]struct{}, error) {
-	log := logger.FromContext(ctx).With("component", "volume", "daemon", daemonName)
+// EnsureVolumesExistForContext creates any missing volumes for a specific context.
+// Volumes are derived from filesets targeting this context.
+func (rm *ResourceManager) EnsureVolumesExistForContext(ctx context.Context, cfg manifest.Config, contextName string, labels map[string]string) (map[string]struct{}, error) {
+	log := logger.FromContext(ctx).With("component", "volume", "context", contextName)
 
 	// Get existing volumes
 	existingVolumes := map[string]struct{}{}
 	if rm.docker == nil {
-		return nil, apperr.New("resourcemanager.EnsureVolumesExistForDaemon", apperr.Precondition, "docker client not configured")
+		return nil, apperr.New("resourcemanager.EnsureVolumesExistForContext", apperr.Precondition, "docker client not configured")
 	}
 	if vols, err := rm.docker.ListVolumes(ctx); err == nil {
 		for _, v := range vols {
 			existingVolumes[v] = struct{}{}
 		}
 	} else {
-		return nil, apperr.Wrap("resourcemanager.EnsureVolumesExistForDaemon", apperr.External, err, "list volumes")
+		return nil, apperr.Wrap("resourcemanager.EnsureVolumesExistForContext", apperr.External, err, "list volumes")
 	}
 
-	// Collect desired volumes from filesets for this daemon
-	daemonFilesets := cfg.GetFilesetsForDaemon(daemonName)
+	// Collect desired volumes from filesets for this context
+	contextFilesets := cfg.GetFilesetsForContext(contextName)
 	desiredVolumes := map[string]struct{}{}
-	for _, fileset := range daemonFilesets {
+	for _, fileset := range contextFilesets {
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
 	}
 
@@ -57,7 +57,7 @@ func (rm *ResourceManager) EnsureVolumesExistForDaemon(ctx context.Context, cfg 
 				rm.progress.SetAction("creating volume " + name)
 			}
 			if err := rm.docker.CreateVolume(ctx, name, labels); err != nil {
-				return nil, st.Fail(apperr.Wrap("resourcemanager.EnsureVolumesExistForDaemon", apperr.External, err, "create volume %s", name))
+				return nil, st.Fail(apperr.Wrap("resourcemanager.EnsureVolumesExistForContext", apperr.External, err, "create volume %s", name))
 			}
 			st.OK(true)
 			// Add to existing volumes map for return value
@@ -73,7 +73,7 @@ func (rm *ResourceManager) EnsureVolumesExistForDaemon(ctx context.Context, cfg 
 }
 
 // EnsureVolumesExist creates any missing volumes derived from filesets.
-// Deprecated: Use EnsureVolumesExistForDaemon for multi-daemon support.
+// Deprecated: Use EnsureVolumesExistForContext for multi-context support.
 func (rm *ResourceManager) EnsureVolumesExist(ctx context.Context, cfg manifest.Config, labels map[string]string) (map[string]struct{}, error) {
 	log := logger.FromContext(ctx).With("component", "volume")
 
@@ -120,10 +120,10 @@ func (rm *ResourceManager) EnsureVolumesExist(ctx context.Context, cfg manifest.
 	return existingVolumes, nil
 }
 
-// EnsureNetworksExist is no longer used in the new multi-daemon schema.
+// EnsureNetworksExist is no longer used in the new multi-context schema.
 // Networks are now created by docker compose up.
 // Deprecated: Networks are managed by compose in the new schema.
-func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest.Config, labels map[string]string, execCtx *DaemonExecutionContext) error {
+func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest.Config, labels map[string]string, execCtx *ContextExecutionContext) error {
 	// In the new schema, networks are created by docker compose up.
 	// This function is kept for backward compatibility but does nothing.
 	return nil

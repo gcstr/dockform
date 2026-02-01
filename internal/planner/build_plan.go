@@ -11,8 +11,8 @@ import (
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
-// BuildPlan produces a structured plan with resources organized by daemon and type.
-// For multi-daemon configs, it builds per-daemon plans and aggregates them.
+// BuildPlan produces a structured plan with resources organized by context and type.
+// For multi-context configs, it builds per-context plans and aggregates them.
 func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, error) {
 	log := logger.FromContext(ctx).With("component", "planner")
 
@@ -20,16 +20,16 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 	allStacks := cfg.GetAllStacks()
 	allFilesets := cfg.GetAllFilesets()
 
-	st := logger.StartStep(log, "plan_build", "multi-daemon",
+	st := logger.StartStep(log, "plan_build", "multi-context",
 		"resource_kind", "plan",
-		"daemons", len(cfg.Daemons),
+		"contexts", len(cfg.Contexts),
 		"stacks_desired", len(allStacks),
 		"filesets_desired", len(allFilesets))
 
-	// Initialize multi-daemon execution context
-	multiExecCtx := NewMultiDaemonExecutionContext()
+	// Initialize multi-context execution context
+	multiExecCtx := NewMultiContextExecutionContext()
 
-	// Aggregated resource plan (combines all daemons for display)
+	// Aggregated resource plan (combines all contexts for display)
 	aggregatedPlan := &ResourcePlan{
 		Volumes:    []Resource{},
 		Networks:   []Resource{},
@@ -38,31 +38,31 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		Containers: []Resource{},
 	}
 
-	// Per-daemon plans
-	byDaemon := make(map[string]*DaemonPlan)
+	// Per-context plans
+	byDaemon := make(map[string]*ContextPlan)
 
 	// Process each daemon
-	daemonNames := sortedKeys(cfg.Daemons)
-	for _, daemonName := range daemonNames {
-		daemon := cfg.Daemons[daemonName]
+	contextNames := sortedKeys(cfg.Contexts)
+	for _, contextName := range contextNames {
+		contextConfig := cfg.Contexts[contextName]
 
-		// Get Docker client for this daemon
-		client := p.getClientForDaemon(daemonName, &cfg)
+		// Get Docker client for this context
+		client := p.getClientForContext(contextName, &cfg)
 
-		// Initialize daemon execution context
-		daemonExecCtx := NewDaemonExecutionContext(daemonName, daemon.Context, daemon.Identifier)
+		// Initialize context execution context
+		contextExecCtx := NewContextExecutionContext(contextName, cfg.Identifier)
 
-		// Build plan for this daemon
-		daemonPlan, err := p.buildDaemonPlan(ctx, cfg, daemonName, daemon, client, daemonExecCtx)
+		// Build plan for this context
+		contextPlan, err := p.buildContextPlan(ctx, cfg, contextName, contextConfig, client, contextExecCtx)
 		if err != nil {
 			return nil, err
 		}
 
-		byDaemon[daemonName] = daemonPlan
-		multiExecCtx.ByDaemon[daemonName] = daemonExecCtx
+		byDaemon[contextName] = contextPlan
+		multiExecCtx.ByContext[contextName] = contextExecCtx
 
 		// Aggregate into combined plan
-		p.aggregateDaemonPlan(aggregatedPlan, daemonPlan)
+		p.aggregateContextPlan(aggregatedPlan, contextPlan)
 	}
 
 	// Check if we have any resources
@@ -88,15 +88,15 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		"changes_total", totalChanges)
 
 	return &Plan{
-		ByDaemon:         byDaemon,
+		ByContext:         byDaemon,
 		Resources:        aggregatedPlan,
 		ExecutionContext: multiExecCtx,
 	}, nil
 }
 
-// buildDaemonPlan builds a plan for a single daemon.
-func (p *Planner) buildDaemonPlan(ctx context.Context, cfg manifest.Config, daemonName string, daemon manifest.DaemonConfig, client DockerClient, execCtx *DaemonExecutionContext) (*DaemonPlan, error) {
-	log := logger.FromContext(ctx).With("component", "planner", "daemon", daemonName)
+// buildContextPlan builds a plan for a single contextConfig.
+func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, contextName string, contextConfig manifest.ContextConfig, client DockerClient, execCtx *ContextExecutionContext) (*ContextPlan, error) {
+	log := logger.FromContext(ctx).With("component", "planner", "context", contextName)
 
 	resourcePlan := &ResourcePlan{
 		Volumes:    []Resource{},
@@ -106,9 +106,9 @@ func (p *Planner) buildDaemonPlan(ctx context.Context, cfg manifest.Config, daem
 		Containers: []Resource{},
 	}
 
-	// Get stacks and filesets for this daemon
-	daemonStacks := cfg.GetStacksForDaemon(daemonName)
-	daemonFilesets := cfg.GetFilesetsForDaemon(daemonName)
+	// Get stacks and filesets for this context
+	contextStacks := cfg.GetStacksForContext(contextName)
+	contextFilesets := cfg.GetFilesetsForContext(contextName)
 
 	// Accumulate existing sets when docker client is available
 	var existingVolumes, existingNetworks map[string]struct{}
@@ -118,18 +118,18 @@ func (p *Planner) buildDaemonPlan(ctx context.Context, cfg manifest.Config, daem
 		execCtx.ExistingVolumes = existingVolumes
 		execCtx.ExistingNetworks = existingNetworks
 		log.Debug("resource_discovery",
-			"daemon", daemonName,
+			"context", contextName,
 			"volumes_found", len(existingVolumes),
 			"networks_found", len(existingNetworks))
 	}
 
-	// Plan volumes - combine volumes from filesets + explicit daemon volumes
+	// Plan volumes - combine volumes from filesets + explicit context volumes
 	desiredVolumes := map[string]struct{}{}
-	for _, fileset := range daemonFilesets {
+	for _, fileset := range contextFilesets {
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
 	}
-	// Add explicit volumes declared in daemon config
-	for volName := range daemon.Volumes {
+	// Add explicit volumes declared in context config
+	for volName := range contextConfig.Volumes {
 		desiredVolumes[volName] = struct{}{}
 	}
 
@@ -155,9 +155,9 @@ func (p *Planner) buildDaemonPlan(ctx context.Context, cfg manifest.Config, daem
 		}
 	}
 
-	// Plan networks - combine explicit daemon networks + track existing ones
+	// Plan networks - combine explicit context networks + track existing ones
 	desiredNetworks := map[string]struct{}{}
-	for netName := range daemon.Networks {
+	for netName := range contextConfig.Networks {
 		desiredNetworks[netName] = struct{}{}
 	}
 
@@ -184,13 +184,13 @@ func (p *Planner) buildDaemonPlan(ctx context.Context, cfg manifest.Config, daem
 	}
 
 	// Build stack resources
-	if err := p.buildStackResourcesForDaemon(ctx, cfg, daemonName, daemonStacks, daemon.Identifier, client, resourcePlan, execCtx); err != nil {
+	if err := p.buildStackResourcesForContext(ctx, cfg, contextName, contextStacks, cfg.Identifier, client, resourcePlan, execCtx); err != nil {
 		return nil, err
 	}
 
 	// Track services that should be removed (orphan detection)
 	if client != nil {
-		desiredServices := p.collectDesiredServicesForDaemon(ctx, cfg, daemonStacks, client)
+		desiredServices := p.collectDesiredServicesForContext(ctx, cfg, contextStacks, client)
 		if all, err := client.ListComposeContainersAll(ctx); err == nil {
 			toDelete := map[string]map[string]struct{}{}
 			for _, it := range all {
@@ -212,20 +212,19 @@ func (p *Planner) buildDaemonPlan(ctx context.Context, cfg manifest.Config, daem
 	}
 
 	// Filesets: show per-file changes using remote index when available
-	if client != nil && len(daemonFilesets) > 0 {
-		p.buildFilesetResourcesForDaemon(ctx, daemonFilesets, existingVolumes, client, resourcePlan, execCtx)
+	if client != nil && len(contextFilesets) > 0 {
+		p.buildFilesetResourcesForContext(ctx, contextFilesets, existingVolumes, client, resourcePlan, execCtx)
 	}
 
-	return &DaemonPlan{
-		DaemonName: daemonName,
-		Context:    daemon.Context,
-		Identifier: daemon.Identifier,
-		Resources:  resourcePlan,
+	return &ContextPlan{
+		ContextName: contextName,
+		Identifier:  cfg.Identifier,
+		Resources:   resourcePlan,
 	}, nil
 }
 
-// buildStackResourcesForDaemon analyzes stacks for a daemon and adds service resources to the plan.
-func (p *Planner) buildStackResourcesForDaemon(ctx context.Context, cfg manifest.Config, daemonName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, plan *ResourcePlan, execCtx *DaemonExecutionContext) error {
+// buildStackResourcesForContext analyzes stacks for a context and adds service resources to the plan.
+func (p *Planner) buildStackResourcesForContext(ctx context.Context, cfg manifest.Config, contextName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, plan *ResourcePlan, execCtx *ContextExecutionContext) error {
 	if len(stacks) == 0 {
 		return nil
 	}
@@ -242,13 +241,13 @@ func (p *Planner) buildStackResourcesForDaemon(ctx context.Context, cfg manifest
 
 	// Choose parallel or sequential processing based on configuration
 	if p.parallel {
-		return p.buildStackResourcesParallelForDaemon(ctx, cfg, daemonName, stacks, identifier, client, plan, execCtx)
+		return p.buildStackResourcesParallelForContext(ctx, cfg, contextName, stacks, identifier, client, plan, execCtx)
 	}
-	return p.buildStackResourcesSequentialForDaemon(ctx, cfg, daemonName, stacks, identifier, client, plan, execCtx)
+	return p.buildStackResourcesSequentialForContext(ctx, cfg, contextName, stacks, identifier, client, plan, execCtx)
 }
 
-// buildStackResourcesSequentialForDaemon processes stacks one by one for a daemon
-func (p *Planner) buildStackResourcesSequentialForDaemon(ctx context.Context, cfg manifest.Config, daemonName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, plan *ResourcePlan, execCtx *DaemonExecutionContext) error {
+// buildStackResourcesSequentialForContext processes stacks one by one for a context
+func (p *Planner) buildStackResourcesSequentialForContext(ctx context.Context, cfg manifest.Config, contextName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, plan *ResourcePlan, execCtx *ContextExecutionContext) error {
 	detector := NewServiceStateDetector(client)
 
 	// Process stacks in sorted order for deterministic output
@@ -320,8 +319,8 @@ func (p *Planner) buildStackResourcesSequentialForDaemon(ctx context.Context, cf
 	return nil
 }
 
-// buildStackResourcesParallelForDaemon processes stacks concurrently for a daemon
-func (p *Planner) buildStackResourcesParallelForDaemon(ctx context.Context, cfg manifest.Config, daemonName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, plan *ResourcePlan, execCtx *DaemonExecutionContext) error {
+// buildStackResourcesParallelForContext processes stacks concurrently for a context
+func (p *Planner) buildStackResourcesParallelForContext(ctx context.Context, cfg manifest.Config, contextName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, plan *ResourcePlan, execCtx *ContextExecutionContext) error {
 	detector := NewServiceStateDetector(client).WithParallel(true)
 
 	// Sort stack names for deterministic processing
@@ -420,8 +419,8 @@ func (p *Planner) buildStackResourcesParallelForDaemon(ctx context.Context, cfg 
 	return nil
 }
 
-// collectDesiredServicesForDaemon returns a map of all service names that should be running for a daemon.
-func (p *Planner) collectDesiredServicesForDaemon(ctx context.Context, cfg manifest.Config, stacks map[string]manifest.Stack, client DockerClient) map[string]struct{} {
+// collectDesiredServicesForContext returns a map of all service names that should be running for a contextConfig.
+func (p *Planner) collectDesiredServicesForContext(ctx context.Context, cfg manifest.Config, stacks map[string]manifest.Stack, client DockerClient) map[string]struct{} {
 	desiredServices := map[string]struct{}{}
 
 	if client == nil {
@@ -482,8 +481,8 @@ func (p *Planner) getExistingResourcesForClient(ctx context.Context, client Dock
 	return volumes, networks
 }
 
-// buildFilesetResourcesForDaemon processes fileset diffs for a daemon and adds them to the plan.
-func (p *Planner) buildFilesetResourcesForDaemon(ctx context.Context, filesetSpecs map[string]manifest.FilesetSpec, existingVolumes map[string]struct{}, client DockerClient, plan *ResourcePlan, execCtx *DaemonExecutionContext) {
+// buildFilesetResourcesForContext processes fileset diffs for a context and adds them to the plan.
+func (p *Planner) buildFilesetResourcesForContext(ctx context.Context, filesetSpecs map[string]manifest.FilesetSpec, existingVolumes map[string]struct{}, client DockerClient, plan *ResourcePlan, execCtx *ContextExecutionContext) {
 	filesetNames := sortedKeys(filesetSpecs)
 	if len(filesetNames) == 0 {
 		return
@@ -572,13 +571,13 @@ func (p *Planner) buildFilesetResourcesForDaemon(ctx context.Context, filesetSpe
 	}
 }
 
-// aggregateDaemonPlan merges a daemon plan into the aggregated plan.
-func (p *Planner) aggregateDaemonPlan(aggregated *ResourcePlan, daemonPlan *DaemonPlan) {
-	if daemonPlan == nil || daemonPlan.Resources == nil {
+// aggregateContextPlan merges a context plan into the aggregated plan.
+func (p *Planner) aggregateContextPlan(aggregated *ResourcePlan, contextPlan *ContextPlan) {
+	if contextPlan == nil || contextPlan.Resources == nil {
 		return
 	}
 
-	dp := daemonPlan.Resources
+	dp := contextPlan.Resources
 
 	// Volumes
 	aggregated.Volumes = append(aggregated.Volumes, dp.Volumes...)
@@ -586,13 +585,13 @@ func (p *Planner) aggregateDaemonPlan(aggregated *ResourcePlan, daemonPlan *Daem
 	// Networks
 	aggregated.Networks = append(aggregated.Networks, dp.Networks...)
 
-	// Stacks - prefix with daemon name for unique keys
+	// Stacks - prefix with context name for unique keys
 	for stackName, resources := range dp.Stacks {
-		fullKey := manifest.MakeStackKey(daemonPlan.DaemonName, stackName)
+		fullKey := manifest.MakeStackKey(contextPlan.ContextName, stackName)
 		aggregated.Stacks[fullKey] = resources
 	}
 
-	// Filesets - keys already include daemon prefix from discovery (daemon/stack/volume)
+	// Filesets - keys already include context prefix from discovery (daemon/stack/volume)
 	for filesetName, resources := range dp.Filesets {
 		aggregated.Filesets[filesetName] = resources
 	}
