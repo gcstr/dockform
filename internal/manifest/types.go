@@ -353,6 +353,15 @@ func (c *Config) GetFilesetsForContext(contextName string) map[string]FilesetSpe
 	return result
 }
 
+// GetFirstContext returns the name of the first context in the config, or "default" if none.
+// Used for backward compatibility with deprecated single-context APIs.
+func (c *Config) GetFirstContext() string {
+	for name := range c.Contexts {
+		return name
+	}
+	return "default"
+}
+
 // GetAllSopsSecrets collects all unique SOPS secret file paths from all stacks.
 func (c *Config) GetAllSopsSecrets() []string {
 	seen := make(map[string]struct{})
