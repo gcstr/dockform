@@ -158,10 +158,9 @@ func BasicConfigPath(t *testing.T) string {
 		t.Fatalf("write compose: %v", err)
 	}
 	cfg := strings.Join([]string{
-		"daemons:",
-		"  default:",
-		"    context: default",
-		"    identifier: demo",
+		"identifier: demo",
+		"contexts:",
+		"  default: {}",
 		"stacks:",
 		"  default/website:",
 		"    root: website",

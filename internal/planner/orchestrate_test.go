@@ -10,21 +10,22 @@ import (
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
-func twoDaemonConfig() *manifest.Config {
+func twoContextConfig() *manifest.Config {
 	return &manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"alpha": {Context: "alpha", Identifier: "test"},
-			"beta":  {Context: "beta", Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]manifest.ContextConfig{
+			"alpha": {},
+			"beta":  {},
 		},
 	}
 }
 
-func TestExecuteAcrossDaemons_Sequential(t *testing.T) {
+func TestExecuteAcrossContexts_Sequential(t *testing.T) {
 	p := New().WithParallel(false)
-	cfg := twoDaemonConfig()
+	cfg := twoContextConfig()
 
 	var order []string
-	err := p.ExecuteAcrossDaemons(context.Background(), cfg, func(_ context.Context, name string) error {
+	err := p.ExecuteAcrossContexts(context.Background(), cfg, func(_ context.Context, name string) error {
 		order = append(order, name)
 		return nil
 	})
@@ -37,12 +38,12 @@ func TestExecuteAcrossDaemons_Sequential(t *testing.T) {
 	}
 }
 
-func TestExecuteAcrossDaemons_SequentialStopsOnError(t *testing.T) {
+func TestExecuteAcrossContexts_SequentialStopsOnError(t *testing.T) {
 	p := New().WithParallel(false)
-	cfg := twoDaemonConfig()
+	cfg := twoContextConfig()
 
 	var count int
-	err := p.ExecuteAcrossDaemons(context.Background(), cfg, func(_ context.Context, name string) error {
+	err := p.ExecuteAcrossContexts(context.Background(), cfg, func(_ context.Context, name string) error {
 		count++
 		return fmt.Errorf("fail on %s", name)
 	})
@@ -54,14 +55,14 @@ func TestExecuteAcrossDaemons_SequentialStopsOnError(t *testing.T) {
 	}
 }
 
-func TestExecuteAcrossDaemons_Parallel(t *testing.T) {
+func TestExecuteAcrossContexts_Parallel(t *testing.T) {
 	p := New().WithParallel(true)
-	cfg := twoDaemonConfig()
+	cfg := twoContextConfig()
 
 	var running int64
 	var maxConcurrent int64
 
-	err := p.ExecuteAcrossDaemons(context.Background(), cfg, func(_ context.Context, name string) error {
+	err := p.ExecuteAcrossContexts(context.Background(), cfg, func(_ context.Context, name string) error {
 		cur := atomic.AddInt64(&running, 1)
 		// Track max concurrency
 		for {
@@ -82,11 +83,11 @@ func TestExecuteAcrossDaemons_Parallel(t *testing.T) {
 	}
 }
 
-func TestExecuteAcrossDaemons_ParallelCollectsErrors(t *testing.T) {
+func TestExecuteAcrossContexts_ParallelCollectsErrors(t *testing.T) {
 	p := New().WithParallel(true)
-	cfg := twoDaemonConfig()
+	cfg := twoContextConfig()
 
-	err := p.ExecuteAcrossDaemons(context.Background(), cfg, func(_ context.Context, name string) error {
+	err := p.ExecuteAcrossContexts(context.Background(), cfg, func(_ context.Context, name string) error {
 		return fmt.Errorf("fail on %s", name)
 	})
 	if err == nil {
@@ -94,11 +95,11 @@ func TestExecuteAcrossDaemons_ParallelCollectsErrors(t *testing.T) {
 	}
 }
 
-func TestExecuteAcrossDaemons_EmptyDaemons(t *testing.T) {
+func TestExecuteAcrossContexts_EmptyContexts(t *testing.T) {
 	p := New()
-	cfg := &manifest.Config{Daemons: map[string]manifest.DaemonConfig{}}
+	cfg := &manifest.Config{Identifier: "test", Contexts: map[string]manifest.ContextConfig{}}
 
-	err := p.ExecuteAcrossDaemons(context.Background(), cfg, func(_ context.Context, name string) error {
+	err := p.ExecuteAcrossContexts(context.Background(), cfg, func(_ context.Context, name string) error {
 		t.Fatal("should not be called")
 		return nil
 	})
@@ -107,14 +108,14 @@ func TestExecuteAcrossDaemons_EmptyDaemons(t *testing.T) {
 	}
 }
 
-func TestExecuteAcrossDaemons_ContextCancellation(t *testing.T) {
+func TestExecuteAcrossContexts_ContextCancellation(t *testing.T) {
 	p := New().WithParallel(false)
-	cfg := twoDaemonConfig()
+	cfg := twoContextConfig()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	err := p.ExecuteAcrossDaemons(ctx, cfg, func(_ context.Context, name string) error {
+	err := p.ExecuteAcrossContexts(ctx, cfg, func(_ context.Context, name string) error {
 		t.Fatal("should not be called")
 		return nil
 	})
@@ -123,16 +124,17 @@ func TestExecuteAcrossDaemons_ContextCancellation(t *testing.T) {
 	}
 }
 
-func TestExecuteAcrossDaemons_SingleDaemonRunsSequential(t *testing.T) {
-	p := New().WithParallel(true) // parallel enabled but only 1 daemon
+func TestExecuteAcrossContexts_SingleContextRunsSequential(t *testing.T) {
+	p := New().WithParallel(true) // parallel enabled but only 1 context
 	cfg := &manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"only": {Context: "only", Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]manifest.ContextConfig{
+			"only": {},
 		},
 	}
 
 	called := false
-	err := p.ExecuteAcrossDaemons(context.Background(), cfg, func(_ context.Context, name string) error {
+	err := p.ExecuteAcrossContexts(context.Background(), cfg, func(_ context.Context, name string) error {
 		called = true
 		if name != "only" {
 			t.Fatalf("expected 'only', got %s", name)

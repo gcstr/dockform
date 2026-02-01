@@ -18,12 +18,14 @@ func TestDockerContextName(t *testing.T) {
 		t.Fatalf("expected empty string for nil config")
 	}
 	cfg := &manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {Context: "  demo  "},
+		Identifier: "demo",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 	}
-	if dockerContextName(cfg) != "demo" {
-		t.Fatalf("expected trimmed context, got %q", dockerContextName(cfg))
+	// dockerContextName returns the first context name from the config
+	if dockerContextName(cfg) != "default" {
+		t.Fatalf("expected context name 'default', got %q", dockerContextName(cfg))
 	}
 }
 

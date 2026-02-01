@@ -34,8 +34,9 @@ func TestDestroy_ListsContainersOnce(t *testing.T) {
 	mockCounter := &mockDockerListCounter{mockDockerClient: baseMock}
 
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{},
 	}
@@ -83,8 +84,9 @@ func TestDestroy_OptimizedContainerLookup(t *testing.T) {
 	mockCounter := &mockDockerListCounter{mockDockerClient: baseMock}
 
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 	}
 

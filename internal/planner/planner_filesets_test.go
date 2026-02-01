@@ -92,9 +92,10 @@ func TestBuildPlan_Filesets_DiffChanges(t *testing.T) {
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: ""}},
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
-			"web": {SourceAbs: src, TargetVolume: "data", TargetPath: "/target", Daemon: "default"},
+			"web": {SourceAbs: src, TargetVolume: "data", TargetPath: "/target", Context: "default"},
 		},
 	}
 	d := dockercli.New("")
@@ -138,9 +139,10 @@ func TestBuildPlan_Filesets_NoChanges(t *testing.T) {
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{"default": {}},
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
-			"site": {SourceAbs: src, TargetVolume: "data", TargetPath: "/site", Daemon: "default"},
+			"site": {SourceAbs: src, TargetVolume: "data", TargetPath: "/site", Context: "default"},
 		},
 	}
 	d := dockercli.New("")
@@ -184,9 +186,10 @@ func TestApply_Filesets_SyncAndRestart(t *testing.T) {
 	defer func() { _ = os.Unsetenv("DOCKER_STUB_LOG"); _ = os.Unsetenv("REMOTE_JSON") }()
 
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "demo"}},
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
-			"data": {SourceAbs: src, TargetVolume: "data", TargetPath: "/opt/data", RestartServices: manifest.RestartTargets{Services: []string{"nginx"}}, Daemon: "default"},
+			"data": {SourceAbs: src, TargetVolume: "data", TargetPath: "/opt/data", RestartServices: manifest.RestartTargets{Services: []string{"nginx"}}, Context: "default"},
 		},
 	}
 	d := dockercli.New("").WithIdentifier("demo")

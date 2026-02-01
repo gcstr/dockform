@@ -158,12 +158,13 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 	}
 	defer withPlannerDockerStub_Basic(t)()
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{"default": {Context: "", Identifier: "demo"}},
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
 		Stacks: map[string]manifest.Stack{
-			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}, Daemon: "default"},
+			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
-			"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app", Daemon: "default"},
+			"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app", Context: "default"},
 		},
 	}
 	d := dockercli.New("").WithIdentifier("demo")
@@ -187,9 +188,10 @@ func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
 	}
 	defer withPlannerDockerStub_Mismatch(t)()
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{"default": {Context: "", Identifier: "demo"}},
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
 		Stacks: map[string]manifest.Stack{
-			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}, Daemon: "default"},
+			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
 	}
 	d := dockercli.New("").WithIdentifier("demo")
@@ -207,15 +209,16 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 	}
 	defer withPlannerDockerStub_Basic(t)()
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{"default": {Context: "", Identifier: "demo"}},
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
 		Stacks: map[string]manifest.Stack{
-			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}, Daemon: "default"},
+			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
 		// Filesets now derive volumes
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
-			"data":        {Source: "src", TargetVolume: "fileset-vol", TargetPath: "/app", Daemon: "default"},
-			"explicit":    {Source: "src2", TargetVolume: "explicit-vol", TargetPath: "/data", Daemon: "default"},
-			"shared-data": {Source: "src3", TargetVolume: "shared-data", TargetPath: "/shared", Daemon: "default"},
+			"data":        {Source: "src", TargetVolume: "fileset-vol", TargetPath: "/app", Context: "default"},
+			"explicit":    {Source: "src2", TargetVolume: "explicit-vol", TargetPath: "/data", Context: "default"},
+			"shared-data": {Source: "src3", TargetVolume: "shared-data", TargetPath: "/shared", Context: "default"},
 		},
 	}
 	d := dockercli.New("").WithIdentifier("demo")
@@ -237,8 +240,9 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 func TestApply_PropagatesVolumeListError(t *testing.T) {
 	defer withPlannerDockerStub_VolumeLsError(t)()
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{"default": {Context: "", Identifier: "demo"}},
-		Stacks:  map[string]manifest.Stack{},
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks:     map[string]manifest.Stack{},
 	}
 	d := dockercli.New("").WithIdentifier("demo")
 	err := NewWithDocker(d).Apply(context.Background(), cfg)

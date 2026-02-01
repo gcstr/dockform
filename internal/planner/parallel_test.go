@@ -23,33 +23,28 @@ func TestParallelVsSequentialSameResults(t *testing.T) {
 
 	// Create test configuration with multiple applications
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {
-				Context:    "default",
-				Identifier: "parallel-test",
-			},
+		Identifier: "parallel-test",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 		Stacks: map[string]manifest.Stack{
 			"default/app1": {
-				Root:   "/tmp/app1",
-				Files:  []string{"docker-compose.yml"},
-				Daemon: "default",
+				Root:  "/tmp/app1",
+				Files: []string{"docker-compose.yml"},
 				Environment: &manifest.Environment{
 					Inline: []string{"ENV=test"},
 				},
 			},
 			"default/app2": {
-				Root:   "/tmp/app2",
-				Files:  []string{"docker-compose.yml"},
-				Daemon: "default",
+				Root:  "/tmp/app2",
+				Files: []string{"docker-compose.yml"},
 				Environment: &manifest.Environment{
 					Inline: []string{"ENV=prod"},
 				},
 			},
 			"default/app3": {
-				Root:   "/tmp/app3",
-				Files:  []string{"docker-compose.yml"},
-				Daemon: "default",
+				Root:  "/tmp/app3",
+				Files: []string{"docker-compose.yml"},
 				Environment: &manifest.Environment{
 					Inline: []string{"ENV=dev"},
 				},

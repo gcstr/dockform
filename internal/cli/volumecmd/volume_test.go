@@ -49,10 +49,9 @@ volumes:
 
 	// Config - convention discovery will find the stack and fileset
 	cfg := strings.Join([]string{
-		"daemons:",
-		"  default:",
-		"    context: default",
-		"    identifier: demo",
+		"identifier: demo",
+		"contexts:",
+		"  default: {}",
 	}, "\n") + "\n"
 	cfgPath := filepath.Join(dir, "dockform.yml")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {

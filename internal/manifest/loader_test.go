@@ -14,7 +14,7 @@ func TestResolveConfigPath_DirectoryPreferenceOrder(t *testing.T) {
 	// Both files exist; resolver should pick dockform.yml first
 	yamlPath := filepath.Join(dir, "dockform.yaml")
 	ymlPath := filepath.Join(dir, "dockform.yml")
-	content := "daemons:\n  default:\n    identifier: x\n"
+	content := "identifier: x\ncontexts:\n  default: {}\n"
 	if err := os.WriteFile(yamlPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("write yaml: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestResolveConfigPath_DirectoryNoFiles(t *testing.T) {
 func TestResolveConfigPath_FileGiven(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dockform.yml")
-	if err := os.WriteFile(path, []byte("daemons:\n  default:\n    identifier: x\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("identifier: x\ncontexts:\n  default: {}\n"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	got, err := resolveConfigPath(path)
@@ -77,7 +77,7 @@ func TestResolveConfigPath_EmptyPathUsesCWD(t *testing.T) {
 		t.Fatalf("chdir: %v", err)
 	}
 	path := filepath.Join(dir, "dockform.yml")
-	if err := os.WriteFile(path, []byte("daemons:\n  default:\n    identifier: x\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("identifier: x\ncontexts:\n  default: {}\n"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	got, err := resolveConfigPath("")
@@ -95,7 +95,7 @@ func TestResolveConfigPath_EmptyPathUsesCWD(t *testing.T) {
 func TestLoadWithWarnings_SetsBaseDirAndReportsMissing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dockform.yml")
-	content := "daemons:\n  default:\n    identifier: myapp\n    context: ${CTX}\nstacks:\n  default/web:\n    root: website\n"
+	content := "identifier: myapp\ncontexts:\n  default: {}\nstacks:\n  default/web:\n    root: website\n    environment:\n      inline:\n        - VAR=${CTX}\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestLoadWithWarnings_SetsBaseDirAndReportsMissing(t *testing.T) {
 func TestLoadWithWarnings_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dockform.yml")
-	bad := "daemons:\n  default:\n    identifier: [\n"
+	bad := "identifier: [\n"
 	if err := os.WriteFile(path, []byte(bad), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}

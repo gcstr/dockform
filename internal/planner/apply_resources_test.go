@@ -7,7 +7,7 @@ import (
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
-func TestResourceManager_EnsureVolumesExistForDaemon(t *testing.T) {
+func TestResourceManager_EnsureVolumesExistForContext(t *testing.T) {
 	tests := []struct {
 		name                string
 		filesets            map[string]manifest.FilesetSpec
@@ -25,7 +25,7 @@ func TestResourceManager_EnsureVolumesExistForDaemon(t *testing.T) {
 		{
 			name: "create fileset volume",
 			filesets: map[string]manifest.FilesetSpec{
-				"default/web/data": {TargetVolume: "app-data", Daemon: "default"},
+				"default/web/data": {TargetVolume: "app-data", Context: "default"},
 			},
 			existingVolumes:     []string{},
 			expectedCreated:     []string{"app-data"},
@@ -34,7 +34,7 @@ func TestResourceManager_EnsureVolumesExistForDaemon(t *testing.T) {
 		{
 			name: "skip existing volume",
 			filesets: map[string]manifest.FilesetSpec{
-				"default/web/data": {TargetVolume: "app-data", Daemon: "default"},
+				"default/web/data": {TargetVolume: "app-data", Context: "default"},
 			},
 			existingVolumes:     []string{"app-data"},
 			expectedCreated:     []string{},
@@ -43,8 +43,8 @@ func TestResourceManager_EnsureVolumesExistForDaemon(t *testing.T) {
 		{
 			name: "multiple filesets same volume",
 			filesets: map[string]manifest.FilesetSpec{
-				"default/web/assets": {TargetVolume: "shared-data", Daemon: "default"},
-				"default/api/assets": {TargetVolume: "shared-data", Daemon: "default"}, // Same volume
+				"default/web/assets": {TargetVolume: "shared-data", Context: "default"},
+				"default/api/assets": {TargetVolume: "shared-data", Context: "default"}, // Same volume
 			},
 			existingVolumes:     []string{},
 			expectedCreated:     []string{"shared-data"},
@@ -53,8 +53,8 @@ func TestResourceManager_EnsureVolumesExistForDaemon(t *testing.T) {
 		{
 			name: "multiple filesets different volumes",
 			filesets: map[string]manifest.FilesetSpec{
-				"default/web/assets": {TargetVolume: "web-data", Daemon: "default"},
-				"default/api/data":   {TargetVolume: "api-data", Daemon: "default"},
+				"default/web/assets": {TargetVolume: "web-data", Context: "default"},
+				"default/api/data":   {TargetVolume: "api-data", Context: "default"},
 			},
 			existingVolumes:     []string{},
 			expectedCreated:     []string{"web-data", "api-data"},
@@ -71,14 +71,15 @@ func TestResourceManager_EnsureVolumesExistForDaemon(t *testing.T) {
 			resourceManager := NewResourceManagerWithClient(mockDocker, nil)
 
 			cfg := manifest.Config{
-				Daemons: map[string]manifest.DaemonConfig{
-					"default": {Identifier: "test-id"},
+				Identifier: "test-id",
+				Contexts: map[string]manifest.ContextConfig{
+					"default": {},
 				},
 				DiscoveredFilesets: tt.filesets,
 			}
 			labels := map[string]string{"test": "label"}
 
-			resultVolumes, err := resourceManager.EnsureVolumesExistForDaemon(context.Background(), cfg, "default", labels)
+			resultVolumes, err := resourceManager.EnsureVolumesExistForContext(context.Background(), cfg, "default", labels)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -120,13 +121,14 @@ func TestResourceManager_EnsureVolumesExistForDaemon(t *testing.T) {
 // Helper function to test volume deduplication logic from filesets
 func TestVolumeDeduplicationFromFilesets(t *testing.T) {
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {Identifier: "test-id"},
+		Identifier: "test-id",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
-			"default/web/assets": {TargetVolume: "shared-vol", Daemon: "default"},
-			"default/api/assets": {TargetVolume: "shared-vol", Daemon: "default"}, // Same volume
-			"default/db/backup":  {TargetVolume: "backup-vol", Daemon: "default"},
+			"default/web/assets": {TargetVolume: "shared-vol", Context: "default"},
+			"default/api/assets": {TargetVolume: "shared-vol", Context: "default"}, // Same volume
+			"default/db/backup":  {TargetVolume: "backup-vol", Context: "default"},
 		},
 	}
 
@@ -153,31 +155,32 @@ func TestVolumeDeduplicationFromFilesets(t *testing.T) {
 	}
 }
 
-func TestGetFilesetsForDaemon(t *testing.T) {
+func TestGetFilesetsForContext(t *testing.T) {
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"local":  {Identifier: "local-id"},
-			"remote": {Identifier: "remote-id"},
+		Identifier: "test-id",
+		Contexts: map[string]manifest.ContextConfig{
+			"local":  {},
+			"remote": {},
 		},
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
-			"local/web/assets":   {TargetVolume: "web-data", Daemon: "local"},
-			"local/api/data":     {TargetVolume: "api-data", Daemon: "local"},
-			"remote/prod/config": {TargetVolume: "prod-config", Daemon: "remote"},
+			"local/web/assets":   {TargetVolume: "web-data", Context: "local"},
+			"local/api/data":     {TargetVolume: "api-data", Context: "local"},
+			"remote/prod/config": {TargetVolume: "prod-config", Context: "remote"},
 		},
 	}
 
-	localFilesets := cfg.GetFilesetsForDaemon("local")
+	localFilesets := cfg.GetFilesetsForContext("local")
 	if len(localFilesets) != 2 {
-		t.Errorf("Expected 2 filesets for local daemon, got %d", len(localFilesets))
+		t.Errorf("Expected 2 filesets for local context, got %d", len(localFilesets))
 	}
 
-	remoteFilesets := cfg.GetFilesetsForDaemon("remote")
+	remoteFilesets := cfg.GetFilesetsForContext("remote")
 	if len(remoteFilesets) != 1 {
-		t.Errorf("Expected 1 fileset for remote daemon, got %d", len(remoteFilesets))
+		t.Errorf("Expected 1 fileset for remote context, got %d", len(remoteFilesets))
 	}
 
-	nonexistentFilesets := cfg.GetFilesetsForDaemon("nonexistent")
+	nonexistentFilesets := cfg.GetFilesetsForContext("nonexistent")
 	if len(nonexistentFilesets) != 0 {
-		t.Errorf("Expected 0 filesets for nonexistent daemon, got %d", len(nonexistentFilesets))
+		t.Errorf("Expected 0 filesets for nonexistent context, got %d", len(nonexistentFilesets))
 	}
 }

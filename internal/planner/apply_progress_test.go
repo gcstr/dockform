@@ -26,18 +26,19 @@ func TestProgressEstimator_New(t *testing.T) {
 }
 func TestProgressEstimator_EstimateProgress_BasicLogic(t *testing.T) {
 	// Test the basic calculation logic without Docker interactions
-	// In the new multi-daemon schema, networks are managed by compose and filesets are discovered
+	// In the new multi-context schema, networks are managed by compose and filesets are discovered
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 		Stacks: map[string]manifest.Stack{
 			"default/web": {Root: "./web", Files: []string{"docker-compose.yml"}},
 			"default/api": {Root: "./api", Files: []string{"docker-compose.yml"}},
 		},
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
-			"default/web/assets": {TargetVolume: "web-data", Daemon: "default"},
-			"default/api/data":   {TargetVolume: "api-data", Daemon: "default"},
+			"default/web/assets": {TargetVolume: "web-data", Context: "default"},
+			"default/api/data":   {TargetVolume: "api-data", Context: "default"},
 		},
 	}
 

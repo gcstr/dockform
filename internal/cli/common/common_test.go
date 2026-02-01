@@ -37,7 +37,7 @@ func TestFindManifestFilesRespectsDepth(t *testing.T) {
 
 func TestReadDaemonContextLabels(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dockform.yml")
-	content := "daemons:\n  prod:\n    context: prod-context\n"
+	content := "identifier: test\ncontexts:\n  prod: {}\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
@@ -53,8 +53,9 @@ func TestDisplayDaemonInfoDefaults(t *testing.T) {
 	var out bytes.Buffer
 	pr := ui.StdPrinter{Out: &out}
 	cfg := &manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {Context: "", Identifier: "demo"},
+		Identifier: "demo",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 	}
 	DisplayDaemonInfo(pr, cfg)

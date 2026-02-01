@@ -122,10 +122,9 @@ func TestValidate_Succeeds_WithCompleteConfigAndFiles(t *testing.T) {
 	_ = os.Setenv(homeEnvVar, home)
 	t.Cleanup(func() { _ = os.Setenv(homeEnvVar, oldHome) })
 
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: test-id
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
 sops:
   age:
     key_file: ~/.config/sops/age/keys.txt
@@ -164,10 +163,9 @@ func TestValidate_Fails_WhenStackEnvFileMissing(t *testing.T) {
 	}
 	// minimal app root and compose to bypass other errors
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: test-id
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
 stacks:
   default/website:
     root: website
@@ -199,10 +197,9 @@ func TestValidate_Fails_WhenStackSopsSecretMissing(t *testing.T) {
 		}
 	}
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: test-id
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
 stacks:
   default/website:
     root: website
@@ -247,10 +244,9 @@ func TestValidate_Fails_WhenSopsAgeKeyMissing(t *testing.T) {
 
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
 	mustWrite(filepath.Join(tmp, "secrets.env"), "KEY=value\n")
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: test-id
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
 sops:
   age:
     key_file: ~/.config/sops/age/keys.txt
@@ -286,10 +282,9 @@ func TestValidate_Fails_WhenAppRootMissing(t *testing.T) {
 		}
 	}
 	// do not create website dir
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: test-id
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
 stacks:
   default/website:
     root: website
@@ -322,10 +317,9 @@ func TestValidate_Fails_WhenComposeFileMissing(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(tmp, "website"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: test-id
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
 stacks:
   default/website:
     root: website
@@ -356,10 +350,9 @@ func TestValidate_Identifier_Invalid(t *testing.T) {
 	}
 	// minimal app root and compose to bypass other errors
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: invalid_id!
+	yml := []byte(`identifier: invalid_id!
+contexts:
+  default: {}
 stacks:
   default/website:
     root: website
@@ -384,10 +377,9 @@ func TestValidate_Fails_WhenDockerDaemonUnreachable(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(tmp, "website"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: test-id
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
 stacks:
   default/website:
     root: website
@@ -413,10 +405,9 @@ func TestValidate_AppRootIsFile_NotDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tmp, "website"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: test-id
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
 stacks:
   default/website:
     root: website
@@ -451,10 +442,9 @@ func TestValidate_Fails_WhenAgeKeyFileEmptyWithSopsSecrets(t *testing.T) {
 	mustWrite(filepath.Join(tmp, "secrets.env"), "KEY=value\n")
 
 	// Simulate empty AGE_KEY_FILE environment variable (which causes key_file to be empty after interpolation)
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: test-id
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
 sops:
   age:
     key_file: ${AGE_KEY_FILE}
@@ -511,10 +501,9 @@ func TestValidate_Succeeds_WhenAgeKeyFileEmptyWithoutSopsSecrets(t *testing.T) {
 	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
 
 	// Empty key_file but NO sops secrets - should pass
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: test-id
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
 sops:
   age:
     key_file: ${AGE_KEY_FILE}
@@ -557,10 +546,9 @@ func TestValidate_Succeeds_WhenNoSopsConfigured(t *testing.T) {
 	mustWrite(filepath.Join(tmp, "website", "secrets.env"), "KEY=value\n")
 
 	// SOPS secrets but no sops config section at all - should pass (treated as plaintext)
-	yml := []byte(`daemons:
-  default:
-    context: default
-    identifier: test-id
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
 stacks:
   default/website:
     root: website
@@ -600,13 +588,14 @@ func TestValidate_MultipleDaemons(t *testing.T) {
 	mustWrite(filepath.Join(tmp, "web", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
 	mustWrite(filepath.Join(tmp, "api", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
 
-	yml := []byte(`daemons:
+	yml := []byte(`identifier: my-project
+contexts:
   local:
-    context: default
-    identifier: local-id
+    volumes: {}
+    networks: {}
   remote:
-    context: remote-context
-    identifier: remote-id
+    volumes: {}
+    networks: {}
 stacks:
   local/web:
     root: web
@@ -629,14 +618,17 @@ stacks:
 		t.Fatalf("validate: %v", err)
 	}
 
-	// Verify daemon configs were loaded correctly
-	if len(cfg.Daemons) != 2 {
-		t.Fatalf("expected 2 daemons, got %d", len(cfg.Daemons))
+	// Verify context configs were loaded correctly
+	if len(cfg.Contexts) != 2 {
+		t.Fatalf("expected 2 contexts, got %d", len(cfg.Contexts))
 	}
-	if cfg.Daemons["local"].Identifier != "local-id" {
-		t.Errorf("local daemon identifier mismatch")
+	if _, ok := cfg.Contexts["local"]; !ok {
+		t.Errorf("local context not found")
 	}
-	if cfg.Daemons["remote"].Identifier != "remote-id" {
-		t.Errorf("remote daemon identifier mismatch")
+	if _, ok := cfg.Contexts["remote"]; !ok {
+		t.Errorf("remote context not found")
+	}
+	if cfg.Identifier != "my-project" {
+		t.Errorf("identifier mismatch: expected 'my-project', got '%s'", cfg.Identifier)
 	}
 }

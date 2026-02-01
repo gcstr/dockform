@@ -38,13 +38,11 @@ func TestBuildPlan_Logging(t *testing.T) {
 	docker := newMockDocker()
 	docker.volumes = []string{"existing-vol1", "existing-vol2"}
 
-	// Create test configuration using new multi-daemon schema
+	// Create test configuration using multi-context schema
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {
-				Context:    "test",
-				Identifier: "test-app",
-			},
+		Identifier: "test-app",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 		Stacks: map[string]manifest.Stack{
 			"default/app1": {
@@ -62,7 +60,7 @@ func TestBuildPlan_Logging(t *testing.T) {
 				SourceAbs:    "/tmp/config",
 				TargetVolume: "config-vol",
 				TargetPath:   "/etc/config",
-				Daemon:       "default",
+				Context:      "default",
 			},
 		},
 	}

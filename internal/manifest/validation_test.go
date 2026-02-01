@@ -58,9 +58,9 @@ func TestNormalize_InvalidStackKey(t *testing.T) {
 
 func TestNormalize_MissingIdentifier(t *testing.T) {
 	cfg := Config{
-		Identifier: "test",
+		Identifier: "", // Missing identifier
 		Contexts: map[string]ContextConfig{
-			"default": {}, // Missing identifier
+			"default": {},
 		},
 		Stacks: map[string]Stack{"default/ok": {Root: "/tmp"}},
 	}

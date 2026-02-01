@@ -65,10 +65,9 @@ func createSampleManifest(t *testing.T) (string, string) {
 	}
 	manifestPath := filepath.Join(root, "dockform.yml")
 	content := strings.Join([]string{
-		"daemons:",
-		"  default:",
-		"    context: default",
-		"    identifier: demo",
+		"identifier: demo",
+		"contexts:",
+		"  default: {}",
 		"stacks:",
 		"  default/app:",
 		"    root: stack",
@@ -390,8 +389,9 @@ exit 0
 	defer clitest.WithCustomDockerStub(t, stub)()
 
 	cfg := &manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {Context: "default", Identifier: "demo"},
+		Identifier: "demo",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 	}
 	factory := CreateClientFactory()
@@ -498,11 +498,12 @@ func TestRunWithRollingOrDirectPaths(t *testing.T) {
 
 func TestCLIContextOperations(t *testing.T) {
 	cfg := &manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {Identifier: "demo"},
+		Identifier: "demo",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 		Stacks: map[string]manifest.Stack{
-			"default/app": {Root: ".", Files: nil, Daemon: "default"},
+			"default/app": {Root: ".", Files: nil},
 		},
 	}
 	std := ui.StdPrinter{Out: io.Discard, Err: io.Discard}
@@ -693,7 +694,7 @@ exit 0
 
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "dockform.yml")
-	writeManifest(t, manifestPath, "daemons:\n  default:\n    context: default\n    identifier: demo\n")
+	writeManifest(t, manifestPath, "identifier: demo\ncontexts:\n  default: {}\n")
 
 	cmd := &cobra.Command{}
 	cmd.Flags().String("config", "", "")

@@ -105,12 +105,13 @@ func TestPlanner_BuildPlan_AddRemoveStart(t *testing.T) {
 	defer withPlannerStub(t, "basic", log)()
 	appRoot := t.TempDir()
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "demo"}},
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
 		Stacks: map[string]manifest.Stack{
-			"default/app": {Root: appRoot, Files: []string{"compose.yml"}, Daemon: "default"},
+			"default/app": {Root: appRoot, Files: []string{"compose.yml"}},
 		},
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
-			"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app", Daemon: "default"},
+			"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app", Context: "default"},
 		},
 	}
 	d := dockercli.New("").WithIdentifier("demo")
@@ -136,7 +137,7 @@ func TestPlanner_BuildPlan_IdentifierMismatch(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "mismatch", log)()
 	appRoot := t.TempDir()
-	cfg := manifest.Config{Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "demo"}}, Stacks: map[string]manifest.Stack{"default/app": {Root: appRoot, Files: []string{"compose.yml"}, Daemon: "default"}}}
+	cfg := manifest.Config{Identifier: "demo", Contexts: map[string]manifest.ContextConfig{"default": {}}, Stacks: map[string]manifest.Stack{"default/app": {Root: appRoot, Files: []string{"compose.yml"}}}}
 	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
@@ -157,7 +158,7 @@ func TestPlanner_BuildPlan_ConfigDriftAndMatch(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "drift", log)()
 	appRoot := t.TempDir()
-	cfg := manifest.Config{Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "demo"}}, Stacks: map[string]manifest.Stack{"default/app": {Root: appRoot, Files: []string{"compose.yml"}, Daemon: "default"}}}
+	cfg := manifest.Config{Identifier: "demo", Contexts: map[string]manifest.ContextConfig{"default": {}}, Stacks: map[string]manifest.Stack{"default/app": {Root: appRoot, Files: []string{"compose.yml"}}}}
 	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
@@ -189,7 +190,7 @@ func TestPlanner_Prune_RemovesUnmanaged(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "log.txt")
 	defer withPlannerStub(t, "basic", log)()
 	appRoot := t.TempDir()
-	cfg := manifest.Config{Daemons: map[string]manifest.DaemonConfig{"default": {Identifier: "demo"}}, Stacks: map[string]manifest.Stack{"default/app": {Root: appRoot, Files: []string{"compose.yml"}, Daemon: "default"}}}
+	cfg := manifest.Config{Identifier: "demo", Contexts: map[string]manifest.ContextConfig{"default": {}}, Stacks: map[string]manifest.Stack{"default/app": {Root: appRoot, Files: []string{"compose.yml"}}}}
 	d := dockercli.New("").WithIdentifier("demo")
 	if err := NewWithDocker(d).Prune(context.Background(), cfg); err != nil {
 		t.Fatalf("prune: %v", err)

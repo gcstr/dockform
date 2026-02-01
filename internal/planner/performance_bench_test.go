@@ -29,33 +29,28 @@ func benchmarkBuildPlan(b *testing.B, parallel bool) {
 
 	// Create a test configuration with multiple applications and filesets
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {
-				Context:    "default",
-				Identifier: "benchmark-test",
-			},
+		Identifier: "benchmark-test",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 		Stacks: map[string]manifest.Stack{
 			"default/app1": {
-				Root:   "/tmp/app1",
-				Files:  []string{"docker-compose.yml"},
-				Daemon: "default",
+				Root:  "/tmp/app1",
+				Files: []string{"docker-compose.yml"},
 				Environment: &manifest.Environment{
 					Inline: []string{"PORT=3000"},
 				},
 			},
 			"default/app2": {
-				Root:   "/tmp/app2",
-				Files:  []string{"docker-compose.yml"},
-				Daemon: "default",
+				Root:  "/tmp/app2",
+				Files: []string{"docker-compose.yml"},
 				Environment: &manifest.Environment{
 					Inline: []string{"PORT=3001"},
 				},
 			},
 			"default/app3": {
-				Root:   "/tmp/app3",
-				Files:  []string{"docker-compose.yml"},
-				Daemon: "default",
+				Root:  "/tmp/app3",
+				Files: []string{"docker-compose.yml"},
 				Environment: &manifest.Environment{
 					Inline: []string{"PORT=3002"},
 				},
@@ -128,9 +123,8 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 	// Add 10 applications
 	for i := 0; i < 10; i++ {
 		applications[fmt.Sprintf("default/app%d", i)] = manifest.Stack{
-			Root:   fmt.Sprintf("/tmp/app%d", i),
-			Files:  []string{"docker-compose.yml"},
-			Daemon: "default",
+			Root:  fmt.Sprintf("/tmp/app%d", i),
+			Files: []string{"docker-compose.yml"},
 			Environment: &manifest.Environment{
 				Inline: []string{fmt.Sprintf("PORT=%d", 3000+i)},
 			},
@@ -149,11 +143,9 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 	}
 
 	cfg := manifest.Config{
-		Daemons: map[string]manifest.DaemonConfig{
-			"default": {
-				Context:    "default",
-				Identifier: "benchmark-large",
-			},
+		Identifier: "benchmark-large",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 		Stacks:             applications,
 		DiscoveredFilesets: filesets,

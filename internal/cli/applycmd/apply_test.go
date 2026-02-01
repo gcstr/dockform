@@ -41,7 +41,7 @@ case "$cmd" in
     if [ "$sub" = "ls" ]; then exit 0; fi ;;
   network)
     sub="$1"; shift
-    if [ "$sub" = "ls" ]; then echo "demo-network"; exit 0; fi ;;
+    if [ "$sub" = "ls" ]; then exit 0; fi ;;
   compose)
     for a in "$@"; do [ "$a" = "--services" ] && { echo "nginx"; exit 0; }; done
     if [ "$1" = "config" ] && [ "$2" = "--hash" ]; then svc="$3"; echo "$svc deadbeef"; exit 0; fi

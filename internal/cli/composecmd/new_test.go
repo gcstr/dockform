@@ -145,12 +145,14 @@ func writeComposeManifest(t *testing.T, secret string, dockerExtras string, extr
 	if err := os.WriteFile(composePath, []byte("services:\n  web:\n    image: nginx:alpine\n"), 0o644); err != nil {
 		t.Fatalf("write compose file: %v", err)
 	}
-	daemonBlock := "daemons:\n  default:\n    context: default\n"
+	identifierBlock := "identifier: demo\n"
 	if strings.TrimSpace(dockerExtras) != "" {
-		daemonBlock += "    " + strings.TrimSpace(dockerExtras) + "\n"
-	} else {
-		daemonBlock += "    identifier: demo\n"
+		// dockerExtras might be "identifier: xyz" - extract it
+		if strings.HasPrefix(strings.TrimSpace(dockerExtras), "identifier:") {
+			identifierBlock = strings.TrimSpace(dockerExtras) + "\n"
+		}
 	}
+	daemonBlock := identifierBlock + "contexts:\n  default: {}\n"
 
 	inlineVals := append([]string{"API_SECRET=" + secret}, extraInline...)
 	var inlineBuilder strings.Builder
