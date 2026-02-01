@@ -109,8 +109,12 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 		}
 
 		// Validate compose file syntax by attempting to parse it with Docker
+		// Note: We pass env files but skip inline env (which includes SOPS secrets) to avoid
+		// slow decryption and key availability issues. This means stacks relying on SOPS
+		// secrets for variable interpolation may fail validation but work at apply.
+		// See TECHNICAL_DEBT.md for details.
 		if len(stack.Files) > 0 && stack.Root != "" {
-			if _, err := client.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, []string{}, []string{}); err != nil {
+			if _, err := client.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, []string{}); err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}

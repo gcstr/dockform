@@ -17,20 +17,32 @@ func validateBindMountsInComposeFile(stackKey string, stack Stack) error {
 		return nil
 	}
 
-	// Read the first compose file to check for bind mounts
-	composeFile := stack.Files[0]
-	if !filepath.IsAbs(composeFile) {
-		composeFile = filepath.Join(stack.Root, composeFile)
+	// Check all compose files (including overrides) for bind mounts
+	var allBindMounts []string
+	seenMounts := make(map[string]bool)
+
+	for _, file := range stack.Files {
+		composeFile := file
+		if !filepath.IsAbs(composeFile) {
+			composeFile = filepath.Join(stack.Root, composeFile)
+		}
+
+		content, err := os.ReadFile(composeFile)
+		if err != nil {
+			// If we can't read the file, skip validation (it will fail later during plan/apply)
+			continue
+		}
+
+		bindMounts := detectBindMounts(string(content))
+		for _, mount := range bindMounts {
+			if !seenMounts[mount] {
+				allBindMounts = append(allBindMounts, mount)
+				seenMounts[mount] = true
+			}
+		}
 	}
 
-	content, err := os.ReadFile(composeFile)
-	if err != nil {
-		// If we can't read the file, skip validation (it will fail later during plan/apply)
-		return nil
-	}
-
-	bindMounts := detectBindMounts(string(content))
-	if len(bindMounts) == 0 {
+	if len(allBindMounts) == 0 {
 		return nil
 	}
 
@@ -39,8 +51,8 @@ func validateBindMountsInComposeFile(stackKey string, stack Stack) error {
 
 	var msg strings.Builder
 	msg.WriteString(fmt.Sprintf("stack %s contains bind mounts with relative paths which will not work correctly with remote Docker contexts.\n\n", stackKey))
-	msg.WriteString(fmt.Sprintf("Bind mounts found in %s:\n", filepath.Base(composeFile)))
-	for _, bm := range bindMounts {
+	msg.WriteString("Bind mounts found:\n")
+	for _, bm := range allBindMounts {
 		msg.WriteString(fmt.Sprintf("  - %s\n", bm))
 	}
 	msg.WriteString("\nBind mounts reference paths on the Docker daemon's filesystem, not your local machine.\n")
