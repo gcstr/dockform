@@ -7,11 +7,14 @@ import (
 	"io"
 	"path"
 	"strings"
-	"sync"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/util"
 )
+
+// ComposeCacheMaxSize is the maximum number of compose config entries to cache.
+// This prevents unbounded memory growth in long-running processes.
+const ComposeCacheMaxSize = 100
 
 // HelperImage is the Docker image used for file operations on volumes
 const HelperImage = "alpine:3.22"
@@ -22,12 +25,15 @@ type Client struct {
 	identifier  string
 	contextName string
 
-	composeCache   map[string]ComposeConfigDoc
-	composeCacheMu sync.RWMutex
+	composeCache *LRUCache[string, ComposeConfigDoc]
 }
 
 func New(contextName string) *Client {
-	return &Client{exec: SystemExec{ContextName: contextName}, contextName: contextName}
+	return &Client{
+		exec:         SystemExec{ContextName: contextName},
+		contextName:  contextName,
+		composeCache: NewLRUCache[string, ComposeConfigDoc](ComposeCacheMaxSize),
+	}
 }
 
 // WithIdentifier sets an optional label identifier to scope discovery.
@@ -37,22 +43,17 @@ func (c *Client) WithIdentifier(id string) *Client {
 }
 
 func (c *Client) loadComposeCache(key string) (ComposeConfigDoc, bool) {
-	c.composeCacheMu.RLock()
-	defer c.composeCacheMu.RUnlock()
 	if c.composeCache == nil {
 		return ComposeConfigDoc{}, false
 	}
-	doc, ok := c.composeCache[key]
-	return doc, ok
+	return c.composeCache.Get(key)
 }
 
 func (c *Client) storeComposeCache(key string, doc ComposeConfigDoc) {
-	c.composeCacheMu.Lock()
-	defer c.composeCacheMu.Unlock()
 	if c.composeCache == nil {
-		c.composeCache = make(map[string]ComposeConfigDoc)
+		c.composeCache = NewLRUCache[string, ComposeConfigDoc](ComposeCacheMaxSize)
 	}
-	c.composeCache[key] = doc
+	c.composeCache.Set(key, doc)
 }
 
 // CheckDaemon verifies the docker daemon for the configured context is reachable.
