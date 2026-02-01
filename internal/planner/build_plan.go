@@ -246,6 +246,42 @@ func (p *Planner) buildStackResourcesForContext(ctx context.Context, cfg manifes
 	return p.buildStackResourcesSequentialForContext(ctx, cfg, contextName, stacks, identifier, client, plan, execCtx)
 }
 
+// serviceStatesToResources converts service states to plan resources.
+// This is the core conversion logic used by both sequential and parallel stack processing.
+func serviceStatesToResources(services []ServiceInfo) []Resource {
+	var resources []Resource
+	for _, service := range services {
+		switch service.State {
+		case ServiceMissing:
+			resources = append(resources,
+				NewResource(ResourceService, service.Name, ActionCreate, ""))
+		case ServiceIdentifierMismatch:
+			resources = append(resources,
+				NewResource(ResourceService, service.Name, ActionReconcile, "identifier mismatch"))
+		case ServiceDrifted:
+			resources = append(resources,
+				NewResource(ResourceService, service.Name, ActionUpdate, "config drift"))
+		case ServiceRunning:
+			if service.DesiredHash != "" {
+				resources = append(resources,
+					NewResource(ResourceService, service.Name, ActionNoop, "up-to-date"))
+			} else {
+				// Fallback when hash is unavailable
+				resources = append(resources,
+					NewResource(ResourceService, service.Name, ActionNoop, "running"))
+			}
+		}
+	}
+	return resources
+}
+
+// fallbackStackResource returns a placeholder resource when stack analysis fails.
+func fallbackStackResource() []Resource {
+	return []Resource{
+		NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"),
+	}
+}
+
 // buildStackResourcesSequentialForContext processes stacks one by one for a context
 func (p *Planner) buildStackResourcesSequentialForContext(ctx context.Context, cfg manifest.Config, contextName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, plan *ResourcePlan, execCtx *ContextExecutionContext) error {
 	detector := NewServiceStateDetector(client)
@@ -264,56 +300,19 @@ func (p *Planner) buildStackResourcesSequentialForContext(ctx context.Context, c
 		inline := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
 
 		services, err := detector.DetectAllServicesState(ctx, stackName, stack, identifier, cfg.Sops)
-		if err != nil {
-			// Fallback to "TBD" for any errors during planning
-			plan.Stacks[stackName] = []Resource{
-				NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"),
-			}
+		if err != nil || len(services) == 0 {
+			plan.Stacks[stackName] = fallbackStackResource()
 			continue
 		}
-
-		if len(services) == 0 {
-			plan.Stacks[stackName] = []Resource{
-				NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"),
-			}
-			continue
-		}
-
-		// Determine if this stack needs apply
-		needsApply := NeedsApply(services)
 
 		// Store execution data for reuse during apply
 		execCtx.Stacks[stackName] = &StackExecutionData{
 			Services:   services,
 			InlineEnv:  inline,
-			NeedsApply: needsApply,
+			NeedsApply: NeedsApply(services),
 		}
 
-		// Convert service states to resources
-		var stackResources []Resource
-		for _, service := range services {
-			switch service.State {
-			case ServiceMissing:
-				stackResources = append(stackResources,
-					NewResource(ResourceService, service.Name, ActionCreate, ""))
-			case ServiceIdentifierMismatch:
-				stackResources = append(stackResources,
-					NewResource(ResourceService, service.Name, ActionReconcile, "identifier mismatch"))
-			case ServiceDrifted:
-				stackResources = append(stackResources,
-					NewResource(ResourceService, service.Name, ActionUpdate, "config drift"))
-			case ServiceRunning:
-				if service.DesiredHash != "" {
-					stackResources = append(stackResources,
-						NewResource(ResourceService, service.Name, ActionNoop, "up-to-date"))
-				} else {
-					// Fallback when hash is unavailable
-					stackResources = append(stackResources,
-						NewResource(ResourceService, service.Name, ActionNoop, "running"))
-				}
-			}
-		}
-		plan.Stacks[stackName] = stackResources
+		plan.Stacks[stackName] = serviceStatesToResources(services)
 	}
 
 	return nil
@@ -355,47 +354,16 @@ func (p *Planner) buildStackResourcesParallelForContext(ctx context.Context, cfg
 			var resources []Resource
 			var execData *StackExecutionData
 
-			if err != nil {
-				// Fallback to "TBD" for any errors during planning
-				resources = append(resources,
-					NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"))
-			} else if len(services) == 0 {
-				resources = append(resources,
-					NewResource(ResourceService, "services", ActionNoop, "planned (services diff TBD)"))
+			if err != nil || len(services) == 0 {
+				resources = fallbackStackResource()
 			} else {
-				// Determine if this stack needs apply
-				needsApply := NeedsApply(services)
-
 				// Store execution data for reuse during apply
 				execData = &StackExecutionData{
 					Services:   services,
 					InlineEnv:  inline,
-					NeedsApply: needsApply,
+					NeedsApply: NeedsApply(services),
 				}
-
-				// Convert service states to resources
-				for _, service := range services {
-					switch service.State {
-					case ServiceMissing:
-						resources = append(resources,
-							NewResource(ResourceService, service.Name, ActionCreate, ""))
-					case ServiceIdentifierMismatch:
-						resources = append(resources,
-							NewResource(ResourceService, service.Name, ActionReconcile, "identifier mismatch"))
-					case ServiceDrifted:
-						resources = append(resources,
-							NewResource(ResourceService, service.Name, ActionUpdate, "config drift"))
-					case ServiceRunning:
-						if service.DesiredHash != "" {
-							resources = append(resources,
-								NewResource(ResourceService, service.Name, ActionNoop, "up-to-date"))
-						} else {
-							// Fallback when hash is unavailable
-							resources = append(resources,
-								NewResource(ResourceService, service.Name, ActionNoop, "running"))
-						}
-					}
-				}
+				resources = serviceStatesToResources(services)
 			}
 
 			resultsChan <- stackResult{stackName: stackName, resources: resources, execData: execData}
