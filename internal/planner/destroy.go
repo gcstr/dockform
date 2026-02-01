@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
@@ -153,9 +154,16 @@ func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
 }
 
 // destroyContext executes destruction for a single context.
+// Errors during resource removal are logged but do not stop the destruction process
+// to ensure best-effort cleanup of all resources.
 func (p *Planner) destroyContext(ctx context.Context, client DockerClient, contextName string, allFilesets map[string]manifest.FilesetSpec) error {
+	log := logger.FromContext(ctx).With("component", "planner", "action", "destroy", "context", contextName)
+
 	// Step 1: Remove containers
-	allContainers, _ := client.ListComposeContainersAll(ctx)
+	allContainers, err := client.ListComposeContainersAll(ctx)
+	if err != nil {
+		log.Warn("destroy_list_containers_failed", "error", err.Error())
+	}
 	byProjSvc := make(map[string]map[string][]string)
 	for _, it := range allContainers {
 		if it.Project == "" {
@@ -163,7 +171,9 @@ func (p *Planner) destroyContext(ctx context.Context, client DockerClient, conte
 			if p.spinner != nil {
 				p.spinner.SetLabel(fmt.Sprintf("removing container %s on %s", it.Name, contextName))
 			}
-			_ = client.RemoveContainer(ctx, it.Name, true)
+			if err := client.RemoveContainer(ctx, it.Name, true); err != nil {
+				log.Warn("destroy_remove_container_failed", "container", it.Name, "error", err.Error())
+			}
 			continue
 		}
 		if byProjSvc[it.Project] == nil {
@@ -178,27 +188,39 @@ func (p *Planner) destroyContext(ctx context.Context, client DockerClient, conte
 				p.spinner.SetLabel(fmt.Sprintf("removing service %s/%s on %s", stackName, svcName, contextName))
 			}
 			for _, name := range containerNames {
-				_ = client.RemoveContainer(ctx, name, true)
+				if err := client.RemoveContainer(ctx, name, true); err != nil {
+					log.Warn("destroy_remove_container_failed", "container", name, "stack", stackName, "service", svcName, "error", err.Error())
+				}
 			}
 		}
 	}
 
 	// Step 2: Remove networks
-	networks, _ := client.ListNetworks(ctx)
+	networks, err := client.ListNetworks(ctx)
+	if err != nil {
+		log.Warn("destroy_list_networks_failed", "error", err.Error())
+	}
 	for _, network := range networks {
 		if p.spinner != nil {
 			p.spinner.SetLabel(fmt.Sprintf("removing network %s on %s", network, contextName))
 		}
-		_ = client.RemoveNetwork(ctx, network)
+		if err := client.RemoveNetwork(ctx, network); err != nil {
+			log.Warn("destroy_remove_network_failed", "network", network, "error", err.Error())
+		}
 	}
 
 	// Step 3: Remove volumes
-	volumes, _ := client.ListVolumes(ctx)
+	volumes, err := client.ListVolumes(ctx)
+	if err != nil {
+		log.Warn("destroy_list_volumes_failed", "error", err.Error())
+	}
 	for _, volume := range volumes {
 		if p.spinner != nil {
 			p.spinner.SetLabel(fmt.Sprintf("removing volume %s on %s", volume, contextName))
 		}
-		_ = client.RemoveVolume(ctx, volume)
+		if err := client.RemoveVolume(ctx, volume); err != nil {
+			log.Warn("destroy_remove_volume_failed", "volume", volume, "error", err.Error())
+		}
 	}
 
 	return nil
