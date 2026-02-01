@@ -1,7 +1,7 @@
-daemons:
-  default:
-    context: ""
-    identifier: ${DOCKFORM_RUN_ID}
+identifier: ${DOCKFORM_RUN_ID}
+
+contexts:
+  default: {}
 
 stacks:
   default/app:

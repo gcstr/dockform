@@ -70,10 +70,16 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 		}
 	}
 
-	// Remove labeled volumes not needed by any fileset on this context
+	// Remove labeled volumes not needed by any fileset or explicit context config
 	desiredVolumes := map[string]struct{}{}
 	for _, fileset := range contextFilesets {
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
+	}
+	// Add explicit volumes from context config
+	if contextConfig, ok := cfg.Contexts[contextName]; ok {
+		for volName := range contextConfig.Volumes {
+			desiredVolumes[volName] = struct{}{}
+		}
 	}
 	if vols, err := client.ListVolumes(ctx); err == nil {
 		for _, v := range vols {

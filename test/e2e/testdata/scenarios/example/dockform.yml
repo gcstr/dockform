@@ -1,7 +1,11 @@
-daemons:
+identifier: demo
+
+contexts:
   default:
-    context: default
-    identifier: demo
+    volumes:
+      demo-volume-1: {}
+    networks:
+      demo-network: {}
 
 stacks:
   default/website:

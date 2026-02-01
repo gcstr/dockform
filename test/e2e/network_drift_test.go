@@ -45,9 +45,10 @@ func TestNetworkDrift_Recreate(t *testing.T) {
 	b, err := os.ReadFile(manifestPath)
 	if err == nil {
 		s := string(b)
+		// The network entry is indented 6 spaces, so driver/options need 8 spaces
 		s = strings.Replace(s,
 			"df_e2e_${DOCKFORM_RUN_ID}_net: {}",
-			"df_e2e_${DOCKFORM_RUN_ID}_net:\n    driver: bridge\n    options:\n      com.docker.network.bridge.enable_icc: \"false\"",
+			"df_e2e_${DOCKFORM_RUN_ID}_net:\n        driver: bridge\n        options:\n          com.docker.network.bridge.enable_icc: \"false\"",
 			1,
 		)
 		_ = os.WriteFile(manifestPath, []byte(s), 0644)

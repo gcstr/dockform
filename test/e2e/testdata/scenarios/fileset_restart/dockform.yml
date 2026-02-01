@@ -1,7 +1,11 @@
-daemons:
+identifier: ${DOCKFORM_RUN_ID}
+
+contexts:
   default:
-    context: ""
-    identifier: ${DOCKFORM_RUN_ID}
+    volumes:
+      df_e2e_${DOCKFORM_RUN_ID}_fsvol2: {}
+    networks:
+      df_e2e_${DOCKFORM_RUN_ID}_fsnet2: {}
 
 stacks:
   default/app:

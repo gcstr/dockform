@@ -49,6 +49,13 @@ func (rm *ResourceManager) EnsureVolumesExistForContext(ctx context.Context, cfg
 		desiredVolumes[fileset.TargetVolume] = struct{}{}
 	}
 
+	// Add explicit volumes declared in context config
+	if contextConfig, ok := cfg.Contexts[contextName]; ok {
+		for volName := range contextConfig.Volumes {
+			desiredVolumes[volName] = struct{}{}
+		}
+	}
+
 	// Create missing volumes
 	for name := range desiredVolumes {
 		if _, exists := existingVolumes[name]; !exists {
@@ -80,11 +87,49 @@ func (rm *ResourceManager) EnsureVolumesExist(ctx context.Context, cfg manifest.
 	return rm.EnsureVolumesExistForContext(ctx, cfg, contextName, labels)
 }
 
-// EnsureNetworksExist is no longer used in the new multi-context schema.
-// Networks are now created by docker compose up.
-// Deprecated: Networks are managed by compose in the new schema.
-func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest.Config, labels map[string]string, execCtx *ContextExecutionContext) error {
-	// In the new schema, networks are created by docker compose up.
-	// This function is kept for backward compatibility but does nothing.
+// EnsureNetworksExistForContext creates any missing networks declared in the context config.
+func (rm *ResourceManager) EnsureNetworksExistForContext(ctx context.Context, cfg manifest.Config, contextName string, labels map[string]string, existingNetworks map[string]struct{}) error {
+	log := logger.FromContext(ctx).With("component", "resourcemanager", "context", contextName)
+
+	if rm.docker == nil {
+		return apperr.New("resourcemanager.EnsureNetworksExistForContext", apperr.Precondition, "docker client not configured")
+	}
+
+	contextConfig, ok := cfg.Contexts[contextName]
+	if !ok {
+		return nil
+	}
+
+	// Get desired networks for this context
+	for netName := range contextConfig.Networks {
+		if _, exists := existingNetworks[netName]; exists {
+			continue // Already exists
+		}
+
+		if rm.progress != nil {
+			rm.progress.SetAction("creating network " + netName)
+		}
+
+		st := logger.StartStep(log, "network_create", netName,
+			"resource_kind", "network")
+
+		if err := rm.docker.CreateNetwork(ctx, netName, labels); err != nil {
+			return st.Fail(apperr.Wrap("resourcemanager.EnsureNetworksExistForContext", apperr.External, err, "create network %s", netName))
+		}
+
+		st.OK(true)
+	}
+
 	return nil
+}
+
+// EnsureNetworksExist is deprecated.
+// Deprecated: Use EnsureNetworksExistForContext for multi-context support.
+func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest.Config, labels map[string]string, execCtx *ContextExecutionContext) error {
+	contextName := cfg.GetFirstContext()
+	existingNetworks := map[string]struct{}{}
+	if execCtx != nil {
+		existingNetworks = execCtx.ExistingNetworks
+	}
+	return rm.EnsureNetworksExistForContext(ctx, cfg, contextName, labels, existingNetworks)
 }

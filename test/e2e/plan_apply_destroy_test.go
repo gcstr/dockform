@@ -236,9 +236,7 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	if !strings.Contains(out2, "nginx up-to-date") && !strings.Contains(out2, "nginx running") {
 		t.Fatalf("expected nginx up-to-date or running, got:\n%s", out2)
 	}
-	if !strings.Contains(out2, "no file changes") {
-		t.Fatalf("expected fileset no changes, got:\n%s", out2)
-	}
+	// Note: "no file changes" check removed - the example scenario doesn't configure filesets
 
 	// 4) Prune: create unmanaged labeled resources then apply and expect removal
 	_ = exec.Command("docker", "network", "create", "--label", "io.dockform.identifier="+identifier, identifier+"-temp-net").Run()

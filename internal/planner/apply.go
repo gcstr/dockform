@@ -94,6 +94,15 @@ func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, context
 		return st.Fail(err)
 	}
 
+	// Create missing networks
+	existingNetworks := map[string]struct{}{}
+	if execCtx != nil {
+		existingNetworks = execCtx.ExistingNetworks
+	}
+	if err := resourceManager.EnsureNetworksExistForContext(ctx, cfg, contextName, labels, existingNetworks); err != nil {
+		return st.Fail(err)
+	}
+
 	// Synchronize filesets
 	filesetManager := NewFilesetManagerWithClient(client, progress)
 	restartPending, err := filesetManager.SyncFilesetsForContext(ctx, cfg, contextName, existingVolumes, execCtx)

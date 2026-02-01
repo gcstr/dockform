@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/v2/list"
 	"github.com/charmbracelet/lipgloss/v2"
-	"github.com/gcstr/dockform/internal/cli/buildinfo"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/components"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd/theme"
 )
@@ -27,6 +26,7 @@ const (
 	rightOverhead  = 2
 )
 
+// View renders the dashboard UI.
 func (m model) View() string {
 	if m.quitting {
 		return ""
@@ -75,6 +75,7 @@ func (m model) View() string {
 	return canvas.Render()
 }
 
+// computeColumnWidths calculates the width distribution for the three columns.
 func computeColumnWidths(total int) (left, center, right int) {
 	if total <= 0 {
 		return 1, 1, 1
@@ -114,6 +115,7 @@ func computeColumnWidths(total int) (left, center, right int) {
 	return left, center, right
 }
 
+// renderColumns renders the three-column layout.
 func (m model) renderColumns(bodyHeight int) string {
 	box := lipgloss.NewStyle().Padding(paddingVertical, paddingHorizontal)
 	innerHeight := bodyHeight
@@ -228,20 +230,7 @@ func (m model) renderColumns(bodyHeight int) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftView, centerView, rightView)
 }
 
-func renderSimpleWithWidth(key, value string, totalWidth int) string {
-	available := availableValueWidth(totalWidth, key)
-	return components.RenderSimple(key, truncateRight(value, available))
-}
-
-func renderFilterPlaceholder(width int) string {
-	text := "Press / to filter stacks"
-	style := lipgloss.NewStyle().Foreground(theme.FgSubtle).Italic(true)
-	if width > 0 {
-		style = style.Width(width).MaxWidth(width)
-	}
-	return style.Render(text)
-}
-
+// renderVolumesSection renders the volumes panel content.
 func (m model) renderVolumesSection(contentWidth int) string {
 	active := m.selectedVolumeSet()
 	if len(active) == 0 {
@@ -267,6 +256,7 @@ func (m model) renderVolumesSection(contentWidth int) string {
 	return strings.Join(blocks, "\n\n")
 }
 
+// renderNetworksSection renders the networks panel content.
 func (m model) renderNetworksSection(contentWidth int) string {
 	active := m.selectedNetworkSet()
 	if len(active) == 0 {
@@ -286,223 +276,4 @@ func (m model) renderNetworksSection(contentWidth int) string {
 		return lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Italic(true).Render("(no networks attached)")
 	}
 	return strings.Join(lines, "\n")
-}
-
-func availableValueWidth(totalWidth int, key string) int {
-	width := totalWidth - lipgloss.Width(key+": ")
-	if width < 0 {
-		return 0
-	}
-	return width
-}
-
-func displayVersion(version string) string {
-	v := strings.TrimSpace(version)
-	if v == "" {
-		return buildinfo.Version()
-	}
-	return v
-}
-
-func displayIdentifier(identifier string) string {
-	id := strings.TrimSpace(identifier)
-	if id == "" {
-		return "(unset)"
-	}
-	return id
-}
-
-func displayContextName(name string) string {
-	n := strings.TrimSpace(name)
-	if n == "" {
-		return "default"
-	}
-	return n
-}
-
-func displayDockerHost(host string) string {
-	h := strings.TrimSpace(host)
-	if h == "" {
-		return "(unknown)"
-	}
-	return h
-}
-
-func displayEngineVersion(version string) string {
-	v := strings.TrimSpace(version)
-	if v == "" {
-		return "(unknown)"
-	}
-	return v
-}
-
-func displayManifestPath(path string) string {
-	p := strings.TrimSpace(path)
-	if p == "" {
-		return "(unknown)"
-	}
-	return p
-}
-
-func displayVolumeMount(mount string) string {
-	m := strings.TrimSpace(mount)
-	if m == "" {
-		return "(no mountpoint)"
-	}
-	return m
-}
-
-func displayVolumeDriver(driver string) string {
-	d := strings.TrimSpace(driver)
-	if d == "" {
-		return "(driver unknown)"
-	}
-	return d
-}
-
-func displayNetworkDriver(driver string) string {
-	d := strings.TrimSpace(driver)
-	if d == "" {
-		return "(driver unknown)"
-	}
-	return d
-}
-
-func truncateRight(value string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	if lipgloss.Width(value) <= width {
-		return value
-	}
-	ellipsis := "..."
-	ellipsisWidth := lipgloss.Width(ellipsis)
-	if width <= ellipsisWidth {
-		return ellipsis[:min(width, len(ellipsis))]
-	}
-	target := width - ellipsisWidth
-	var builder strings.Builder
-	current := 0
-	for _, r := range value {
-		rw := lipgloss.Width(string(r))
-		if current+rw > target {
-			break
-		}
-		builder.WriteRune(r)
-		current += rw
-	}
-	return builder.String() + ellipsis
-}
-
-func truncateLeft(value string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	if lipgloss.Width(value) <= width {
-		return value
-	}
-	ellipsis := "..."
-	ellipsisWidth := lipgloss.Width(ellipsis)
-	if width <= ellipsisWidth {
-		return ellipsis[:min(width, len(ellipsis))]
-	}
-	target := width - ellipsisWidth
-	runes := []rune(value)
-	current := 0
-	start := len(runes)
-	for start > 0 && current < target {
-		start--
-		rw := lipgloss.Width(string(runes[start]))
-		if current+rw > target {
-			break
-		}
-		current += rw
-	}
-	return ellipsis + string(runes[start:])
-}
-
-func (m model) renderHelp() string {
-	base := m.help.View(m.keys)
-	if m.width <= 0 {
-		return base
-	}
-	return lipgloss.NewStyle().Width(m.width).Render(base)
-}
-
-func (m model) renderCommandPaletteWindow() string {
-	width := commandPaletteWidth(m.width)
-	if available := max(1, m.width); width > available {
-		width = available
-	}
-	innerWidth := max(1, width-2)
-	contentWidth := commandListContentWidth(width)
-
-	header := components.RenderHeaderActive("Commands", innerWidth, 0, "slash")
-
-	containerName := strings.TrimSpace(m.selectedContainerName())
-	if containerName == "" {
-		containerName = "(no container selected)"
-	}
-	containerKey := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render("Container: ")
-	containerValue := lipgloss.NewStyle().Foreground(theme.FgBase).Bold(true).Render(containerName)
-	containerLine := lipgloss.NewStyle().
-		Width(contentWidth).
-		MaxWidth(contentWidth).
-		Render(containerKey + containerValue)
-
-	listView := lipgloss.NewStyle().
-		Width(contentWidth).
-		MaxWidth(contentWidth).
-		Render(m.commandList.View())
-
-	content := lipgloss.JoinVertical(lipgloss.Left, containerLine, "", listView)
-	contentStyled := lipgloss.NewStyle().
-		Padding(contentPaddingTop, contentPaddingRight, contentPaddingBottom, contentPaddingLeft).
-		Width(innerWidth).
-		Render(content)
-
-	body := lipgloss.JoinVertical(lipgloss.Left, header, contentStyled)
-
-	modal := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(theme.Primary).
-		Background(theme.BgBase).
-		Width(width).
-		Render(body)
-
-	return modal
-}
-
-func renderHeaderWithPadding(title string, containerWidth int, horizontalPadding int, pattern string) string {
-	return components.RenderHeader(title, containerWidth, horizontalPadding, pattern)
-}
-
-func renderSlashBanner(width int, title string) string {
-	if width < 1 {
-		width = 1
-	}
-	repeat := func(n int) string {
-		if n < 0 {
-			n = 0
-		}
-		return strings.Repeat("╱", n)
-	}
-	slashStyle := lipgloss.NewStyle().Foreground(theme.Primary)
-	top := slashStyle.Render(repeat(width))
-	bottom := slashStyle.Render(repeat(width))
-
-	rawCore := " " + title + " "
-	coreStyled := lipgloss.NewStyle().Foreground(theme.FgHalfMuted).Render(rawCore)
-	coreW := lipgloss.Width(rawCore)
-	if coreW >= width {
-		middle := lipgloss.NewStyle().Width(width).MaxWidth(width).Render(coreStyled)
-		return top + "\n" + middle + "\n" + bottom
-	}
-	remain := width - coreW
-	left := remain / 2
-	right := remain - left
-	leftSlashes := slashStyle.Render(repeat(left))
-	rightSlashes := slashStyle.Render(repeat(right))
-	middle := leftSlashes + coreStyled + rightSlashes
-	return top + "\n" + middle + "\n" + bottom
 }

@@ -1,7 +1,9 @@
-daemons:
+identifier: ${DOCKFORM_RUN_ID}
+
+contexts:
   default:
-    context: ""
-    identifier: ${DOCKFORM_RUN_ID}
+    networks:
+      df_e2e_${DOCKFORM_RUN_ID}_net: {}
 
 stacks:
   default/app:
