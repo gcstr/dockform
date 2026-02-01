@@ -1,0 +1,95 @@
+package manifest
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/gcstr/dockform/internal/apperr"
+)
+
+// validateBindMountsInComposeFile checks for problematic bind mounts by parsing the raw compose file.
+// This avoids needing a Docker client connection during manifest loading.
+func validateBindMountsInComposeFile(stackKey string, stack Stack) error {
+	if len(stack.Files) == 0 {
+		return nil
+	}
+
+	// Read the first compose file to check for bind mounts
+	composeFile := stack.Files[0]
+	if !filepath.IsAbs(composeFile) {
+		composeFile = filepath.Join(stack.Root, composeFile)
+	}
+
+	content, err := os.ReadFile(composeFile)
+	if err != nil {
+		// If we can't read the file, skip validation (it will fail later during plan/apply)
+		return nil
+	}
+
+	bindMounts := detectBindMounts(string(content))
+	if len(bindMounts) == 0 {
+		return nil
+	}
+
+	// Build helpful error message
+	daemon, stackName, _ := ParseStackKey(stackKey)
+
+	var msg strings.Builder
+	msg.WriteString(fmt.Sprintf("stack %s contains bind mounts with relative paths which will not work correctly with remote Docker contexts.\n\n", stackKey))
+	msg.WriteString(fmt.Sprintf("Bind mounts found in %s:\n", filepath.Base(composeFile)))
+	for _, bm := range bindMounts {
+		msg.WriteString(fmt.Sprintf("  - %s\n", bm))
+	}
+	msg.WriteString("\nBind mounts reference paths on the Docker daemon's filesystem, not your local machine.\n")
+	msg.WriteString("When using remote Docker contexts, these paths would be resolved on the remote server.\n\n")
+	msg.WriteString("Solution: Use Dockform filesets for syncing local files to remote volumes.\n\n")
+	msg.WriteString("Migration steps:\n")
+	msg.WriteString(fmt.Sprintf("  1. Create a 'volumes/' directory in your stack: %s/%s/volumes/\n", daemon, stackName))
+	msg.WriteString("  2. Move your bind mount directories into volumes/\n")
+	msg.WriteString(fmt.Sprintf("     Example: ./config → %s/%s/volumes/config/\n", daemon, stackName))
+	msg.WriteString("  3. Change compose volumes to use named volumes:\n")
+	msg.WriteString("     - Old: ./config:/app/config\n")
+	msg.WriteString(fmt.Sprintf("     - New: %s_config:/app/config\n", stackName))
+	msg.WriteString("  4. Declare the volume in dockform.yaml:\n")
+	msg.WriteString("     daemons:\n")
+	msg.WriteString(fmt.Sprintf("       %s:\n", daemon))
+	msg.WriteString("         volumes:\n")
+	msg.WriteString(fmt.Sprintf("           %s_config: {}\n\n", stackName))
+	msg.WriteString("Dockform will auto-discover the fileset and sync files correctly to the remote server.\n")
+	msg.WriteString("See: https://github.com/gcstr/dockform#filesets for more information.")
+
+	return apperr.New("manifest.validateBindMounts", apperr.InvalidInput, "%s", msg.String())
+}
+
+// detectBindMounts uses regex to find bind mount patterns in compose YAML.
+// This is a simple heuristic that catches common patterns like:
+//   - ./path:/container/path
+//   - ../path:/container/path
+//   - ~/path:/container/path (relative to home)
+func detectBindMounts(content string) []string {
+	var mounts []string
+	seen := make(map[string]bool)
+
+	// Pattern matches:
+	// - ./something:/path
+	// - ../something:/path
+	// - ~/something:/path
+	// Excludes absolute paths (/something:/path) and named volumes (volumename:/path)
+	bindMountPattern := regexp.MustCompile(`(?m)^\s*-\s+(\.{1,2}/[^:\s]+|~/[^:\s]+):`)
+
+	matches := bindMountPattern.FindAllStringSubmatch(content, -1)
+	for _, match := range matches {
+		if len(match) > 1 {
+			mount := strings.TrimSpace(match[1])
+			if !seen[mount] {
+				mounts = append(mounts, mount)
+				seen[mount] = true
+			}
+		}
+	}
+
+	return mounts
+}

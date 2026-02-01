@@ -177,6 +177,11 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 			}
 		}
 
+		// Validate bind mounts - check for relative path bind mounts that won't work with remote contexts
+		if err := validateBindMountsInComposeFile(stackKey, stack); err != nil {
+			return err
+		}
+
 		// Update the stack in discovered (which will be merged in GetAllStacks)
 		if _, isDiscovered := c.DiscoveredStacks[stackKey]; isDiscovered {
 			c.DiscoveredStacks[stackKey] = stack
