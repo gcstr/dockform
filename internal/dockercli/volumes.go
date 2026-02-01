@@ -16,7 +16,7 @@ import (
 func (c *Client) ListVolumes(ctx context.Context) ([]string, error) {
 	args := []string{"volume", "ls", "--format", "{{.Name}}"}
 	if c.identifier != "" {
-		args = append(args, "--filter", "label=io.dockform.identifier="+c.identifier)
+		args = append(args, "--filter", "label="+LabelIdentifier+"="+c.identifier)
 	}
 	out, err := c.exec.Run(ctx, args...)
 	if err != nil {
@@ -101,7 +101,7 @@ func (c *Client) InspectVolume(ctx context.Context, name string) (VolumeDetails,
 func (c *Client) VolumeSummaries(ctx context.Context) ([]VolumeSummary, error) {
 	args := []string{"volume", "ls", "--format", "{{.Name}}\t{{.Driver}}"}
 	if c.identifier != "" {
-		args = append(args, "--filter", "label=io.dockform.identifier="+c.identifier)
+		args = append(args, "--filter", "label="+LabelIdentifier+"="+c.identifier)
 	}
 	out, err := c.exec.Run(ctx, args...)
 	if err != nil {

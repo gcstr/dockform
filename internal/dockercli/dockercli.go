@@ -19,6 +19,12 @@ const ComposeCacheMaxSize = 100
 // HelperImage is the Docker image used for file operations on volumes
 const HelperImage = "alpine:3.22"
 
+// LabelPrefix is the prefix for all Dockform labels
+const LabelPrefix = "io.dockform."
+
+// LabelIdentifier is the full label key for the Dockform identifier
+const LabelIdentifier = LabelPrefix + "identifier"
+
 // Client provides higher-level helpers around docker CLI.
 type Client struct {
 	exec        Exec
@@ -193,7 +199,7 @@ func (c *Client) ListComposeContainersAll(ctx context.Context) ([]PsBrief, error
 	format := `{{.Label "com.docker.compose.project"}};{{.Label "com.docker.compose.service"}};{{.Names}}`
 	args := []string{"ps", "-a", "--format", format}
 	if c.identifier != "" {
-		args = append(args, "--filter", "label=io.dockform.identifier="+c.identifier)
+		args = append(args, "--filter", "label="+LabelIdentifier+"="+c.identifier)
 	}
 	out, err := c.exec.Run(ctx, args...)
 	if err != nil {
