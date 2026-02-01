@@ -247,7 +247,7 @@ func TestDiscoverFilesets_NoVolumesDir(t *testing.T) {
 	}
 }
 
-func TestDiscoverResources_CustomConventions(t *testing.T) {
+func TestDiscoverResources_CustomDiscovery(t *testing.T) {
 	base := t.TempDir()
 
 	contextDir := filepath.Join(base, "default")
@@ -263,7 +263,7 @@ func TestDiscoverResources_CustomConventions(t *testing.T) {
 		Contexts: map[string]ContextConfig{
 			"default": {},
 		},
-		Conventions: ConventionsConfig{
+		Discovery: DiscoveryConfig{
 			ComposeFiles:    []string{"stack.yml"},
 			EnvironmentFile: "env.txt",
 			VolumesDir:      "data",
@@ -284,29 +284,6 @@ func TestDiscoverResources_CustomConventions(t *testing.T) {
 	}
 	if len(stack.EnvFile) != 1 || stack.EnvFile[0] != "env.txt" {
 		t.Errorf("expected env-file [env.txt], got %v", stack.EnvFile)
-	}
-}
-
-func TestDiscoverResources_DisabledConventions(t *testing.T) {
-	base := t.TempDir()
-
-	contextDir := filepath.Join(base, "default")
-	stackDir := filepath.Join(contextDir, "app")
-	mustMkdir(t, stackDir)
-	mustWriteFile(t, filepath.Join(stackDir, "compose.yaml"), "services:\n  app: {}\n")
-
-	disabled := false
-	cfg := Config{
-		Identifier: "test",
-		Contexts: map[string]ContextConfig{
-			"default": {},
-		},
-		Conventions: ConventionsConfig{Enabled: &disabled},
-	}
-
-	// Conventions disabled - should not discover anything
-	if cfg.Conventions.IsEnabled() {
-		t.Fatal("expected conventions to be disabled")
 	}
 }
 

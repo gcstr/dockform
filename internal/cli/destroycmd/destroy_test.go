@@ -148,6 +148,9 @@ exit 0
 }
 
 func TestDestroy_CorrectIdentifier_ProceedsWithDestruction(t *testing.T) {
+	// Clear env var that overrides identifier from config
+	t.Setenv("DOCKFORM_RUN_ID", "")
+
 	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in

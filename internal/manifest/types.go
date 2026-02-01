@@ -14,14 +14,14 @@ type Config struct {
 	Identifier string `yaml:"identifier" validate:"required"`
 
 	// Global settings
-	Sops        *SopsConfig       `yaml:"sops"`
-	Conventions ConventionsConfig `yaml:"conventions"`
+	Sops      *SopsConfig     `yaml:"sops"`
+	Discovery DiscoveryConfig `yaml:"discovery"`
 
 	// Multi-context support (maps context name to config)
 	Contexts    map[string]ContextConfig    `yaml:"contexts" validate:"required"`
 	Deployments map[string]DeploymentConfig `yaml:"deployments"`
 
-	// Explicit overrides (optional - conventions discover most of this)
+	// Explicit overrides (optional - discovery finds most of this automatically)
 	// Stack keys are in "context/stack" format (e.g., "hetzner-one/traefik")
 	Stacks map[string]Stack `yaml:"stacks" validate:"dive"`
 
@@ -47,64 +47,61 @@ type DeploymentConfig struct {
 	Stacks      []string `yaml:"stacks"`   // Target specific stacks (context/stack format)
 }
 
-// ConventionsConfig controls convention-over-configuration behavior.
-type ConventionsConfig struct {
-	Enabled         *bool    `yaml:"enabled"`          // Default: true
+// DiscoveryConfig controls automatic resource discovery behavior.
+// Discovery is always enabled; use explicit stacks: block to override discovered values.
+type DiscoveryConfig struct {
 	ComposeFiles    []string `yaml:"compose_files"`    // Default: [compose.yaml, compose.yml, docker-compose.yaml, docker-compose.yml]
 	SecretsFile     string   `yaml:"secrets_file"`     // Default: secrets.env
 	EnvironmentFile string   `yaml:"environment_file"` // Default: environment.env
 	VolumesDir      string   `yaml:"volumes_dir"`      // Default: volumes
 }
 
-// IsEnabled returns whether conventions are enabled (defaults to true).
-func (c ConventionsConfig) IsEnabled() bool {
-	if c.Enabled == nil {
-		return true
-	}
-	return *c.Enabled
-}
-
 // GetComposeFiles returns the compose file patterns to search for.
-func (c ConventionsConfig) GetComposeFiles() []string {
-	if len(c.ComposeFiles) == 0 {
+func (d DiscoveryConfig) GetComposeFiles() []string {
+	if len(d.ComposeFiles) == 0 {
 		return []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
 	}
-	return c.ComposeFiles
+	return d.ComposeFiles
 }
 
 // GetSecretsFile returns the secrets file name to look for.
-func (c ConventionsConfig) GetSecretsFile() string {
-	if c.SecretsFile == "" {
+func (d DiscoveryConfig) GetSecretsFile() string {
+	if d.SecretsFile == "" {
 		return "secrets.env"
 	}
-	return c.SecretsFile
+	return d.SecretsFile
 }
 
 // GetEnvironmentFile returns the environment file name to look for.
-func (c ConventionsConfig) GetEnvironmentFile() string {
-	if c.EnvironmentFile == "" {
+func (d DiscoveryConfig) GetEnvironmentFile() string {
+	if d.EnvironmentFile == "" {
 		return "environment.env"
 	}
-	return c.EnvironmentFile
+	return d.EnvironmentFile
 }
 
 // GetVolumesDir returns the volumes directory name to look for.
-func (c ConventionsConfig) GetVolumesDir() string {
-	if c.VolumesDir == "" {
+func (d DiscoveryConfig) GetVolumesDir() string {
+	if d.VolumesDir == "" {
 		return "volumes"
 	}
-	return c.VolumesDir
+	return d.VolumesDir
 }
 
 // Stack defines a Docker Compose stack to manage.
+// Stacks are discovered automatically from context directories.
+// The stacks: block can augment discovered stacks or define explicit stacks.
 type Stack struct {
-	Root        string       `yaml:"root"`      // Override: stack directory (relative to daemon dir)
-	Files       []string     `yaml:"files"`     // Override: compose files
-	Profiles    []string     `yaml:"profiles"`  // Compose profiles to activate
-	EnvFile     []string     `yaml:"env-file"`  // Additional env files
-	Environment *Environment `yaml:"environment"`
-	Secrets     *Secrets     `yaml:"secrets"` // Additional SOPS secrets
-	Project     *Project     `yaml:"project"` // Compose project name override
+	// Core fields (set by discovery, can be overridden explicitly for non-standard setups)
+	Root    string   `yaml:"root"`     // Stack directory (usually set by discovery)
+	Files   []string `yaml:"files"`    // Compose files (usually set by discovery)
+	EnvFile []string `yaml:"env-file"` // Env files
+
+	// Override fields (typically set in stacks: block to augment discovered stacks)
+	Profiles    []string     `yaml:"profiles"`    // Compose profiles to activate
+	Environment *Environment `yaml:"environment"` // Additional environment config
+	Secrets     *Secrets     `yaml:"secrets"`     // Additional SOPS secrets
+	Project     *Project     `yaml:"project"`     // Compose project name override
 
 	// Computed fields
 	Context     string   `yaml:"-"` // Which context this belongs to (from key prefix)
@@ -274,8 +271,8 @@ func MakeStackKey(context, stack string) string {
 	return context + "/" + stack
 }
 
-// GetAllStacks returns all stacks (discovered + explicit overrides merged).
-// Explicit stacks override discovered ones.
+// GetAllStacks returns all stacks (discovered + explicit merged).
+// Discovery is preferred; explicit stacks can augment or provide fallback.
 func (c *Config) GetAllStacks() map[string]Stack {
 	result := make(map[string]Stack)
 
@@ -284,22 +281,14 @@ func (c *Config) GetAllStacks() map[string]Stack {
 		result[k] = v
 	}
 
-	// Merge explicit stacks (override discovered)
+	// Merge explicit stacks
 	for k, v := range c.Stacks {
 		if existing, ok := result[k]; ok {
-			// Merge: explicit values override discovered
+			// Discovered stack exists: merge augmentation fields only
+			// (discovery wins for root/files/env-file)
 			merged := existing
-			if v.Root != "" {
-				merged.Root = v.Root
-			}
-			if len(v.Files) > 0 {
-				merged.Files = v.Files
-			}
 			if len(v.Profiles) > 0 {
 				merged.Profiles = v.Profiles
-			}
-			if len(v.EnvFile) > 0 {
-				merged.EnvFile = v.EnvFile
 			}
 			if v.Environment != nil {
 				merged.Environment = v.Environment
@@ -312,6 +301,7 @@ func (c *Config) GetAllStacks() map[string]Stack {
 			}
 			result[k] = merged
 		} else {
+			// No discovered stack: use explicit stack as fallback
 			result[k] = v
 		}
 	}

@@ -52,11 +52,9 @@ func LoadWithWarnings(path string) (Config, []string, error) {
 	baseDir := filepath.Dir(guessedAbs)
 	cfg.BaseDir = baseDir
 
-	// Run convention discovery if enabled
-	if cfg.Conventions.IsEnabled() {
-		if err := discoverResources(&cfg, baseDir); err != nil {
-			return Config{}, missing, err
-		}
+	// Run convention discovery (always enabled; use stacks: block to override)
+	if err := discoverResources(&cfg, baseDir); err != nil {
+		return Config{}, missing, err
 	}
 
 	// Normalize and validate the config
@@ -109,7 +107,7 @@ func discoverResources(cfg *Config, baseDir string) error {
 		}
 
 		// Find context-level secrets
-		contextSecrets := findSecretsFile(contextDir, cfg.Conventions.GetSecretsFile())
+		contextSecrets := findSecretsFile(contextDir, cfg.Discovery.GetSecretsFile())
 
 		// List subdirectories as potential stacks
 		entries, err := os.ReadDir(contextDir)
@@ -125,7 +123,7 @@ func discoverResources(cfg *Config, baseDir string) error {
 			stackDir := filepath.Join(contextDir, stackName)
 
 			// Look for compose file
-			composeFile := findComposeFile(stackDir, cfg.Conventions.GetComposeFiles())
+			composeFile := findComposeFile(stackDir, cfg.Discovery.GetComposeFiles())
 			if composeFile == "" {
 				// No compose file found, not a stack
 				continue
@@ -141,7 +139,7 @@ func discoverResources(cfg *Config, baseDir string) error {
 			}
 
 			// Find stack-level secrets
-			stackSecrets := findSecretsFile(stackDir, cfg.Conventions.GetSecretsFile())
+			stackSecrets := findSecretsFile(stackDir, cfg.Discovery.GetSecretsFile())
 
 			// Merge secrets: context-level first, then stack-level (stack wins)
 			var sopsSecrets []string
@@ -162,7 +160,7 @@ func discoverResources(cfg *Config, baseDir string) error {
 			}
 
 			// Find environment file
-			envFile := findEnvFile(stackDir, cfg.Conventions.GetEnvironmentFile())
+			envFile := findEnvFile(stackDir, cfg.Discovery.GetEnvironmentFile())
 			if envFile != "" {
 				stack.EnvFile = []string{filepath.Base(envFile)}
 			}
@@ -181,7 +179,7 @@ func discoverResources(cfg *Config, baseDir string) error {
 
 // discoverFilesets discovers filesets from the volumes/ directory of a stack.
 func discoverFilesets(cfg *Config, contextName, stackName, stackDir string) error {
-	volumesDir := filepath.Join(stackDir, cfg.Conventions.GetVolumesDir())
+	volumesDir := filepath.Join(stackDir, cfg.Discovery.GetVolumesDir())
 
 	info, err := os.Stat(volumesDir)
 	if err != nil {

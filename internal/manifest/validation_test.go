@@ -548,24 +548,28 @@ func TestParseStackKey(t *testing.T) {
 func TestGetAllStacks(t *testing.T) {
 	cfg := Config{
 		Stacks: map[string]Stack{
-			"default/web": {Root: "/app/web"},
+			"default/web":     {Profiles: []string{"prod"}}, // Augments discovered
+			"default/newstack": {Root: "/app/new"},          // Fallback (no discovered)
 		},
 		DiscoveredStacks: map[string]Stack{
 			"default/api":      {Root: "/app/api"},
-			"default/web":      {Root: "/discovered/web"}, // Should be overridden
+			"default/web":      {Root: "/discovered/web"}, // Discovery wins for core fields
 			"hetzner/frontend": {Root: "/prod/frontend"},
 		},
 	}
 
 	all := cfg.GetAllStacks()
 
-	if len(all) != 3 {
-		t.Fatalf("expected 3 stacks, got %d", len(all))
+	if len(all) != 4 {
+		t.Fatalf("expected 4 stacks, got %d", len(all))
 	}
 
-	// Explicit stack should override discovered
-	if web, ok := all["default/web"]; !ok || web.Root != "/app/web" {
-		t.Errorf("default/web should be from explicit stacks with Root=/app/web, got %v", all["default/web"])
+	// Discovery wins for core fields, explicit adds augmentation
+	if web, ok := all["default/web"]; !ok || web.Root != "/discovered/web" {
+		t.Errorf("default/web should keep discovered Root=/discovered/web, got %v", web.Root)
+	}
+	if web, ok := all["default/web"]; !ok || len(web.Profiles) != 1 || web.Profiles[0] != "prod" {
+		t.Errorf("default/web should have augmented Profiles=[prod], got %v", web.Profiles)
 	}
 
 	// Discovered stacks should be included
@@ -574,6 +578,11 @@ func TestGetAllStacks(t *testing.T) {
 	}
 	if _, ok := all["hetzner/frontend"]; !ok {
 		t.Errorf("hetzner/frontend should be in result")
+	}
+
+	// Explicit-only stack (fallback) should be included
+	if newstack, ok := all["default/newstack"]; !ok || newstack.Root != "/app/new" {
+		t.Errorf("default/newstack should be from explicit stacks, got %v", all["default/newstack"])
 	}
 }
 
