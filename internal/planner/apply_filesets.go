@@ -513,6 +513,5 @@ func isNumeric(s string) bool {
 // shellEscape escapes a string for safe use in a shell script within single quotes.
 // It replaces any single quotes with '\” (end quote, escaped quote, start quote).
 func shellEscape(s string) string {
-	// Replace ' with '\''
-	return strings.ReplaceAll(s, "'", "'\\''")
+	return util.ShellEscape(s)
 }

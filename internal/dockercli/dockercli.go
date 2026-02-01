@@ -270,7 +270,7 @@ func (c *Client) ReadFileFromVolume(ctx context.Context, volumeName, targetPath,
 		"run", "--rm",
 		"-v", fmt.Sprintf("%s:%s", volumeName, mountPath),
 		HelperImage, "sh", "-c",
-		"cat '" + full + "' 2>/dev/null || true",
+		"cat '" + util.ShellEscape(full) + "' 2>/dev/null || true",
 	}
 	out, err := c.exec.Run(ctx, cmd...)
 	if err != nil {
@@ -291,7 +291,7 @@ func (c *Client) WriteFileToVolume(ctx context.Context, volumeName, targetPath, 
 		"run", "--rm", "-i",
 		"-v", fmt.Sprintf("%s:%s", volumeName, mountPath),
 		HelperImage, "sh", "-c",
-		"mkdir -p '" + dir + "' && cat > '" + full + "'",
+		"mkdir -p '" + util.ShellEscape(dir) + "' && cat > '" + util.ShellEscape(full) + "'",
 	}
 	_, err := c.exec.RunWithStdin(ctx, strings.NewReader(content), cmd...)
 	return err
@@ -304,11 +304,12 @@ func (c *Client) ExtractTarToVolume(ctx context.Context, volumeName, targetPath 
 		return apperr.New("dockercli.ExtractTarToVolume", apperr.InvalidInput, "invalid volume or target path")
 	}
 	mountPath := normalizeVolumeMountPath(targetPath)
+	escapedPath := util.ShellEscape(mountPath)
 	cmd := []string{
 		"run", "--rm", "-i",
 		"-v", fmt.Sprintf("%s:%s", volumeName, mountPath),
 		HelperImage, "sh", "-c",
-		"mkdir -p '" + mountPath + "' && tar -xpf - -C '" + mountPath + "'",
+		"mkdir -p '" + escapedPath + "' && tar -xpf - -C '" + escapedPath + "'",
 	}
 	_, err := c.exec.RunWithStdin(ctx, r, cmd...)
 	return err
