@@ -25,10 +25,11 @@ Manage volumes, secrets, and configuration files across one or more Docker daemo
 The state is defined in a single manifest file:
 
 ```yaml
-daemons:
+identifier: staging
+
+contexts:
   hetzner-one:
     context: hetzner-one
-    identifier: staging
 
 sops:
   age:
@@ -36,25 +37,24 @@ sops:
 
 stacks:
   hetzner-one/traefik:
-    root: traefik
+    profiles:
+      - production
   hetzner-one/linkwarden:
-    root: linkwarden
     secrets:
       sops:
         - secrets.env
-  hetzner-one/vaultwarden:
-    root: vaultwarden
-  hetzner-one/web:
-    root: web
+  hetzner-one/vaultwarden: {}
+  hetzner-one/web: {}
 ```
 
-Or use **convention-over-configuration** to auto-discover stacks from your directory structure with a minimal manifest:
+Or use **automatic discovery** to auto-discover stacks from your directory structure with a minimal manifest:
 
 ```yaml
-daemons:
+identifier: staging
+
+contexts:
   hetzner-one:
     context: hetzner-one
-    identifier: staging
 
 sops:
   age:
@@ -83,9 +83,9 @@ Please visit https://dockform.io for the full documentation.
 ## Features
 
 - Declarative configuration in a single YAML file
-- Multi-daemon support for managing multiple Docker hosts
-- Convention-over-configuration: auto-discover stacks from directory structure
-- Deployment groups for targeted operations (`--daemon`, `--stack`, `--deployment`)
+- Multi-context support for managing multiple Docker hosts
+- Automatic discovery: auto-discover stacks and filesets from directory structure
+- Deployment groups for targeted operations (`--context`, `--stack`)
 - Parallel daemon execution by default
 - Idempotent operations
 - Transparent config files management

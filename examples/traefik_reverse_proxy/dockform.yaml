@@ -1,14 +1,13 @@
-daemons:
+identifier: traefik-rp
+
+contexts:
   default:
     context: default
-    identifier: traefik-rp
 
 stacks:
   default/traefik:
-    root: traefik
     project:
       name: traefik-rp
   default/nginx:
-    root: nginx
     project:
       name: traefik-rp

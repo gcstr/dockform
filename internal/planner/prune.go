@@ -89,6 +89,21 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 		}
 	}
 
+	// Remove labeled networks not defined in context config
+	desiredNetworks := map[string]struct{}{}
+	if contextConfig, ok := cfg.Contexts[contextName]; ok {
+		for netName := range contextConfig.Networks {
+			desiredNetworks[netName] = struct{}{}
+		}
+	}
+	if nets, err := client.ListNetworks(ctx); err == nil {
+		for _, n := range nets {
+			if _, want := desiredNetworks[n]; !want {
+				_ = client.RemoveNetwork(ctx, n)
+			}
+		}
+	}
+
 	return nil
 }
 

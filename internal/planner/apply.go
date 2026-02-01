@@ -98,6 +98,13 @@ func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, context
 	existingNetworks := map[string]struct{}{}
 	if execCtx != nil {
 		existingNetworks = execCtx.ExistingNetworks
+	} else {
+		// Query existing networks from Docker when no execution context is provided
+		if nets, err := client.ListNetworks(ctx); err == nil {
+			for _, n := range nets {
+				existingNetworks[n] = struct{}{}
+			}
+		}
 	}
 	if err := resourceManager.EnsureNetworksExistForContext(ctx, cfg, contextName, labels, existingNetworks); err != nil {
 		return st.Fail(err)
@@ -201,4 +208,3 @@ func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.
 
 	return nil
 }
-
