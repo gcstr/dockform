@@ -35,6 +35,17 @@ type sopsResolved struct {
 	ageRecipients []string
 }
 
+func loadConfigWithManifestSelection(cmd *cobra.Command, pr ui.Printer) (manifest.Config, error) {
+	file, err := common.ResolveManifestPath(cmd, pr, ".", 3)
+	if err != nil {
+		return manifest.Config{}, err
+	}
+	if file != "" {
+		_ = cmd.Flags().Set("manifest", file)
+	}
+	return manifest.Load(file)
+}
+
 func resolveRecipientsAndKey(cfg manifest.Config) (sopsResolved, error) {
 	if cfg.Sops == nil {
 		return sopsResolved{}, apperr.New("cli.resolveRecipientsAndKey", apperr.InvalidInput, "sops config not configured")
@@ -78,17 +89,8 @@ func newCreateCmd() *cobra.Command {
 		Short: "Create a new SOPS-encrypted dotenv file",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfgPath, _ := cmd.Flags().GetString("config")
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-			cfg, err := manifest.Load(cfgPath)
-			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3, ""); selErr == nil && ok {
-					_ = cmd.Flags().Set("config", selPath)
-					cfg, err = manifest.Load(selPath)
-				} else if selErr != nil {
-					return selErr
-				}
-			}
+			cfg, err := loadConfigWithManifestSelection(cmd, pr)
 			if err != nil {
 				return err
 			}
@@ -125,17 +127,8 @@ func newRekeyCmd() *cobra.Command {
 		Short: "Re-encrypt all declared SOPS secret files with configured recipients",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfgPath, _ := cmd.Flags().GetString("config")
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-			cfg, err := manifest.Load(cfgPath)
-			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3, ""); selErr == nil && ok {
-					_ = cmd.Flags().Set("config", selPath)
-					cfg, err = manifest.Load(selPath)
-				} else if selErr != nil {
-					return selErr
-				}
-			}
+			cfg, err := loadConfigWithManifestSelection(cmd, pr)
 			if err != nil {
 				return err
 			}
@@ -183,17 +176,8 @@ func newDecryptCmd() *cobra.Command {
 		Short: "Decrypt a SOPS-encrypted dotenv file and print to stdout",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfgPath, _ := cmd.Flags().GetString("config")
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-			cfg, err := manifest.Load(cfgPath)
-			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3, ""); selErr == nil && ok {
-					_ = cmd.Flags().Set("config", selPath)
-					cfg, err = manifest.Load(selPath)
-				} else if selErr != nil {
-					return selErr
-				}
-			}
+			cfg, err := loadConfigWithManifestSelection(cmd, pr)
 			if err != nil {
 				return err
 			}
@@ -229,17 +213,8 @@ func newEditCmd() *cobra.Command {
 		Short: "Edit a SOPS-encrypted dotenv file interactively",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfgPath, _ := cmd.Flags().GetString("config")
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-			cfg, err := manifest.Load(cfgPath)
-			if err != nil && cfgPath == "" && apperr.IsKind(err, apperr.NotFound) {
-				if selPath, ok, selErr := common.SelectManifestPath(cmd, pr, ".", 3, ""); selErr == nil && ok {
-					_ = cmd.Flags().Set("config", selPath)
-					cfg, err = manifest.Load(selPath)
-				} else if selErr != nil {
-					return selErr
-				}
-			}
+			cfg, err := loadConfigWithManifestSelection(cmd, pr)
 			if err != nil {
 				return err
 			}

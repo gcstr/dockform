@@ -65,7 +65,7 @@ func dockerContextName(cfg *manifest.Config) string {
 }
 
 func resolveManifestPath(cmd *cobra.Command, cfg *manifest.Config) string {
-	flagVal, _ := cmd.Flags().GetString("config")
+	flagVal, _ := cmd.Flags().GetString("manifest")
 	flagVal = strings.TrimSpace(flagVal)
 	baseDir := ""
 	if cfg != nil {

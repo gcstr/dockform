@@ -85,11 +85,11 @@ func TestLoadConfigWithWarningsEmitsMessages(t *testing.T) {
 	path, _ := createSampleManifest(t)
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetContext(context.Background())
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	if err := cmd.Flags().Set("config", path); err != nil {
+	if err := cmd.Flags().Set("manifest", path); err != nil {
 		t.Fatalf("set flag: %v", err)
 	}
 
@@ -142,7 +142,7 @@ func TestLoadConfigWithWarningsInteractiveSelection(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(root) })
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetIn(slave)
 	cmd.SetOut(slave)
 	cmd.SetErr(slave)
@@ -167,7 +167,7 @@ func TestLoadConfigWithWarningsInteractiveSelection(t *testing.T) {
 	if res.cfg == nil {
 		t.Fatalf("expected config from interactive selection")
 	}
-	if got, _ := cmd.Flags().GetString("config"); true {
+	if got, _ := cmd.Flags().GetString("manifest"); true {
 		gotEval, _ := filepath.EvalSymlinks(got)
 		wantEval, _ := filepath.EvalSymlinks(manifestPath)
 		if filepath.Clean(gotEval) != filepath.Clean(wantEval) {
@@ -180,8 +180,8 @@ func TestSelectManifestPathNonTTYReturnsFalse(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetIn(bytes.NewReader(nil))
 	cmd.SetOut(io.Discard)
-	cmd.Flags().String("config", "", "")
-	okPath, ok, err := SelectManifestPath(cmd, ui.StdPrinter{}, t.TempDir(), 1, "")
+	cmd.Flags().String("manifest", "", "")
+	okPath, ok, err := SelectManifestPath(cmd, ui.StdPrinter{}, t.TempDir(), 1)
 	if err != nil {
 		t.Fatalf("SelectManifestPath non-tty: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestSelectManifestPathTTY(t *testing.T) {
 	drainTTY(t, master)
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetIn(slave)
 	cmd.SetOut(slave)
 	cmd.SetErr(slave)
@@ -228,7 +228,7 @@ func TestSelectManifestPathTTY(t *testing.T) {
 		err  error
 	}, 1)
 	go func() {
-		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, temp, 1, "")
+		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, temp, 1)
 		resCh <- struct {
 			path string
 			ok   bool
@@ -261,7 +261,7 @@ func TestSelectManifestPathTTYNoFiles(t *testing.T) {
 	drainTTY(t, master)
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetIn(slave)
 	cmd.SetOut(slave)
 	cmd.SetErr(slave)
@@ -273,7 +273,7 @@ func TestSelectManifestPathTTYNoFiles(t *testing.T) {
 	}
 	resCh := make(chan result, 1)
 	go func() {
-		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, t.TempDir(), 1, "")
+		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, t.TempDir(), 1)
 		resCh <- result{path: path, ok: ok, err: err}
 	}()
 	time.Sleep(50 * time.Millisecond)
@@ -291,6 +291,11 @@ func TestSelectManifestPathTTYCancel(t *testing.T) {
 	temp := t.TempDir()
 	manifest := filepath.Join(temp, "dockform.yml")
 	writeManifest(t, manifest, "docker:\n  context: default\n")
+	otherDir := filepath.Join(temp, "other")
+	if err := os.MkdirAll(otherDir, 0o755); err != nil {
+		t.Fatalf("mkdir other: %v", err)
+	}
+	writeManifest(t, filepath.Join(otherDir, "dockform.yml"), "docker:\n  context: alt\n")
 
 	master, slave := openTTYOrSkip(t)
 	t.Cleanup(func() {
@@ -306,7 +311,7 @@ func TestSelectManifestPathTTYCancel(t *testing.T) {
 	drainTTY(t, master)
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetIn(slave)
 	cmd.SetOut(slave)
 	cmd.SetErr(slave)
@@ -317,7 +322,7 @@ func TestSelectManifestPathTTYCancel(t *testing.T) {
 		err  error
 	}, 1)
 	go func() {
-		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, temp, 1, "")
+		path, ok, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, temp, 1)
 		resCh <- struct {
 			path string
 			ok   bool
@@ -350,14 +355,14 @@ func TestSelectManifestPathTTYError(t *testing.T) {
 	drainTTY(t, master)
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetIn(slave)
 	cmd.SetOut(slave)
 	cmd.SetErr(slave)
 
 	errorCh := make(chan error, 1)
 	go func() {
-		_, _, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, filepath.Join(t.TempDir(), "missing"), 1, "")
+		_, _, err := SelectManifestPath(cmd, ui.StdPrinter{Out: slave, Err: slave}, filepath.Join(t.TempDir(), "missing"), 1)
 		errorCh <- err
 	}()
 	err := <-errorCh
@@ -697,12 +702,12 @@ exit 0
 	writeManifest(t, manifestPath, "identifier: demo\ncontexts:\n  default: {}\n")
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetContext(context.Background())
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	if err := cmd.Flags().Set("config", manifestPath); err != nil {
+	if err := cmd.Flags().Set("manifest", manifestPath); err != nil {
 		t.Fatalf("set config flag: %v", err)
 	}
 

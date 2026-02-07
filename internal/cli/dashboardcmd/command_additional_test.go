@@ -37,8 +37,8 @@ func TestResolveManifestPathPrefersFlag(t *testing.T) {
 	}
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
-	if err := cmd.Flags().Set("config", manifestPath); err != nil {
+	cmd.Flags().String("manifest", "", "")
+	if err := cmd.Flags().Set("manifest", manifestPath); err != nil {
 		t.Fatalf("set flag: %v", err)
 	}
 	if got := resolveManifestPath(cmd, nil); filepath.Clean(got) != filepath.Clean(manifestPath) {
@@ -47,7 +47,7 @@ func TestResolveManifestPathPrefersFlag(t *testing.T) {
 
 	cfg := &manifest.Config{BaseDir: dir}
 	cmd = &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	if got := resolveManifestPath(cmd, cfg); !strings.HasSuffix(got, "dockform.yml") {
 		t.Fatalf("expected base dir manifest, got %q", got)
 	}

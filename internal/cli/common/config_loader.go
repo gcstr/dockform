@@ -13,9 +13,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// LoadConfigWithWarnings loads the configuration from the --config flag and displays warnings.
+// LoadConfigWithWarnings loads the configuration from the --manifest flag and displays warnings.
 func LoadConfigWithWarnings(cmd *cobra.Command, pr ui.Printer) (*manifest.Config, error) {
-	file, _ := cmd.Flags().GetString("config")
+	file, err := ResolveManifestPath(cmd, pr, ".", 3)
+	if err != nil {
+		return nil, err
+	}
+	if file != "" {
+		_ = cmd.Flags().Set("manifest", file)
+	}
+
 	cfg, missing, err := manifest.LoadWithWarnings(file)
 	if err == nil {
 		for _, name := range missing {
@@ -23,35 +30,55 @@ func LoadConfigWithWarnings(cmd *cobra.Command, pr ui.Printer) (*manifest.Config
 		}
 		return &cfg, nil
 	}
-
-	// If no config found in CWD and no explicit --config, try interactive discovery
-	if file == "" && apperr.IsKind(err, apperr.NotFound) {
-		targetCtx, _ := cmd.Flags().GetString("context")
-		selectedPath, ok, selErr := SelectManifestPath(cmd, pr, ".", 3, targetCtx)
-		if selErr != nil {
-			return nil, selErr
-		}
-		if ok && selectedPath != "" {
-			// Propagate selection to the flag so downstream uses the same path
-			_ = cmd.Flags().Set("config", selectedPath)
-			cfg2, missing2, err2 := manifest.LoadWithWarnings(selectedPath)
-			if err2 != nil {
-				return nil, err2
-			}
-			for _, name := range missing2 {
-				pr.Warn("environment variable %s is not set; replacing with empty string", name)
-			}
-			return &cfg2, nil
-		}
-	}
-
 	return nil, err
 }
 
+// ResolveManifestPath determines the manifest path to load.
+// If --manifest is set, it is returned as-is.
+// If omitted and a manifest exists in CWD defaults, returns empty string (loader defaults apply).
+// If omitted and no CWD manifest exists, it attempts discovery and interactive selection.
+func ResolveManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth int) (string, error) {
+	file, _ := cmd.Flags().GetString("manifest")
+	if strings.TrimSpace(file) != "" {
+		return file, nil
+	}
+
+	hasManifest, err := hasManifestInCurrentDir(".")
+	if err != nil {
+		return "", err
+	}
+	if hasManifest {
+		return "", nil
+	}
+
+	selectedPath, ok, err := SelectManifestPath(cmd, pr, root, maxDepth)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", apperr.New("ResolveManifestPath", apperr.NotFound, "no manifest file found")
+	}
+	return selectedPath, nil
+}
+
+func hasManifestInCurrentDir(dir string) (bool, error) {
+	candidates := []string{"dockform.yml", "dockform.yaml", "Dockform.yml", "Dockform.yaml"}
+	for _, name := range candidates {
+		p := filepath.Join(dir, name)
+		info, err := os.Stat(p)
+		if err == nil && !info.IsDir() {
+			return true, nil
+		}
+		if err != nil && !os.IsNotExist(err) {
+			return false, err
+		}
+	}
+	return false, nil
+}
+
 // SelectManifestPath scans for manifest files up to maxDepth and presents an interactive picker
-// of docker.context values when attached to a TTY. Returns the chosen manifest path and whether
-// a selection was made. On non-TTY, returns ok=false with no error.
-func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth int, targetCtx string) (string, bool, error) {
+// when attached to a TTY. Returns the chosen manifest path and whether a selection was made.
+func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth int) (string, bool, error) {
 	// Check TTY
 	inTTY := false
 	outTTY := false
@@ -70,6 +97,9 @@ func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth
 	if len(files) == 0 {
 		return "", false, nil
 	}
+	if len(files) == 1 {
+		return files[0], true, nil
+	}
 
 	// Build labels by reading context names from each file
 	labels := make([]string, 0, len(files))
@@ -81,18 +111,12 @@ func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth
 		labels = append(labels, lb)
 	}
 
-	// If target context is provided, try to match it
-	if targetCtx != "" {
-		for i, lb := range labels {
-			if lb == targetCtx {
-				return files[i], true, nil
-			}
-		}
-		return "", false, apperr.New("SelectManifestPath", apperr.NotFound, "context '%s' not found", targetCtx)
-	}
-
 	if !inTTY || !outTTY {
-		return "", false, nil
+		return "", false, apperr.New(
+			"SelectManifestPath",
+			apperr.InvalidInput,
+			"multiple manifest files found; re-run with --manifest <path> to select one",
+		)
 	}
 
 	// Show picker

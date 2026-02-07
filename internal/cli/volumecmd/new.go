@@ -1,7 +1,6 @@
 package volumecmd
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -118,7 +117,7 @@ func newSnapshotCmd() *cobra.Command {
 		Short: "Create a snapshot of a Docker volume to local storage",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
+			ctx := cmd.Context()
 			clictx, err := common.SetupCLIContext(cmd)
 			if err != nil {
 				return err
@@ -212,7 +211,7 @@ func newRestoreCmd() *cobra.Command {
 		Short: "Restore a snapshot into a Docker volume",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
+			ctx := cmd.Context()
 			clictx, err := common.SetupCLIContext(cmd)
 			if err != nil {
 				return err
@@ -309,7 +308,7 @@ func newRestoreCmd() *cobra.Command {
 							toStart = append(toStart, name)
 						}
 						sort.Strings(toStart)
-						_ = docker.StartContainers(context.Background(), toStart)
+						_ = docker.StartContainers(ctx, toStart)
 					}
 				}()
 			}

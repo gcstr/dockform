@@ -54,15 +54,16 @@ func (l *Loader) StackSummaries(ctx context.Context) ([]StackSummary, error) {
 		return nil, apperr.New("dashboard.data.StackSummaries", apperr.Internal, "docker client unavailable")
 	}
 
-	summaries := make([]StackSummary, 0, len(l.cfg.Stacks))
-	stackNames := make([]string, 0, len(l.cfg.Stacks))
-	for name := range l.cfg.Stacks {
+	allStacks := l.cfg.GetAllStacks()
+	summaries := make([]StackSummary, 0, len(allStacks))
+	stackNames := make([]string, 0, len(allStacks))
+	for name := range allStacks {
 		stackNames = append(stackNames, name)
 	}
 	sort.Strings(stackNames)
 
 	for _, name := range stackNames {
-		stack := l.cfg.Stacks[name]
+		stack := allStacks[name]
 		services, err := l.loadServices(ctx, name, stack)
 		if err != nil {
 			return nil, err
