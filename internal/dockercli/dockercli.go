@@ -91,8 +91,8 @@ func (c *Client) RemoveContainer(ctx context.Context, name string, force bool) e
 
 // RestartContainer restarts a container by name.
 func (c *Client) RestartContainer(ctx context.Context, name string) error {
-	if strings.TrimSpace(name) == "" {
-		return apperr.New("dockercli.RestartContainer", apperr.InvalidInput, "container name required")
+	if err := requireNonEmpty(name, "dockercli.RestartContainer", "container name required"); err != nil {
+		return err
 	}
 	_, err := c.exec.Run(ctx, "container", "restart", name)
 	return err
@@ -100,8 +100,8 @@ func (c *Client) RestartContainer(ctx context.Context, name string) error {
 
 // PauseContainer pauses a running container by name.
 func (c *Client) PauseContainer(ctx context.Context, name string) error {
-	if strings.TrimSpace(name) == "" {
-		return apperr.New("dockercli.PauseContainer", apperr.InvalidInput, "container name required")
+	if err := requireNonEmpty(name, "dockercli.PauseContainer", "container name required"); err != nil {
+		return err
 	}
 	_, err := c.exec.Run(ctx, "container", "pause", name)
 	return err
@@ -359,14 +359,14 @@ type VolumeScriptResult struct {
 // RunVolumeScript executes a shell script inside a helper container with the specified volume mounted.
 // The volume is mounted at targetPath (e.g., /app), matching where files were synced.
 func (c *Client) RunVolumeScript(ctx context.Context, volumeName, targetPath, script string, env []string) (VolumeScriptResult, error) {
-	if volumeName == "" {
-		return VolumeScriptResult{}, apperr.New("dockercli.RunVolumeScript", apperr.InvalidInput, "volume name required")
+	if err := requireNonEmpty(volumeName, "dockercli.RunVolumeScript", "volume name required"); err != nil {
+		return VolumeScriptResult{}, err
 	}
 	if !strings.HasPrefix(targetPath, "/") {
 		return VolumeScriptResult{}, apperr.New("dockercli.RunVolumeScript", apperr.InvalidInput, "target path must be absolute")
 	}
-	if strings.TrimSpace(script) == "" {
-		return VolumeScriptResult{}, apperr.New("dockercli.RunVolumeScript", apperr.InvalidInput, "script cannot be empty")
+	if err := requireNonEmpty(script, "dockercli.RunVolumeScript", "script cannot be empty"); err != nil {
+		return VolumeScriptResult{}, err
 	}
 
 	// Build docker run command
@@ -398,8 +398,8 @@ func (c *Client) RunVolumeScript(ctx context.Context, volumeName, targetPath, sc
 // RunInHelperImage executes a command in the helper image without mounting volumes.
 // Useful for checking if binaries are available.
 func (c *Client) RunInHelperImage(ctx context.Context, script string) (string, error) {
-	if strings.TrimSpace(script) == "" {
-		return "", apperr.New("dockercli.RunInHelperImage", apperr.InvalidInput, "script cannot be empty")
+	if err := requireNonEmpty(script, "dockercli.RunInHelperImage", "script cannot be empty"); err != nil {
+		return "", err
 	}
 
 	cmd := []string{"run", "--rm", HelperImage, "sh", "-c", script}

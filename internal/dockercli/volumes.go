@@ -12,6 +12,10 @@ import (
 	"github.com/gcstr/dockform/internal/util"
 )
 
+// tarFeatureDetect is the shell snippet that probes for GNU tar and sets $TF
+// with the richest set of flags the runtime supports.
+const tarFeatureDetect = "if tar --version 2>/dev/null | grep -qi gnu; then TF='--numeric-owner --xattrs --acls'; else TF='--numeric-owner'; fi"
+
 // ListVolumes returns names of docker volumes.
 func (c *Client) ListVolumes(ctx context.Context) ([]string, error) {
 	args := []string{"volume", "ls", "--format", "{{.Name}}"}
@@ -76,8 +80,8 @@ type VolumeDetails struct {
 
 // InspectVolume returns driver/options/labels for a volume.
 func (c *Client) InspectVolume(ctx context.Context, name string) (VolumeDetails, error) {
-	if strings.TrimSpace(name) == "" {
-		return VolumeDetails{}, apperr.New("dockercli.InspectVolume", apperr.InvalidInput, "volume name required")
+	if err := requireNonEmpty(name, "dockercli.InspectVolume", "volume name required"); err != nil {
+		return VolumeDetails{}, err
 	}
 	// Request JSON for a single volume
 	out, err := c.exec.Run(ctx, "volume", "inspect", "-f", "{{json .}}", name)
@@ -159,13 +163,13 @@ func (c *Client) VolumeSummaries(ctx context.Context) ([]VolumeSummary, error) {
 // StreamTarFromVolume streams a tar of the root of the volume to w.
 // The tar is created using numeric owners and includes xattrs/acls when supported.
 func (c *Client) StreamTarFromVolume(ctx context.Context, volumeName string, w io.Writer) error {
-	if strings.TrimSpace(volumeName) == "" {
-		return apperr.New("dockercli.StreamTarFromVolume", apperr.InvalidInput, "volume name required")
+	if err := requireNonEmpty(volumeName, "dockercli.StreamTarFromVolume", "volume name required"); err != nil {
+		return err
 	}
 	// Use a fixed container path to avoid quoting user inputs
 	const src = "/src"
 	// Prefer GNU tar flags when available; fall back to minimal flags on BusyBox
-	sh := "set -eo pipefail; if tar --version 2>/dev/null | grep -qi gnu; then TF='--numeric-owner --xattrs --acls'; else TF='--numeric-owner'; fi; tar $TF -C '" + src + "' -cf - ."
+	sh := "set -eo pipefail; " + tarFeatureDetect + "; tar $TF -C '" + src + "' -cf - ."
 	cmd := []string{
 		"run", "--rm",
 		"-v", fmt.Sprintf("%s:%s:ro", volumeName, src),
@@ -177,12 +181,12 @@ func (c *Client) StreamTarFromVolume(ctx context.Context, volumeName string, w i
 // StreamTarZstdFromVolume streams a zstd-compressed tar of the volume to w.
 // It installs zstd in the helper container if missing (apk add).
 func (c *Client) StreamTarZstdFromVolume(ctx context.Context, volumeName string, w io.Writer) error {
-	if strings.TrimSpace(volumeName) == "" {
-		return apperr.New("dockercli.StreamTarZstdFromVolume", apperr.InvalidInput, "volume name required")
+	if err := requireNonEmpty(volumeName, "dockercli.StreamTarZstdFromVolume", "volume name required"); err != nil {
+		return err
 	}
 	const src = "/src"
 	// Use pipefail so tar errors propagate; conditionally add xattrs/acls for GNU tar
-	sh := "set -eo pipefail; apk add --no-cache zstd >/dev/null 2>&1 || true; if tar --version 2>/dev/null | grep -qi gnu; then TF='--numeric-owner --xattrs --acls'; else TF='--numeric-owner'; fi; tar $TF -C '" + src + "' -cf - . | zstd -q -z -T0 -19"
+	sh := "set -eo pipefail; apk add --no-cache zstd >/dev/null 2>&1 || true; " + tarFeatureDetect + "; tar $TF -C '" + src + "' -cf - . | zstd -q -z -T0 -19"
 	cmd := []string{
 		"run", "--rm",
 		"-v", fmt.Sprintf("%s:%s:ro", volumeName, src),
@@ -193,8 +197,8 @@ func (c *Client) StreamTarZstdFromVolume(ctx context.Context, volumeName string,
 
 // IsVolumeEmpty returns true if the volume has no files (ignores . and ..).
 func (c *Client) IsVolumeEmpty(ctx context.Context, volumeName string) (bool, error) {
-	if strings.TrimSpace(volumeName) == "" {
-		return false, apperr.New("dockercli.IsVolumeEmpty", apperr.InvalidInput, "volume name required")
+	if err := requireNonEmpty(volumeName, "dockercli.IsVolumeEmpty", "volume name required"); err != nil {
+		return false, err
 	}
 	const dst = "/dst"
 	cmd := []string{
@@ -213,8 +217,8 @@ func (c *Client) IsVolumeEmpty(ctx context.Context, volumeName string) (bool, er
 
 // ClearVolume removes all contents of the volume's root directory.
 func (c *Client) ClearVolume(ctx context.Context, volumeName string) error {
-	if strings.TrimSpace(volumeName) == "" {
-		return apperr.New("dockercli.ClearVolume", apperr.InvalidInput, "volume name required")
+	if err := requireNonEmpty(volumeName, "dockercli.ClearVolume", "volume name required"); err != nil {
+		return err
 	}
 	const dst = "/dst"
 	cmd := []string{
@@ -230,8 +234,8 @@ func (c *Client) ClearVolume(ctx context.Context, volumeName string) error {
 
 // ListContainersUsingVolume returns container names (running or stopped) that reference the volume.
 func (c *Client) ListContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error) {
-	if strings.TrimSpace(volumeName) == "" {
-		return nil, apperr.New("dockercli.ListContainersUsingVolume", apperr.InvalidInput, "volume name required")
+	if err := requireNonEmpty(volumeName, "dockercli.ListContainersUsingVolume", "volume name required"); err != nil {
+		return nil, err
 	}
 	args := []string{"ps", "-a", "--filter", "volume=" + volumeName, "--format", "{{.Names}}"}
 	out, err := c.exec.Run(ctx, args...)
@@ -243,8 +247,8 @@ func (c *Client) ListContainersUsingVolume(ctx context.Context, volumeName strin
 
 // ListRunningContainersUsingVolume returns names of running containers that reference the volume.
 func (c *Client) ListRunningContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error) {
-	if strings.TrimSpace(volumeName) == "" {
-		return nil, apperr.New("dockercli.ListRunningContainersUsingVolume", apperr.InvalidInput, "volume name required")
+	if err := requireNonEmpty(volumeName, "dockercli.ListRunningContainersUsingVolume", "volume name required"); err != nil {
+		return nil, err
 	}
 	args := []string{"ps", "--filter", "volume=" + volumeName, "--format", "{{.Names}}"}
 	out, err := c.exec.Run(ctx, args...)
@@ -290,13 +294,13 @@ func (c *Client) StartContainers(ctx context.Context, names []string) error {
 // TarStatsFromVolume calculates uncompressed tar size (bytes) and file count in the volume.
 // It runs commands inside a helper container and returns (tarBytes, fileCount).
 func (c *Client) TarStatsFromVolume(ctx context.Context, volumeName string) (int64, int64, error) {
-	if strings.TrimSpace(volumeName) == "" {
-		return 0, 0, apperr.New("dockercli.TarStatsFromVolume", apperr.InvalidInput, "volume name required")
+	if err := requireNonEmpty(volumeName, "dockercli.TarStatsFromVolume", "volume name required"); err != nil {
+		return 0, 0, err
 	}
 	const src = "/src"
 	// Compute file count and tar byte size in one container invocation.
 	// Use pipefail so a tar error propagates and is noticed by the caller.
-	sh := "set -eo pipefail; fc=$(find '" + src + "' -xdev -type f 2>/dev/null | wc -l | tr -d '\r\n'); if tar --version 2>/dev/null | grep -qi gnu; then TF='--numeric-owner --xattrs --acls'; else TF='--numeric-owner'; fi; bytes=$(tar $TF -C '" + src + "' -cf - . | wc -c | tr -d '\r\n'); echo $fc $bytes"
+	sh := "set -eo pipefail; fc=$(find '" + src + "' -xdev -type f 2>/dev/null | wc -l | tr -d '\r\n'); " + tarFeatureDetect + "; bytes=$(tar $TF -C '" + src + "' -cf - . | wc -c | tr -d '\r\n'); echo $fc $bytes"
 	args := []string{"run", "--rm", "-v", fmt.Sprintf("%s:%s:ro", volumeName, src), HelperImage, "sh", "-c", sh}
 	out, err := c.exec.Run(ctx, args...)
 	if err != nil {
@@ -322,8 +326,8 @@ func (c *Client) TarStatsFromVolume(ctx context.Context, volumeName string) (int
 
 // ExtractZstdTarToVolume reads a zstd-compressed tar from r and extracts into the volume root.
 func (c *Client) ExtractZstdTarToVolume(ctx context.Context, volumeName string, r io.Reader) error {
-	if strings.TrimSpace(volumeName) == "" {
-		return apperr.New("dockercli.ExtractZstdTarToVolume", apperr.InvalidInput, "volume name required")
+	if err := requireNonEmpty(volumeName, "dockercli.ExtractZstdTarToVolume", "volume name required"); err != nil {
+		return err
 	}
 	const dst = "/dst"
 	cmd := []string{
