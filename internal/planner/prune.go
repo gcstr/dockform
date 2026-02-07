@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/gcstr/dockform/internal/apperr"
-	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
@@ -34,20 +33,7 @@ func (p *Planner) PruneWithPlanOptions(ctx context.Context, cfg manifest.Config,
 
 		return p.pruneContext(ctx, cfg, contextName, client, plan)
 	})
-	if err == nil {
-		return nil
-	}
-	if opts.Strict {
-		return err
-	}
-
-	log := logger.FromContext(ctx).With("component", "planner", "action", "prune")
-	if opts.VerboseErrors {
-		log.Warn("prune_non_strict_errors", "error", err.Error())
-	} else {
-		log.Warn("prune_non_strict_errors")
-	}
-	return nil
+	return handleCleanupError(ctx, err, opts, "prune")
 }
 
 // pruneContext removes unmanaged resources for a single context.

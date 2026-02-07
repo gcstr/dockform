@@ -156,19 +156,7 @@ func (p *Planner) DestroyWithOptions(ctx context.Context, cfg manifest.Config, o
 
 		return p.destroyContext(ctx, client, contextName, allFilesets, opts.VerboseErrors)
 	})
-	if err == nil {
-		return nil
-	}
-	if opts.Strict {
-		return err
-	}
-	log := logger.FromContext(ctx).With("component", "planner", "action", "destroy")
-	if opts.VerboseErrors {
-		log.Warn("destroy_non_strict_errors", "error", err.Error())
-	} else {
-		log.Warn("destroy_non_strict_errors")
-	}
-	return nil
+	return handleCleanupError(ctx, err, opts, "destroy")
 }
 
 // destroyContext executes destruction for a single context.
