@@ -27,17 +27,9 @@ func GetConfirmation(cmd *cobra.Command, pr ui.Printer, opts ConfirmationOptions
 		opts.Message = "│ Dockform will apply the changes listed above.\n│ Type yes to confirm.\n│"
 	}
 
-	// Check TTY status
-	inTTY := false
-	outTTY := false
-	if f, ok := cmd.InOrStdin().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
-		inTTY = true
-	}
-	if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
-		outTTY = true
-	}
+	tty := detectTTY(cmd)
 
-	if inTTY && outTTY {
+	if tty.In && tty.Out {
 		// Interactive terminal: use Bubble Tea prompt which renders headers and input
 		ok, _, err := ui.ConfirmYesTTY(cmd.InOrStdin(), cmd.OutOrStdout())
 		if err != nil {
@@ -92,17 +84,9 @@ func GetDestroyConfirmation(cmd *cobra.Command, pr ui.Printer, opts DestroyConfi
 	msgSummary := fmt.Sprintf("│ This will destroy ALL managed resources with identifier '%s'.\n│ This operation is IRREVERSIBLE.", opts.Identifier)
 	msgInstr := fmt.Sprintf("│ Type the identifier name '%s' to confirm.\n│", ui.ConfirmToken(opts.Identifier))
 
-	// Check TTY status
-	inTTY := false
-	outTTY := false
-	if f, ok := cmd.InOrStdin().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
-		inTTY = true
-	}
-	if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
-		outTTY = true
-	}
+	tty := detectTTY(cmd)
 
-	if inTTY && outTTY {
+	if tty.In && tty.Out {
 		// Interactive terminal: Bubble Tea prompt renders the view; we just show result line after
 		ok, _, err := ui.ConfirmIdentifierTTY(cmd.InOrStdin(), cmd.OutOrStdout(), opts.Identifier)
 		if err != nil {

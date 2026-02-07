@@ -9,7 +9,6 @@ import (
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/ui"
 	"github.com/goccy/go-yaml"
-	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -79,15 +78,7 @@ func hasManifestInCurrentDir(dir string) (bool, error) {
 // SelectManifestPath scans for manifest files up to maxDepth and presents an interactive picker
 // when attached to a TTY. Returns the chosen manifest path and whether a selection was made.
 func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth int) (string, bool, error) {
-	// Check TTY
-	inTTY := false
-	outTTY := false
-	if f, ok := cmd.InOrStdin().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
-		inTTY = true
-	}
-	if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
-		outTTY = true
-	}
+	tty := detectTTY(cmd)
 
 	// Discover manifest files
 	files, err := findManifestFiles(root, maxDepth)
@@ -111,7 +102,7 @@ func SelectManifestPath(cmd *cobra.Command, pr ui.Printer, root string, maxDepth
 		labels = append(labels, lb)
 	}
 
-	if !inTTY || !outTTY {
+	if !tty.In || !tty.Out {
 		return "", false, apperr.New(
 			"SelectManifestPath",
 			apperr.InvalidInput,
