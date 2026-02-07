@@ -99,7 +99,7 @@ filesets:
 	env := os.Environ()
 
 	// Apply the manifest
-	applyOut := runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "-c", manifestPath)
+	applyOut := runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "--manifest", manifestPath)
 	t.Logf("Apply output:\n%s", applyOut)
 
 	// Verify ownership and permissions inside the volume
@@ -217,7 +217,7 @@ filesets:
 	env := os.Environ()
 
 	// First apply
-	_ = runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "-c", manifestPath)
+	_ = runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "--manifest", manifestPath)
 
 	volumeName := fmt.Sprintf("df_e2e_%s_data", runID)
 
@@ -267,7 +267,7 @@ filesets:
 	}
 
 	// Second apply
-	_ = runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "-c", manifestPath)
+	_ = runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "--manifest", manifestPath)
 
 	// Verify: file1 should still be 2000:2000, file2 should be 3000:3000
 	result, err = docker.RunVolumeScript(ctx, volumeName, "/data", "stat -c '%u:%g %n' /data/file1.txt /data/file2.txt", nil)

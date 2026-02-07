@@ -38,7 +38,7 @@ exit 0
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("demo\n")) // Provide identifier for confirmation
-	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -93,7 +93,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -132,7 +132,7 @@ exit 0
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("wrong-identifier\n")) // Wrong identifier
-	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -183,7 +183,7 @@ exit 0
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("demo\n")) // Correct identifier
-	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -230,7 +230,7 @@ exit 0
 	root.SetOut(&out)
 	root.SetErr(&out)
 	// No stdin provided; should not prompt when flag is set.
-	root.SetArgs([]string{"destroy", "--skip-confirmation", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--skip-confirmation", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute with --skip-confirmation: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestDestroy_InvalidConfigPath_ReturnsError(t *testing.T) {
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("demo\n"))
-	root.SetArgs([]string{"destroy", "-c", "does-not-exist.yml"})
+	root.SetArgs([]string{"destroy", "--manifest", "does-not-exist.yml"})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for invalid config path, got nil")
 	}
@@ -285,7 +285,7 @@ exit 0
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("demo\n"))
-	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error from destroy when docker discovery fails, got nil")
 	}
@@ -321,7 +321,7 @@ exit 0
 
 	root := cli.TestNewRootCmd()
 	root.SetIn(strings.NewReader("demo\n"))
-	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("expected non-strict destroy to succeed, got: %v", err)
 	}
@@ -357,7 +357,7 @@ exit 0
 
 	root := cli.TestNewRootCmd()
 	root.SetIn(strings.NewReader("demo\n"))
-	root.SetArgs([]string{"destroy", "--strict", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--strict", "--manifest", clitest.BasicConfigPath(t)})
 	err := root.Execute()
 	if err == nil {
 		t.Fatalf("expected strict destroy to fail on cleanup errors")

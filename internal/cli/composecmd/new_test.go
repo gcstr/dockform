@@ -119,7 +119,7 @@ func TestComposeRenderUnknownStackReturnsError(t *testing.T) {
 	root.SetOut(&outBuf)
 	root.SetErr(&errBuf)
 	root.SetIn(bytes.NewBuffer(nil))
-	root.SetArgs([]string{"compose", "render", "does-not-exist", "-c", cfg})
+	root.SetArgs([]string{"compose", "render", "does-not-exist", "--manifest", cfg})
 
 	err := root.Execute()
 	if err == nil {
@@ -232,7 +232,7 @@ func runComposeRender(t *testing.T, stack, cfgPath string, extraArgs ...string) 
 	root.SetOut(&outBuf)
 	root.SetErr(&errBuf)
 	root.SetIn(bytes.NewBuffer(nil))
-	args := []string{"compose", "render", stack, "-c", cfgPath}
+	args := []string{"compose", "render", stack, "--manifest", cfgPath}
 	args = append(args, extraArgs...)
 	root.SetArgs(args)
 	err := root.Execute()

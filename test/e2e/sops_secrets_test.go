@@ -73,7 +73,7 @@ func TestSopsSecretsEndToEnd(t *testing.T) {
 	}
 
 	// Apply: should decrypt secret and pass as inline env so compose sees SECRET_KEY
-	_ = runCmdWithStdin(t, tempDir, env, bin, "yes\n", "apply", "-c", tempDir)
+	_ = runCmdWithStdin(t, tempDir, env, bin, "yes\n", "apply", "--manifest", tempDir)
 
 	// Find running container by label and verify the secret value is readable in the container
 	names := dockerLines(t, ctx, "ps", "--format", "{{.Names}}", "--filter", "label=io.dockform.identifier="+identifier)

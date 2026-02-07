@@ -48,7 +48,7 @@ func TestDestroy_FullLifecycle(t *testing.T) {
 	env := append(os.Environ(), "DOCKFORM_RUN_ID="+runID)
 
 	// 1. APPLY: Create resources to destroy later
-	stdout, stderr, code := runCmdWithStdinDetailed(t, tempDir, env, bin, "yes\n", "apply", "-c", tempDir)
+	stdout, stderr, code := runCmdWithStdinDetailed(t, tempDir, env, bin, "yes\n", "apply", "--manifest", tempDir)
 	if code != 0 {
 		t.Fatalf("apply failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", code, stdout, stderr)
 	}
@@ -70,7 +70,7 @@ func TestDestroy_FullLifecycle(t *testing.T) {
 	t.Logf("Found %d containers, %d networks, %d volumes before destroy", len(containers), len(networks), len(volumes))
 
 	// 2. DESTROY WITH CONFIRMATION: Test the complete destroy flow
-	destroyOut, destroyErr, destroyCode := runCmdWithStdinDetailed(t, tempDir, env, bin, identifier+"\n", "destroy", "-c", tempDir)
+	destroyOut, destroyErr, destroyCode := runCmdWithStdinDetailed(t, tempDir, env, bin, identifier+"\n", "destroy", "--manifest", tempDir)
 	if destroyCode != 0 {
 		t.Fatalf("destroy failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", destroyCode, destroyOut, destroyErr)
 	}
@@ -115,7 +115,7 @@ func TestDestroy_FullLifecycle(t *testing.T) {
 	t.Logf("Successfully destroyed all resources: %d containers, %d networks, %d volumes", len(containers), len(networks), len(volumes))
 
 	// 4. DESTROY AGAIN: Should show no resources to destroy
-	destroyOut2, destroyErr2, destroyCode2 := runCmdDetailed(t, tempDir, env, bin, "destroy", "-c", tempDir)
+	destroyOut2, destroyErr2, destroyCode2 := runCmdDetailed(t, tempDir, env, bin, "destroy", "--manifest", tempDir)
 	if destroyCode2 != 0 {
 		t.Fatalf("second destroy failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", destroyCode2, destroyOut2, destroyErr2)
 	}
@@ -164,7 +164,7 @@ func TestDestroy_WrongIdentifier_CancelsDestruction(t *testing.T) {
 	env := append(os.Environ(), "DOCKFORM_RUN_ID="+runID)
 
 	// 1. APPLY: Create resources
-	stdout, stderr, code := runCmdWithStdinDetailed(t, tempDir, env, bin, "yes\n", "apply", "-c", tempDir)
+	stdout, stderr, code := runCmdWithStdinDetailed(t, tempDir, env, bin, "yes\n", "apply", "--manifest", tempDir)
 	if code != 0 {
 		t.Fatalf("apply failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", code, stdout, stderr)
 	}
@@ -176,7 +176,7 @@ func TestDestroy_WrongIdentifier_CancelsDestruction(t *testing.T) {
 	}
 
 	// 2. DESTROY WITH WRONG IDENTIFIER: Should cancel
-	destroyOut, destroyErr, destroyCode := runCmdWithStdinDetailed(t, tempDir, env, bin, "wrong-identifier\n", "destroy", "-c", tempDir)
+	destroyOut, destroyErr, destroyCode := runCmdWithStdinDetailed(t, tempDir, env, bin, "wrong-identifier\n", "destroy", "--manifest", tempDir)
 	if destroyCode != 0 {
 		t.Fatalf("destroy failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", destroyCode, destroyOut, destroyErr)
 	}
@@ -232,7 +232,7 @@ func TestDestroy_SkipConfirmation_DestroyImmediately(t *testing.T) {
 	env := append(os.Environ(), "DOCKFORM_RUN_ID="+runID)
 
 	// 1. APPLY: Create resources
-	stdout, stderr, code := runCmdWithStdinDetailed(t, tempDir, env, bin, "yes\n", "apply", "-c", tempDir)
+	stdout, stderr, code := runCmdWithStdinDetailed(t, tempDir, env, bin, "yes\n", "apply", "--manifest", tempDir)
 	if code != 0 {
 		t.Fatalf("apply failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", code, stdout, stderr)
 	}
@@ -247,7 +247,7 @@ func TestDestroy_SkipConfirmation_DestroyImmediately(t *testing.T) {
 	}
 
 	// 2. DESTROY WITH SKIP CONFIRMATION: Should proceed immediately
-	destroyOut, destroyErr, destroyCode := runCmdDetailed(t, tempDir, env, bin, "destroy", "--skip-confirmation", "-c", tempDir)
+	destroyOut, destroyErr, destroyCode := runCmdDetailed(t, tempDir, env, bin, "destroy", "--skip-confirmation", "--manifest", tempDir)
 	if destroyCode != 0 {
 		t.Fatalf("destroy --skip-confirmation failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", destroyCode, destroyOut, destroyErr)
 	}
@@ -317,7 +317,7 @@ func TestDestroy_IndependentOfConfigFile(t *testing.T) {
 	env := append(os.Environ(), "DOCKFORM_RUN_ID="+runID)
 
 	// 1. APPLY: Create resources
-	stdout, stderr, code := runCmdWithStdinDetailed(t, tempDir, env, bin, "yes\n", "apply", "-c", tempDir)
+	stdout, stderr, code := runCmdWithStdinDetailed(t, tempDir, env, bin, "yes\n", "apply", "--manifest", tempDir)
 	if code != 0 {
 		t.Fatalf("apply failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", code, stdout, stderr)
 	}
@@ -336,7 +336,7 @@ func TestDestroy_IndependentOfConfigFile(t *testing.T) {
 	}
 
 	// 3. DESTROY WITH DIFFERENT CONFIG: Should still find and destroy original resources
-	destroyOut, destroyErr, destroyCode := runCmdWithStdinDetailed(t, modifiedTempDir, env, bin, identifier+"\n", "destroy", "-c", modifiedTempDir)
+	destroyOut, destroyErr, destroyCode := runCmdWithStdinDetailed(t, modifiedTempDir, env, bin, identifier+"\n", "destroy", "--manifest", modifiedTempDir)
 	if destroyCode != 0 {
 		t.Fatalf("destroy with different config failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", destroyCode, destroyOut, destroyErr)
 	}

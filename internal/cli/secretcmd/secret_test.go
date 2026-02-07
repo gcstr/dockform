@@ -56,7 +56,7 @@ func TestSecret_Create_Success(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "create", target, "-c", cfgPath})
+	root.SetArgs([]string{"secrets", "create", target, "--manifest", cfgPath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("secret create execute: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestSecret_Create_FileExists_Error(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "create", target, "-c", cfgPath})
+	root.SetArgs([]string{"secrets", "create", target, "--manifest", cfgPath})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error when target exists, got nil")
 	}
@@ -113,7 +113,7 @@ func TestSecret_Create_MissingKeyConfig_Error(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "create", target, "-c", cfgPath})
+	root.SetArgs([]string{"secrets", "create", target, "--manifest", cfgPath})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for missing sops key config, got nil")
 	}
@@ -140,7 +140,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "create", target, "-c", cfgCreatePath})
+	root.SetArgs([]string{"secrets", "create", target, "--manifest", cfgCreatePath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("secret create execute: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 	root = cli.TestNewRootCmd()
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "rekey", "-c", cfgRekeyPath})
+	root.SetArgs([]string{"secrets", "rekey", "--manifest", cfgRekeyPath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("secret rekey execute: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestSecret_Rekey_DecryptError(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "rekey", "-c", cfgPath})
+	root.SetArgs([]string{"secrets", "rekey", "--manifest", cfgPath})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected decrypt error for missing file, got nil")
 	}
@@ -206,7 +206,7 @@ func TestSecret_Rekey_NoSecretsConfigured(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "rekey", "-c", cfgPath})
+	root.SetArgs([]string{"secrets", "rekey", "--manifest", cfgPath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("expected no error when no secrets configured, got: %v", err)
 	}

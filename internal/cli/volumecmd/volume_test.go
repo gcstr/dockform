@@ -133,7 +133,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "--manifest", cfgPath, "--stop-containers", "--force"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("volume restore execute: %v\nOutput: %s", err, out.String())
@@ -210,7 +210,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "--manifest", cfgPath, "--stop-containers", "--force"})
 
 	err := root.Execute()
 	if err == nil {
@@ -276,7 +276,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath, "--stop-containers"})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "--manifest", cfgPath, "--stop-containers"})
 
 	err := root.Execute()
 	if err == nil {
@@ -346,7 +346,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "--manifest", cfgPath})
 
 	err := root.Execute()
 	if err == nil {
@@ -440,7 +440,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "--manifest", cfgPath, "--stop-containers", "--force"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("volume restore execute: %v\nOutput: %s", err, out.String())
@@ -537,7 +537,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "-c", cfgPath, "--stop-containers", "--force"})
+	root.SetArgs([]string{"volume", "restore", "website_data", snapshotPath, "--manifest", cfgPath, "--stop-containers", "--force"})
 
 	err := root.Execute()
 	if err == nil {

@@ -26,7 +26,7 @@ func TestInvalidComposePlanAndApply(t *testing.T) {
 	env := append(os.Environ(), "DOCKFORM_RUN_ID=invalid")
 
 	// PLAN should fail with External error (exit code 70) and friendly message
-	out, code := runCmdExpectError(t, tempDir, env, bin, "plan", "-c", tempDir)
+	out, code := runCmdExpectError(t, tempDir, env, bin, "plan", "--manifest", tempDir)
 	if code != 70 {
 		t.Fatalf("expected exit code 70 for invalid compose on plan, got %d\n%s", code, out)
 	}
@@ -35,7 +35,7 @@ func TestInvalidComposePlanAndApply(t *testing.T) {
 	}
 
 	// APPLY should also fail similarly (feed confirmation)
-	out2, code2 := runCmdExpectErrorWithStdin(t, tempDir, env, bin, "yes\n", "apply", "-c", tempDir)
+	out2, code2 := runCmdExpectErrorWithStdin(t, tempDir, env, bin, "yes\n", "apply", "--manifest", tempDir)
 	if code2 != 70 {
 		t.Fatalf("expected exit code 70 for invalid compose on apply, got %d\n%s", code2, out2)
 	}

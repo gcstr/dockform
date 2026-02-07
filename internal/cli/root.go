@@ -99,7 +99,7 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringP("manifest", "c", "", "Path to manifest file or directory (defaults: dockform.yml, dockform.yaml, Dockform.yml, Dockform.yaml in current directory)")
+	cmd.PersistentFlags().String("manifest", "", "Path to manifest file or directory (defaults: dockform.yml, dockform.yaml, Dockform.yml, Dockform.yaml in current directory)")
 	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose error output")
 	// Logging flags
 	cmd.PersistentFlags().String("log-level", "info", "Log level: debug, info, warn, error")

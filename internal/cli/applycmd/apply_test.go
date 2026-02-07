@@ -18,7 +18,7 @@ func TestApply_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("yes\n"))
-	root.SetArgs([]string{"apply", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"apply", "--manifest", clitest.BasicConfigPath(t)})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute: %v", err)
@@ -80,7 +80,7 @@ case "$cmd" in
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("yes\n"))
-	root.SetArgs([]string{"apply", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"apply", "--manifest", clitest.BasicConfigPath(t)})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute: %v", err)
@@ -98,7 +98,7 @@ func TestApply_InvalidConfigPath_ReturnsError(t *testing.T) {
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("yes\n"))
-	root.SetArgs([]string{"apply", "-c", "does-not-exist.yml"})
+	root.SetArgs([]string{"apply", "--manifest", "does-not-exist.yml"})
 
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for invalid config path, got nil")
@@ -156,7 +156,7 @@ case "$cmd" in
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("yes\n"))
-	root.SetArgs([]string{"apply", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"apply", "--manifest", clitest.BasicConfigPath(t)})
 
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error from apply when docker fails, got nil")
@@ -173,7 +173,7 @@ func TestApply_SkipConfirmation_BypassesPrompt(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"apply", "--skip-confirmation", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"apply", "--skip-confirmation", "--manifest", clitest.BasicConfigPath(t)})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("apply execute with --skip-confirmation: %v", err)
@@ -236,7 +236,7 @@ exit 0
 
 	root := cli.TestNewRootCmd()
 	root.SetIn(strings.NewReader("yes\n"))
-	root.SetArgs([]string{"apply", "--skip-confirmation", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"apply", "--skip-confirmation", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("expected apply to succeed in non-strict prune mode, got: %v", err)
 	}
@@ -291,7 +291,7 @@ exit 0
 
 	root := cli.TestNewRootCmd()
 	root.SetIn(strings.NewReader("yes\n"))
-	root.SetArgs([]string{"apply", "--skip-confirmation", "--strict-prune", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"apply", "--skip-confirmation", "--strict-prune", "--manifest", clitest.BasicConfigPath(t)})
 	err := root.Execute()
 	if err == nil {
 		t.Fatalf("expected apply to fail when --strict-prune is set")

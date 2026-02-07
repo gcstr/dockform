@@ -17,7 +17,7 @@ func TestManifest_Render_Success_WithTrailingNewline(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"manifest", "render", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"manifest", "render", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("manifest render execute: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestManifest_Render_InterpolatesEnvAndWarnsOnMissing(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"manifest", "render", "-c", path})
+	root.SetArgs([]string{"manifest", "render", "--manifest", path})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("manifest render execute: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestManifest_Render_ShowsActualFilename(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"manifest", "render", "-c", customPath})
+	root.SetArgs([]string{"manifest", "render", "--manifest", customPath})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("manifest render execute: %v", err)
@@ -96,7 +96,7 @@ func TestManifest_Render_InvalidPath_ReturnsError(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"manifest", "render", "-c", "does-not-exist.yml"})
+	root.SetArgs([]string{"manifest", "render", "--manifest", "does-not-exist.yml"})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for invalid manifest path, got nil")
 	}

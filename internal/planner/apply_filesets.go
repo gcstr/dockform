@@ -142,6 +142,9 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 				return baseErr
 			}
 			restartErr := fm.docker.StartContainers(ctx, stoppedContainers)
+			if restartErr == nil {
+				return baseErr
+			}
 			return apperr.Aggregate(
 				"filesetmanager.SyncFilesetsForContext",
 				apperr.External,
