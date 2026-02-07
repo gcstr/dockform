@@ -2,24 +2,25 @@ package planner
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/filesets"
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
 // buildFilesetResourcesForContext processes fileset diffs for a context and adds them to the plan.
-func (p *Planner) buildFilesetResourcesForContext(ctx context.Context, filesetSpecs map[string]manifest.FilesetSpec, existingVolumes map[string]struct{}, client DockerClient, plan *ResourcePlan, execCtx *ContextExecutionContext) {
+func (p *Planner) buildFilesetResourcesForContext(ctx context.Context, filesetSpecs map[string]manifest.FilesetSpec, existingVolumes map[string]struct{}, client DockerClient, plan *ResourcePlan, execCtx *ContextExecutionContext) error {
 	filesetNames := sortedKeys(filesetSpecs)
 	if len(filesetNames) == 0 {
-		return
+		return nil
 	}
 
 	type filesetResult struct {
 		name      string
 		resources []Resource
 		execData  *FilesetExecutionData
+		err       error
 	}
 
 	resultsChan := make(chan filesetResult, len(filesetNames))
@@ -37,18 +38,40 @@ func (p *Planner) buildFilesetResourcesForContext(ctx context.Context, filesetSp
 			local, err := filesets.BuildLocalIndex(a.SourceAbs, a.TargetPath, a.Exclude)
 			if err != nil {
 				resources = append(resources,
-					NewResource(ResourceFile, "", ActionUpdate,
-						fmt.Sprintf("unable to index local files: %v", err)))
-				resultsChan <- filesetResult{name: name, resources: resources, execData: nil}
+					NewResource(ResourceFile, "", ActionUpdate, "unable to index local files"))
+				resultsChan <- filesetResult{
+					name:      name,
+					resources: resources,
+					execData:  nil,
+					err:       apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.Internal, err, "build local fileset index for %s", name),
+				}
 				return
 			}
 
 			// Read remote index only if the target volume exists
 			raw := ""
 			if _, volumeExists := existingVolumes[a.TargetVolume]; volumeExists {
-				raw, _ = client.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
+				raw, err = client.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
+				if err != nil {
+					resultsChan <- filesetResult{
+						name:      name,
+						resources: []Resource{NewResource(ResourceFile, "", ActionUpdate, "unable to read remote index")},
+						execData:  nil,
+						err:       apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.External, err, "read remote index for %s", name),
+					}
+					return
+				}
 			}
-			remote, _ := filesets.ParseIndexJSON(raw)
+			remote, err := filesets.ParseIndexJSON(raw)
+			if err != nil {
+				resultsChan <- filesetResult{
+					name:      name,
+					resources: []Resource{NewResource(ResourceFile, "", ActionUpdate, "unable to parse remote index")},
+					execData:  nil,
+					err:       apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.External, err, "parse remote index for %s", name),
+				}
+				return
+			}
 			diff := filesets.DiffIndexes(local, remote)
 
 			// Store execution data for reuse during apply
@@ -91,27 +114,42 @@ func (p *Planner) buildFilesetResourcesForContext(ctx context.Context, filesetSp
 	}()
 
 	// Collect results and add to plan and execution context
+	var errs []error
 	for result := range resultsChan {
 		plan.Filesets[result.name] = result.resources
 		if result.execData != nil {
 			execCtx.Filesets[result.name] = result.execData
 		}
+		if result.err != nil {
+			errs = append(errs, result.err)
+		}
 	}
+
+	return apperr.Aggregate("planner.buildFilesetResourcesForContext", apperr.External, "one or more fileset analyses failed", errs...)
 }
 
 // getExistingResourcesForClient fetches volumes and networks for a specific client
-func (p *Planner) getExistingResourcesForClient(ctx context.Context, client DockerClient) (volumes, networks map[string]struct{}) {
+func (p *Planner) getExistingResourcesForClient(ctx context.Context, client DockerClient) (volumes, networks map[string]struct{}, err error) {
 	volumes = map[string]struct{}{}
 	networks = map[string]struct{}{}
 
 	var wg sync.WaitGroup
 	var volumesMu, networksMu sync.Mutex
+	var errsMu sync.Mutex
+	var errs []error
 
 	// Fetch volumes concurrently
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if vols, err := client.ListVolumes(ctx); err == nil {
+		vols, err := client.ListVolumes(ctx)
+		if err != nil {
+			errsMu.Lock()
+			errs = append(errs, apperr.Wrap("planner.getExistingResourcesForClient", apperr.External, err, "list existing volumes"))
+			errsMu.Unlock()
+			return
+		}
+		if len(vols) > 0 {
 			volumesMu.Lock()
 			for _, v := range vols {
 				volumes[v] = struct{}{}
@@ -124,7 +162,14 @@ func (p *Planner) getExistingResourcesForClient(ctx context.Context, client Dock
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if nets, err := client.ListNetworks(ctx); err == nil {
+		nets, err := client.ListNetworks(ctx)
+		if err != nil {
+			errsMu.Lock()
+			errs = append(errs, apperr.Wrap("planner.getExistingResourcesForClient", apperr.External, err, "list existing networks"))
+			errsMu.Unlock()
+			return
+		}
+		if len(nets) > 0 {
 			networksMu.Lock()
 			for _, n := range nets {
 				networks[n] = struct{}{}
@@ -134,7 +179,7 @@ func (p *Planner) getExistingResourcesForClient(ctx context.Context, client Dock
 	}()
 
 	wg.Wait()
-	return volumes, networks
+	return volumes, networks, apperr.Aggregate("planner.getExistingResourcesForClient", apperr.External, "failed to discover existing docker resources", errs...)
 }
 
 // aggregateContextPlan merges a context plan into the aggregated plan.

@@ -78,9 +78,15 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 			// Only read from volume if it exists to avoid implicit creation
 			raw := ""
 			if _, volumeExists := existingVolumes[fileset.TargetVolume]; volumeExists {
-				raw, _ = fm.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
+				raw, err = fm.docker.ReadFileFromVolume(ctx, fileset.TargetVolume, fileset.TargetPath, filesets.IndexFileName)
+				if err != nil {
+					return nil, apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "read index file for fileset %s", name)
+				}
 			}
-			remote, _ = filesets.ParseIndexJSON(raw)
+			remote, err = filesets.ParseIndexJSON(raw)
+			if err != nil {
+				return nil, apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "parse remote index for fileset %s", name)
+			}
 			diff = filesets.DiffIndexes(local, remote)
 		}
 
@@ -95,7 +101,10 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 		isCold := fileset.ApplyMode == "cold"
 
 		// Compute target services to restart/stop based on restart_services semantics
-		targetServices, _ := resolveTargetServices(ctx, fm.docker, fileset)
+		targetServices, err := resolveTargetServices(ctx, fm.docker, fileset)
+		if err != nil {
+			return nil, apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "resolve target services for fileset %s", name)
+		}
 
 		// For cold mode, stop targets (if any) before syncing
 		var stoppedContainers []string
@@ -104,24 +113,42 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 				fm.progress.SetAction("stopping services for fileset " + name)
 			}
 			// Get all containers and find ones matching the target services
-			if items, err := fm.docker.ListComposeContainersAll(ctx); err == nil {
-				var containersToStop []string
-				for _, svc := range targetServices {
-					if svc == "" {
-						continue
-					}
-					for _, it := range items {
-						if it.Service == svc {
-							containersToStop = append(containersToStop, it.Name)
-							stoppedContainers = append(stoppedContainers, it.Name)
-							break
-						}
-					}
+			items, err := fm.docker.ListComposeContainersAll(ctx)
+			if err != nil {
+				return nil, apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "list compose containers for cold fileset %s", name)
+			}
+			var containersToStop []string
+			for _, svc := range targetServices {
+				if svc == "" {
+					continue
 				}
-				if len(containersToStop) > 0 {
-					_ = fm.docker.StopContainers(ctx, containersToStop)
+				for _, it := range items {
+					if it.Service == svc {
+						containersToStop = append(containersToStop, it.Name)
+						stoppedContainers = append(stoppedContainers, it.Name)
+						break
+					}
 				}
 			}
+			if len(containersToStop) > 0 {
+				if err := fm.docker.StopContainers(ctx, containersToStop); err != nil {
+					return nil, apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "stop cold-mode containers for fileset %s", name)
+				}
+			}
+		}
+
+		restartColdContainersOnFailure := func(baseErr error) error {
+			if !isCold || len(stoppedContainers) == 0 {
+				return baseErr
+			}
+			restartErr := fm.docker.StartContainers(ctx, stoppedContainers)
+			return apperr.Aggregate(
+				"filesetmanager.SyncFilesetsForContext",
+				apperr.External,
+				"fileset sync failed and cold-mode service restart also failed",
+				baseErr,
+				apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, restartErr, "restart cold-mode containers for fileset %s", name),
+			)
 		}
 
 		// Start logging the sync operation
@@ -134,22 +161,22 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 
 		// Sync files (create + update)
 		if err := fm.syncFilesetFiles(ctx, name, fileset, diff); err != nil {
-			return nil, st.Fail(err)
+			return nil, st.Fail(restartColdContainersOnFailure(err))
 		}
 
 		// Delete removed files
 		if err := fm.deleteFilesetFiles(ctx, name, fileset, diff); err != nil {
-			return nil, st.Fail(err)
+			return nil, st.Fail(restartColdContainersOnFailure(err))
 		}
 
 		// Write updated index
 		if err := fm.writeFilesetIndex(ctx, name, fileset, local); err != nil {
-			return nil, st.Fail(err)
+			return nil, st.Fail(restartColdContainersOnFailure(err))
 		}
 
 		// Apply ownership if configured
 		if err := fm.applyOwnership(ctx, name, fileset, diff); err != nil {
-			return nil, st.Fail(err)
+			return nil, st.Fail(restartColdContainersOnFailure(err))
 		}
 
 		// For cold mode, start previously stopped containers again
@@ -157,7 +184,9 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 			if fm.progress != nil {
 				fm.progress.SetAction("starting services for fileset " + name)
 			}
-			_ = fm.docker.StartContainers(ctx, stoppedContainers)
+			if err := fm.docker.StartContainers(ctx, stoppedContainers); err != nil {
+				return nil, st.Fail(apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "restart cold-mode containers for fileset %s", name))
+			}
 		}
 
 		st.OK(true) // Fileset was successfully synced
@@ -173,14 +202,6 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 	}
 
 	return restartPending, nil
-}
-
-// SyncFilesets synchronizes all filesets into their target volumes and returns services that need restart.
-// Deprecated: Use SyncFilesetsForContext for multi-context support.
-func (fm *FilesetManager) SyncFilesets(ctx context.Context, cfg manifest.Config, existingVolumes map[string]struct{}, execCtx *ContextExecutionContext) (map[string]struct{}, error) {
-	// Delegate to the first context (for backward compatibility)
-	contextName := cfg.GetFirstContext()
-	return fm.SyncFilesetsForContext(ctx, cfg, contextName, existingVolumes, execCtx)
 }
 
 // syncFilesetFiles handles create and update operations for fileset files.

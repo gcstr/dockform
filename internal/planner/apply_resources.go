@@ -79,14 +79,6 @@ func (rm *ResourceManager) EnsureVolumesExistForContext(ctx context.Context, cfg
 	return existingVolumes, nil
 }
 
-// EnsureVolumesExist creates any missing volumes derived from filesets.
-// Deprecated: Use EnsureVolumesExistForContext for multi-context support.
-func (rm *ResourceManager) EnsureVolumesExist(ctx context.Context, cfg manifest.Config, labels map[string]string) (map[string]struct{}, error) {
-	// Delegate to the first context (for backward compatibility)
-	contextName := cfg.GetFirstContext()
-	return rm.EnsureVolumesExistForContext(ctx, cfg, contextName, labels)
-}
-
 // EnsureNetworksExistForContext creates any missing networks declared in the context config.
 func (rm *ResourceManager) EnsureNetworksExistForContext(ctx context.Context, cfg manifest.Config, contextName string, labels map[string]string, existingNetworks map[string]struct{}) error {
 	log := logger.FromContext(ctx).With("component", "resourcemanager", "context", contextName)
@@ -121,15 +113,4 @@ func (rm *ResourceManager) EnsureNetworksExistForContext(ctx context.Context, cf
 	}
 
 	return nil
-}
-
-// EnsureNetworksExist is deprecated.
-// Deprecated: Use EnsureNetworksExistForContext for multi-context support.
-func (rm *ResourceManager) EnsureNetworksExist(ctx context.Context, cfg manifest.Config, labels map[string]string, execCtx *ContextExecutionContext) error {
-	contextName := cfg.GetFirstContext()
-	existingNetworks := map[string]struct{}{}
-	if execCtx != nil {
-		existingNetworks = execCtx.ExistingNetworks
-	}
-	return rm.EnsureNetworksExistForContext(ctx, cfg, contextName, labels, existingNetworks)
 }

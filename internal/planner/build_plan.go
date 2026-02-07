@@ -109,7 +109,11 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 	// Accumulate existing sets when docker client is available
 	var existingVolumes, existingNetworks map[string]struct{}
 	if client != nil {
-		existingVolumes, existingNetworks = p.getExistingResourcesForClient(ctx, client)
+		var err error
+		existingVolumes, existingNetworks, err = p.getExistingResourcesForClient(ctx, client)
+		if err != nil {
+			return nil, err
+		}
 		// Store in execution context for reuse during apply
 		execCtx.ExistingVolumes = existingVolumes
 		execCtx.ExistingNetworks = existingNetworks
@@ -186,7 +190,10 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 
 	// Track services that should be removed (orphan detection)
 	if client != nil {
-		desiredServices := p.collectDesiredServicesForContext(ctx, cfg, contextStacks, client)
+		desiredServices, err := p.collectDesiredServicesForContext(ctx, cfg, contextStacks, client)
+		if err != nil {
+			return nil, err
+		}
 		if all, err := client.ListComposeContainersAll(ctx); err == nil {
 			toDelete := map[string]map[string]struct{}{}
 			for _, it := range all {
@@ -209,7 +216,9 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 
 	// Filesets: show per-file changes using remote index when available
 	if client != nil && len(contextFilesets) > 0 {
-		p.buildFilesetResourcesForContext(ctx, contextFilesets, existingVolumes, client, resourcePlan, execCtx)
+		if err := p.buildFilesetResourcesForContext(ctx, contextFilesets, existingVolumes, client, resourcePlan, execCtx); err != nil {
+			return nil, err
+		}
 	}
 
 	return &ContextPlan{

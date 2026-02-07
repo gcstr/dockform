@@ -3,6 +3,8 @@ package planner
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/manifest"
@@ -26,6 +28,18 @@ func benchmarkBuildPlan(b *testing.B, parallel bool) {
 	docker.networks = []string{"net1", "net2", "net3", "existing-network"}
 
 	planner := NewWithDocker(docker).WithParallel(parallel)
+	sourceBase := b.TempDir()
+	assets1Dir := filepath.Join(sourceBase, "assets1")
+	assets2Dir := filepath.Join(sourceBase, "assets2")
+	configDir := filepath.Join(sourceBase, "config")
+	for _, dir := range []string{assets1Dir, assets2Dir, configDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			b.Fatalf("mkdir %s: %v", dir, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "sample.txt"), []byte("sample"), 0o644); err != nil {
+			b.Fatalf("write sample file in %s: %v", dir, err)
+		}
+	}
 
 	// Create a test configuration with multiple applications and filesets
 	cfg := manifest.Config{
@@ -59,21 +73,21 @@ func benchmarkBuildPlan(b *testing.B, parallel bool) {
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
 			"assets1": {
 				Source:       "./assets1",
-				SourceAbs:    "/tmp/assets1",
+				SourceAbs:    assets1Dir,
 				TargetVolume: "assets-vol1",
 				TargetPath:   "/var/www/assets",
 				Exclude:      []string{".git"},
 			},
 			"assets2": {
 				Source:       "./assets2",
-				SourceAbs:    "/tmp/assets2",
+				SourceAbs:    assets2Dir,
 				TargetVolume: "assets-vol2",
 				TargetPath:   "/var/www/assets2",
 				Exclude:      []string{".git"},
 			},
 			"config": {
 				Source:       "./config",
-				SourceAbs:    "/tmp/config",
+				SourceAbs:    configDir,
 				TargetVolume: "config-vol",
 				TargetPath:   "/etc/app",
 				Exclude:      []string{"*.tmp"},
@@ -115,6 +129,7 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 	}
 
 	planner := NewWithDocker(docker).WithParallel(parallel)
+	sourceBase := b.TempDir()
 
 	// Create a large configuration with many applications and filesets
 	applications := make(map[string]manifest.Stack)
@@ -133,9 +148,16 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 
 	// Add 15 filesets
 	for i := 0; i < 15; i++ {
+		sourceAbs := filepath.Join(sourceBase, fmt.Sprintf("assets%d", i))
+		if err := os.MkdirAll(sourceAbs, 0o755); err != nil {
+			b.Fatalf("mkdir %s: %v", sourceAbs, err)
+		}
+		if err := os.WriteFile(filepath.Join(sourceAbs, "sample.txt"), []byte("sample"), 0o644); err != nil {
+			b.Fatalf("write sample file in %s: %v", sourceAbs, err)
+		}
 		filesets[fmt.Sprintf("assets%d", i)] = manifest.FilesetSpec{
 			Source:       fmt.Sprintf("./assets%d", i),
-			SourceAbs:    fmt.Sprintf("/tmp/assets%d", i),
+			SourceAbs:    sourceAbs,
 			TargetVolume: fmt.Sprintf("assets-vol%d", i),
 			TargetPath:   fmt.Sprintf("/var/www/assets%d", i),
 			Exclude:      []string{".git", "*.tmp"},

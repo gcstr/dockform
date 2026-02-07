@@ -100,10 +100,12 @@ func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, context
 		existingNetworks = execCtx.ExistingNetworks
 	} else {
 		// Query existing networks from Docker when no execution context is provided
-		if nets, err := client.ListNetworks(ctx); err == nil {
-			for _, n := range nets {
-				existingNetworks[n] = struct{}{}
-			}
+		nets, err := client.ListNetworks(ctx)
+		if err != nil {
+			return st.Fail(apperr.Wrap("planner.Apply", apperr.External, err, "list existing networks for context %s", contextName))
+		}
+		for _, n := range nets {
+			existingNetworks[n] = struct{}{}
 		}
 	}
 	if err := resourceManager.EnsureNetworksExistForContext(ctx, cfg, contextName, labels, existingNetworks); err != nil {
@@ -166,7 +168,10 @@ func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.
 			if err != nil {
 				return apperr.Wrap("planner.Apply", apperr.External, err, "failed to detect service states for stack %s/%s", contextName, stackName)
 			}
-			inline = detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+			inline, err = detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+			if err != nil {
+				return apperr.Wrap("planner.Apply", apperr.External, err, "failed to build inline env for stack %s/%s", contextName, stackName)
+			}
 			needsApply = NeedsApply(services)
 		}
 
@@ -195,13 +200,25 @@ func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.
 
 		// Best-effort: ensure identifier label is present on containers
 		if identifier != "" {
-			if items, err := client.ComposePs(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline); err == nil {
-				for _, it := range items {
-					labels, _ := client.InspectContainerLabels(ctx, it.Name, []string{"io.dockform.identifier"})
-					if v, ok := labels["io.dockform.identifier"]; !ok || v != identifier {
-						_ = client.UpdateContainerLabels(ctx, it.Name, map[string]string{"io.dockform.identifier": identifier})
+			items, err := client.ComposePs(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline)
+			if err != nil {
+				return apperr.Wrap("planner.Apply", apperr.External, err, "list compose containers for stack %s/%s", contextName, stackName)
+			}
+			var labelErrs []error
+			for _, it := range items {
+				labels, err := client.InspectContainerLabels(ctx, it.Name, []string{"io.dockform.identifier"})
+				if err != nil {
+					labelErrs = append(labelErrs, apperr.Wrap("planner.Apply", apperr.External, err, "inspect identifier label for container %s", it.Name))
+					continue
+				}
+				if v, ok := labels["io.dockform.identifier"]; !ok || v != identifier {
+					if err := client.UpdateContainerLabels(ctx, it.Name, map[string]string{"io.dockform.identifier": identifier}); err != nil {
+						labelErrs = append(labelErrs, apperr.Wrap("planner.Apply", apperr.External, err, "update identifier label for container %s", it.Name))
 					}
 				}
+			}
+			if err := apperr.Aggregate("planner.Apply", apperr.External, "failed to apply identifier labels to one or more containers", labelErrs...); err != nil {
+				return err
 			}
 		}
 	}

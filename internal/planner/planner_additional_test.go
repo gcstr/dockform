@@ -73,14 +73,9 @@ func TestBuildPlan_ComposeConfigError(t *testing.T) {
 		Stacks:     map[string]manifest.Stack{"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}}},
 	}
 	d := dockercli.New("")
-	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
-	if err != nil {
-		t.Fatalf("BuildPlan should not fail, got: %v", err)
-	}
-	// With the new ServiceStateDetector, compose config errors result in fallback "TBD" messages instead of hard errors
-	out := pln.String()
-	if !strings.Contains(out, "planned (services diff TBD)") {
-		t.Fatalf("expected TBD fallback for compose config error, got:\n%s", out)
+	_, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "one or more stack analyses failed") {
+		t.Fatalf("expected aggregate stack analysis error, got: %v", err)
 	}
 }
 

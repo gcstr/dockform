@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 )
@@ -39,6 +38,7 @@ func TestBuildPlan_Logging(t *testing.T) {
 	docker.volumes = []string{"existing-vol1", "existing-vol2"}
 
 	// Create test configuration using multi-context schema
+	sourceDir := t.TempDir()
 	cfg := manifest.Config{
 		Identifier: "test-app",
 		Contexts: map[string]manifest.ContextConfig{
@@ -57,7 +57,7 @@ func TestBuildPlan_Logging(t *testing.T) {
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
 			"default/app1/config": {
 				Source:       "./config",
-				SourceAbs:    "/tmp/config",
+				SourceAbs:    sourceDir,
 				TargetVolume: "config-vol",
 				TargetPath:   "/etc/config",
 				Context:      "default",
@@ -65,9 +65,8 @@ func TestBuildPlan_Logging(t *testing.T) {
 		},
 	}
 
-	// Create planner with factory and build plan
-	factory := dockercli.NewClientFactory()
-	planner := NewWithFactory(factory)
+	// Create planner with mock docker and build plan
+	planner := NewWithDocker(docker)
 	plan, err := planner.BuildPlan(ctx, cfg)
 	if err != nil {
 		t.Fatalf("BuildPlan failed: %v", err)

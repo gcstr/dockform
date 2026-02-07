@@ -2,26 +2,31 @@ package planner
 
 import (
 	"context"
-	"path/filepath"
+	"fmt"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
-	"github.com/gcstr/dockform/internal/secrets"
 )
 
 // Prune removes unmanaged resources labeled with the identifier.
 // It deletes volumes, networks, and containers that are labeled but not present in cfg.
 func (p *Planner) Prune(ctx context.Context, cfg manifest.Config) error {
-	return p.PruneWithPlan(ctx, cfg, nil)
+	return p.PruneWithPlanOptions(ctx, cfg, nil, CleanupOptions{Strict: true, VerboseErrors: true})
 }
 
 // PruneWithPlan removes unmanaged resources, optionally reusing execution context from a pre-built plan.
 func (p *Planner) PruneWithPlan(ctx context.Context, cfg manifest.Config, plan *Plan) error {
+	return p.PruneWithPlanOptions(ctx, cfg, plan, CleanupOptions{Strict: true, VerboseErrors: true})
+}
+
+// PruneWithPlanOptions removes unmanaged resources using explicit cleanup behavior options.
+func (p *Planner) PruneWithPlanOptions(ctx context.Context, cfg manifest.Config, plan *Plan, opts CleanupOptions) error {
 	if p.docker == nil && p.factory == nil {
 		return apperr.New("planner.Prune", apperr.Precondition, "docker client not configured")
 	}
 
-	return p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
+	err := p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
 		client := p.getClientForContext(contextName, &cfg)
 		if client == nil {
 			return apperr.New("planner.Prune", apperr.Precondition, "docker client not available for context %s", contextName)
@@ -29,6 +34,20 @@ func (p *Planner) PruneWithPlan(ctx context.Context, cfg manifest.Config, plan *
 
 		return p.pruneContext(ctx, cfg, contextName, client, plan)
 	})
+	if err == nil {
+		return nil
+	}
+	if opts.Strict {
+		return err
+	}
+
+	log := logger.FromContext(ctx).With("component", "planner", "action", "prune")
+	if opts.VerboseErrors {
+		log.Warn("prune_non_strict_errors", "error", err.Error())
+	} else {
+		log.Warn("prune_non_strict_errors")
+	}
+	return nil
 }
 
 // pruneContext removes unmanaged resources for a single context.
@@ -38,6 +57,8 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 
 	// Desired services set for this context
 	desiredServices := map[string]struct{}{}
+	var errs []error
+	canPruneContainers := true
 
 	if plan != nil && plan.ExecutionContext != nil {
 		if contextCtx := plan.ExecutionContext.ByContext[contextName]; contextCtx != nil {
@@ -47,25 +68,41 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 						desiredServices[svc.Name] = struct{}{}
 					}
 				} else {
-					collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices)
+					if err := collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices); err != nil {
+						canPruneContainers = false
+						errs = append(errs, err)
+					}
 				}
 			}
 		} else {
 			for _, stack := range contextStacks {
-				collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices)
+				if err := collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices); err != nil {
+					canPruneContainers = false
+					errs = append(errs, err)
+				}
 			}
 		}
 	} else {
 		for _, stack := range contextStacks {
-			collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices)
+			if err := collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices); err != nil {
+				canPruneContainers = false
+				errs = append(errs, err)
+			}
 		}
 	}
 
 	// Remove labeled containers not in desired set
-	if all, err := client.ListComposeContainersAll(ctx); err == nil {
-		for _, it := range all {
-			if _, want := desiredServices[it.Service]; !want {
-				_ = client.RemoveContainer(ctx, it.Name, true)
+	if canPruneContainers {
+		all, err := client.ListComposeContainersAll(ctx)
+		if err != nil {
+			errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "list managed containers for context %s", contextName))
+		} else {
+			for _, it := range all {
+				if _, want := desiredServices[it.Service]; !want {
+					if err := client.RemoveContainer(ctx, it.Name, true); err != nil {
+						errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "remove unmanaged container %s in context %s", it.Name, contextName))
+					}
+				}
 			}
 		}
 	}
@@ -81,10 +118,15 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 			desiredVolumes[volName] = struct{}{}
 		}
 	}
-	if vols, err := client.ListVolumes(ctx); err == nil {
+	vols, err := client.ListVolumes(ctx)
+	if err != nil {
+		errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "list managed volumes for context %s", contextName))
+	} else {
 		for _, v := range vols {
 			if _, want := desiredVolumes[v]; !want {
-				_ = client.RemoveVolume(ctx, v)
+				if err := client.RemoveVolume(ctx, v); err != nil {
+					errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "remove unmanaged volume %s in context %s", v, contextName))
+				}
 			}
 		}
 	}
@@ -96,46 +138,35 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 			desiredNetworks[netName] = struct{}{}
 		}
 	}
-	if nets, err := client.ListNetworks(ctx); err == nil {
+	nets, err := client.ListNetworks(ctx)
+	if err != nil {
+		errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "list managed networks for context %s", contextName))
+	} else {
 		for _, n := range nets {
 			if _, want := desiredNetworks[n]; !want {
-				_ = client.RemoveNetwork(ctx, n)
+				if err := client.RemoveNetwork(ctx, n); err != nil {
+					errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "remove unmanaged network %s in context %s", n, contextName))
+				}
 			}
 		}
 	}
 
-	return nil
+	return apperr.Aggregate("planner.pruneContext", apperr.External, fmt.Sprintf("prune for context %s failed for one or more resources", contextName), errs...)
 }
 
 // collectDesiredServicesForStack collects service names for a single stack by querying compose config.
-func collectDesiredServicesForStack(ctx context.Context, client DockerClient, stack manifest.Stack, sopsConfig *manifest.SopsConfig, desiredServices map[string]struct{}) {
-	inline := append([]string(nil), stack.EnvInline...)
-	ageKeyFile := ""
-	pgpDir := ""
-	pgpAgent := false
-	pgpMode := ""
-	pgpPass := ""
-	if sopsConfig != nil && sopsConfig.Age != nil {
-		ageKeyFile = sopsConfig.Age.KeyFile
+func collectDesiredServicesForStack(ctx context.Context, client DockerClient, stack manifest.Stack, sopsConfig *manifest.SopsConfig, desiredServices map[string]struct{}) error {
+	detector := NewServiceStateDetector(client)
+	inline, err := detector.BuildInlineEnv(ctx, stack, sopsConfig)
+	if err != nil {
+		return apperr.Wrap("planner.collectDesiredServicesForStack", apperr.External, err, "build inline env for stack %s", stack.Root)
 	}
-	if sopsConfig != nil && sopsConfig.Pgp != nil {
-		pgpDir = sopsConfig.Pgp.KeyringDir
-		pgpAgent = sopsConfig.Pgp.UseAgent
-		pgpMode = sopsConfig.Pgp.PinentryMode
-		pgpPass = sopsConfig.Pgp.Passphrase
+	names, err := detector.GetPlannedServices(ctx, stack, inline)
+	if err != nil {
+		return apperr.Wrap("planner.collectDesiredServicesForStack", apperr.External, err, "list planned services for stack %s", stack.Root)
 	}
-	for _, pth0 := range stack.SopsSecrets {
-		pth := pth0
-		if pth != "" && !filepath.IsAbs(pth) {
-			pth = filepath.Join(stack.Root, pth)
-		}
-		if pairs, err := secrets.DecryptAndParse(ctx, pth, secrets.SopsOptions{AgeKeyFile: ageKeyFile, PgpKeyringDir: pgpDir, PgpUseAgent: pgpAgent, PgpPinentryMode: pgpMode, PgpPassphrase: pgpPass}); err == nil {
-			inline = append(inline, pairs...)
-		}
+	for _, name := range names {
+		desiredServices[name] = struct{}{}
 	}
-	if doc, err := client.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, inline); err == nil {
-		for s := range doc.Services {
-			desiredServices[s] = struct{}{}
-		}
-	}
+	return nil
 }

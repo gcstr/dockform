@@ -5,6 +5,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
@@ -82,10 +83,16 @@ func (p *Planner) buildStackResourcesSequentialForContext(ctx context.Context, c
 		stack := stacks[stackName]
 
 		// Build inline environment (including decrypted secrets)
-		inline := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+		inline, err := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+		if err != nil {
+			return apperr.Wrap("planner.buildStackResourcesSequentialForContext", apperr.External, err, "build inline env for stack %s/%s", contextName, stackName)
+		}
 
 		services, err := detector.DetectAllServicesState(ctx, stackName, stack, identifier, cfg.Sops)
-		if err != nil || len(services) == 0 {
+		if err != nil {
+			return apperr.Wrap("planner.buildStackResourcesSequentialForContext", apperr.External, err, "detect service state for stack %s/%s", contextName, stackName)
+		}
+		if len(services) == 0 {
 			plan.Stacks[stackName] = fallbackStackResource()
 			continue
 		}
@@ -118,6 +125,7 @@ func (p *Planner) buildStackResourcesParallelForContext(ctx context.Context, cfg
 		stackName string
 		resources []Resource
 		execData  *StackExecutionData
+		err       error
 	}
 
 	resultsChan := make(chan stackResult, len(stackNames))
@@ -132,14 +140,30 @@ func (p *Planner) buildStackResourcesParallelForContext(ctx context.Context, cfg
 			stack := stacks[stackName]
 
 			// Build inline environment (including decrypted secrets)
-			inline := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+			inline, err := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+			if err != nil {
+				resultsChan <- stackResult{
+					stackName: stackName,
+					resources: fallbackStackResource(),
+					err:       apperr.Wrap("planner.buildStackResourcesParallelForContext", apperr.External, err, "build inline env for stack %s/%s", contextName, stackName),
+				}
+				return
+			}
 
 			services, err := detector.DetectAllServicesState(ctx, stackName, stack, identifier, cfg.Sops)
+			if err != nil {
+				resultsChan <- stackResult{
+					stackName: stackName,
+					resources: fallbackStackResource(),
+					err:       apperr.Wrap("planner.buildStackResourcesParallelForContext", apperr.External, err, "detect service state for stack %s/%s", contextName, stackName),
+				}
+				return
+			}
 
 			var resources []Resource
 			var execData *StackExecutionData
 
-			if err != nil || len(services) == 0 {
+			if len(services) == 0 {
 				resources = fallbackStackResource()
 			} else {
 				// Store execution data for reuse during apply
@@ -162,36 +186,46 @@ func (p *Planner) buildStackResourcesParallelForContext(ctx context.Context, cfg
 	}()
 
 	// Collect results and add to plan
+	var errs []error
 	for result := range resultsChan {
 		plan.Stacks[result.stackName] = result.resources
 		if result.execData != nil {
 			execCtx.Stacks[result.stackName] = result.execData
 		}
+		if result.err != nil {
+			errs = append(errs, result.err)
+		}
+	}
+	if len(errs) > 0 {
+		return apperr.Aggregate("planner.buildStackResourcesParallelForContext", apperr.External, "one or more stack analyses failed", errs...)
 	}
 
 	return nil
 }
 
 // collectDesiredServicesForContext returns a map of all service names that should be running for a contextConfig.
-func (p *Planner) collectDesiredServicesForContext(ctx context.Context, cfg manifest.Config, stacks map[string]manifest.Stack, client DockerClient) map[string]struct{} {
+func (p *Planner) collectDesiredServicesForContext(ctx context.Context, cfg manifest.Config, stacks map[string]manifest.Stack, client DockerClient) (map[string]struct{}, error) {
 	desiredServices := map[string]struct{}{}
 
 	if client == nil {
-		return desiredServices
+		return desiredServices, nil
 	}
 
 	detector := NewServiceStateDetector(client)
 
 	for _, stack := range stacks {
-		inline := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+		inline, err := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+		if err != nil {
+			return nil, err
+		}
 		names, err := detector.GetPlannedServices(ctx, stack, inline)
 		if err != nil {
-			continue // Skip this stack if we can't list planned services
+			return nil, apperr.Wrap("planner.collectDesiredServicesForContext", apperr.External, err, "list planned services for stack %s", stack.Root)
 		}
 		for _, name := range names {
 			desiredServices[name] = struct{}{}
 		}
 	}
 
-	return desiredServices
+	return desiredServices, nil
 }

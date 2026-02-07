@@ -137,32 +137,56 @@ func mergeResourcePlan(dst, src *ResourcePlan) {
 
 // Destroy executes the destruction of all managed resources.
 func (p *Planner) Destroy(ctx context.Context, cfg manifest.Config) error {
+	return p.DestroyWithOptions(ctx, cfg, CleanupOptions{Strict: true, VerboseErrors: true})
+}
+
+// DestroyWithOptions executes the destruction of all managed resources with explicit cleanup options.
+func (p *Planner) DestroyWithOptions(ctx context.Context, cfg manifest.Config, opts CleanupOptions) error {
 	if p.docker == nil && p.factory == nil {
 		return apperr.New("planner.Destroy", apperr.Precondition, "docker client not configured")
 	}
 
 	allFilesets := cfg.GetAllFilesets()
 
-	return p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
+	err := p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
 		client := p.getClientForContext(contextName, &cfg)
 		if client == nil {
 			return apperr.New("planner.Destroy", apperr.Precondition, "docker client not available for context %s", contextName)
 		}
 
-		return p.destroyContext(ctx, client, contextName, allFilesets)
+		return p.destroyContext(ctx, client, contextName, allFilesets, opts.VerboseErrors)
 	})
+	if err == nil {
+		return nil
+	}
+	if opts.Strict {
+		return err
+	}
+	log := logger.FromContext(ctx).With("component", "planner", "action", "destroy")
+	if opts.VerboseErrors {
+		log.Warn("destroy_non_strict_errors", "error", err.Error())
+	} else {
+		log.Warn("destroy_non_strict_errors")
+	}
+	return nil
 }
 
 // destroyContext executes destruction for a single context.
 // Errors during resource removal are logged but do not stop the destruction process
 // to ensure best-effort cleanup of all resources.
-func (p *Planner) destroyContext(ctx context.Context, client DockerClient, contextName string, allFilesets map[string]manifest.FilesetSpec) error {
+func (p *Planner) destroyContext(ctx context.Context, client DockerClient, contextName string, allFilesets map[string]manifest.FilesetSpec, verboseErrors bool) error {
 	log := logger.FromContext(ctx).With("component", "planner", "action", "destroy", "context", contextName)
+	var errs []error
 
 	// Step 1: Remove containers
 	allContainers, err := client.ListComposeContainersAll(ctx)
 	if err != nil {
-		log.Warn("destroy_list_containers_failed", "error", err.Error())
+		errs = append(errs, apperr.Wrap("planner.destroyContext", apperr.External, err, "context %s: list containers", contextName))
+		if verboseErrors {
+			log.Warn("destroy_list_containers_failed", "error", err.Error())
+		} else {
+			log.Warn("destroy_list_containers_failed")
+		}
 	}
 	byProjSvc := make(map[string]map[string][]string)
 	for _, it := range allContainers {
@@ -172,7 +196,12 @@ func (p *Planner) destroyContext(ctx context.Context, client DockerClient, conte
 				p.spinner.SetLabel(fmt.Sprintf("removing container %s on %s", it.Name, contextName))
 			}
 			if err := client.RemoveContainer(ctx, it.Name, true); err != nil {
-				log.Warn("destroy_remove_container_failed", "container", it.Name, "error", err.Error())
+				errs = append(errs, apperr.Wrap("planner.destroyContext", apperr.External, err, "context %s: remove container %s", contextName, it.Name))
+				if verboseErrors {
+					log.Warn("destroy_remove_container_failed", "container", it.Name, "error", err.Error())
+				} else {
+					log.Warn("destroy_remove_container_failed", "container", it.Name)
+				}
 			}
 			continue
 		}
@@ -189,7 +218,12 @@ func (p *Planner) destroyContext(ctx context.Context, client DockerClient, conte
 			}
 			for _, name := range containerNames {
 				if err := client.RemoveContainer(ctx, name, true); err != nil {
-					log.Warn("destroy_remove_container_failed", "container", name, "stack", stackName, "service", svcName, "error", err.Error())
+					errs = append(errs, apperr.Wrap("planner.destroyContext", apperr.External, err, "context %s: remove container %s", contextName, name))
+					if verboseErrors {
+						log.Warn("destroy_remove_container_failed", "container", name, "stack", stackName, "service", svcName, "error", err.Error())
+					} else {
+						log.Warn("destroy_remove_container_failed", "container", name, "stack", stackName, "service", svcName)
+					}
 				}
 			}
 		}
@@ -198,30 +232,50 @@ func (p *Planner) destroyContext(ctx context.Context, client DockerClient, conte
 	// Step 2: Remove networks
 	networks, err := client.ListNetworks(ctx)
 	if err != nil {
-		log.Warn("destroy_list_networks_failed", "error", err.Error())
+		errs = append(errs, apperr.Wrap("planner.destroyContext", apperr.External, err, "context %s: list networks", contextName))
+		if verboseErrors {
+			log.Warn("destroy_list_networks_failed", "error", err.Error())
+		} else {
+			log.Warn("destroy_list_networks_failed")
+		}
 	}
 	for _, network := range networks {
 		if p.spinner != nil {
 			p.spinner.SetLabel(fmt.Sprintf("removing network %s on %s", network, contextName))
 		}
 		if err := client.RemoveNetwork(ctx, network); err != nil {
-			log.Warn("destroy_remove_network_failed", "network", network, "error", err.Error())
+			errs = append(errs, apperr.Wrap("planner.destroyContext", apperr.External, err, "context %s: remove network %s", contextName, network))
+			if verboseErrors {
+				log.Warn("destroy_remove_network_failed", "network", network, "error", err.Error())
+			} else {
+				log.Warn("destroy_remove_network_failed", "network", network)
+			}
 		}
 	}
 
 	// Step 3: Remove volumes
 	volumes, err := client.ListVolumes(ctx)
 	if err != nil {
-		log.Warn("destroy_list_volumes_failed", "error", err.Error())
+		errs = append(errs, apperr.Wrap("planner.destroyContext", apperr.External, err, "context %s: list volumes", contextName))
+		if verboseErrors {
+			log.Warn("destroy_list_volumes_failed", "error", err.Error())
+		} else {
+			log.Warn("destroy_list_volumes_failed")
+		}
 	}
 	for _, volume := range volumes {
 		if p.spinner != nil {
 			p.spinner.SetLabel(fmt.Sprintf("removing volume %s on %s", volume, contextName))
 		}
 		if err := client.RemoveVolume(ctx, volume); err != nil {
-			log.Warn("destroy_remove_volume_failed", "volume", volume, "error", err.Error())
+			errs = append(errs, apperr.Wrap("planner.destroyContext", apperr.External, err, "context %s: remove volume %s", contextName, volume))
+			if verboseErrors {
+				log.Warn("destroy_remove_volume_failed", "volume", volume, "error", err.Error())
+			} else {
+				log.Warn("destroy_remove_volume_failed", "volume", volume)
+			}
 		}
 	}
 
-	return nil
+	return apperr.Aggregate("planner.destroyContext", apperr.External, fmt.Sprintf("destroy for context %s failed for one or more resources", contextName), errs...)
 }
