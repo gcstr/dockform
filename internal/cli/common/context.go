@@ -19,6 +19,15 @@ type CLIContext struct {
 	Planner *planner.Planner
 }
 
+// WithRunContext temporarily swaps the context's Ctx to runCtx for the
+// duration of fn, restoring the original afterwards.
+func (c *CLIContext) WithRunContext(runCtx context.Context, fn func() error) error {
+	prev := c.Ctx
+	c.Ctx = runCtx
+	defer func() { c.Ctx = prev }()
+	return fn()
+}
+
 // GetDefaultClient returns a Docker client for the first context (for single-context operations).
 func (ctx *CLIContext) GetDefaultClient() *dockercli.Client {
 	name, _ := GetFirstDaemon(ctx.Config)

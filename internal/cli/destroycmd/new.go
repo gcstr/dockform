@@ -74,13 +74,13 @@ regardless of what's in your current configuration file.`,
 			strict, _ := cmd.Flags().GetBool("strict")
 			verboseErrors, _ := cmd.Flags().GetBool("verbose-errors")
 			_, _, err = common.RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
-				prev := ctx.Ctx
-				ctx.Ctx = runCtx
-				defer func() { ctx.Ctx = prev }()
-				if err := ctx.ExecuteDestroyWithOptions(runCtx, planner.CleanupOptions{
-					Strict:        strict,
-					VerboseErrors: verboseErrors,
-				}); err != nil {
+				err := ctx.WithRunContext(runCtx, func() error {
+					return ctx.ExecuteDestroyWithOptions(runCtx, planner.CleanupOptions{
+						Strict:        strict,
+						VerboseErrors: verboseErrors,
+					})
+				})
+				if err != nil {
 					return "", err
 				}
 				return "│ Done.", nil
