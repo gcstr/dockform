@@ -44,9 +44,27 @@ case "$cmd" in
     if [ "$sub" = "ls" ]; then exit 0; fi ;;
   compose)
     for a in "$@"; do [ "$a" = "--services" ] && { echo "nginx"; exit 0; }; done
-    if [ "$1" = "config" ] && [ "$2" = "--hash" ]; then svc="$3"; echo "$svc deadbeef"; exit 0; fi
-    if [ "$1" = "ps" ] && [ "$2" = "--format" ] && [ "$3" = "json" ]; then echo "[]"; exit 0; fi
-    if [ "$1" = "up" ] && [ "$2" = "-d" ]; then exit 0; fi
+    prev=""
+    for a in "$@"; do
+      if [ "$prev" = "--hash" ]; then svc="$a"; echo "$svc deadbeef"; exit 0; fi
+      prev="$a"
+    done
+    saw_ps=0
+    saw_format=0
+    saw_json=0
+    for a in "$@"; do
+      [ "$a" = "ps" ] && saw_ps=1
+      [ "$a" = "--format" ] && saw_format=1
+      [ "$a" = "json" ] && saw_json=1
+    done
+    if [ "$saw_ps" = "1" ] && [ "$saw_format" = "1" ] && [ "$saw_json" = "1" ]; then echo "[]"; exit 0; fi
+    saw_up=0
+    saw_detach=0
+    for a in "$@"; do
+      [ "$a" = "up" ] && saw_up=1
+      [ "$a" = "-d" ] && saw_detach=1
+    done
+    if [ "$saw_up" = "1" ] && [ "$saw_detach" = "1" ]; then exit 0; fi
     exit 0 ;;
   ps)
     exit 0 ;;
@@ -102,9 +120,27 @@ case "$cmd" in
     if [ "$sub" = "ls" ]; then echo "demo-network"; exit 0; fi ;;
   compose)
     for a in "$@"; do [ "$a" = "--services" ] && { echo "nginx"; exit 0; }; done
-    if [ "$1" = "config" ] && [ "$2" = "--hash" ]; then svc="$3"; echo "$svc deadbeef"; exit 0; fi
-    if [ "$1" = "ps" ] && [ "$2" = "--format" ] && [ "$3" = "json" ]; then echo "[]"; exit 0; fi
-    if [ "$1" = "up" ] && [ "$2" = "-d" ]; then exit 0; fi
+    prev=""
+    for a in "$@"; do
+      if [ "$prev" = "--hash" ]; then svc="$a"; echo "$svc deadbeef"; exit 0; fi
+      prev="$a"
+    done
+    saw_ps=0
+    saw_format=0
+    saw_json=0
+    for a in "$@"; do
+      [ "$a" = "ps" ] && saw_ps=1
+      [ "$a" = "--format" ] && saw_format=1
+      [ "$a" = "json" ] && saw_json=1
+    done
+    if [ "$saw_ps" = "1" ] && [ "$saw_format" = "1" ] && [ "$saw_json" = "1" ]; then echo "[]"; exit 0; fi
+    saw_up=0
+    saw_detach=0
+    for a in "$@"; do
+      [ "$a" = "up" ] && saw_up=1
+      [ "$a" = "-d" ] && saw_detach=1
+    done
+    if [ "$saw_up" = "1" ] && [ "$saw_detach" = "1" ]; then exit 0; fi
     exit 0 ;;
   ps)
     exit 0 ;;
@@ -124,8 +160,8 @@ case "$cmd" in
 
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error from apply when docker fails, got nil")
-	} else if !strings.Contains(err.Error(), "list volumes") {
-		t.Fatalf("expected error to mention list volumes; got: %v", err)
+	} else if !strings.Contains(err.Error(), "discover existing docker resources") {
+		t.Fatalf("expected error to mention docker resource discovery; got: %v", err)
 	}
 }
 
@@ -148,5 +184,119 @@ func TestApply_SkipConfirmation_BypassesPrompt(t *testing.T) {
 	}
 	if strings.Contains(got, "canceled") {
 		t.Fatalf("did not expect apply to be canceled when skipping confirmation; got: %s", got)
+	}
+}
+
+func TestApply_PruneErrors_NonStrictByDefault(t *testing.T) {
+	t.Helper()
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
+cmd="$1"; shift
+case "$cmd" in
+  version)
+    exit 0 ;;
+  volume)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "orphan-vol"; exit 0; fi
+    if [ "$sub" = "rm" ]; then echo "volume remove failed" 1>&2; exit 1; fi ;;
+  network)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then exit 0; fi ;;
+  compose)
+    for a in "$@"; do [ "$a" = "--services" ] && { echo "nginx"; exit 0; }; done
+    prev=""
+    for a in "$@"; do
+      if [ "$prev" = "--hash" ]; then svc="$a"; echo "$svc deadbeef"; exit 0; fi
+      prev="$a"
+    done
+    saw_ps=0
+    saw_format=0
+    saw_json=0
+    for a in "$@"; do
+      [ "$a" = "ps" ] && saw_ps=1
+      [ "$a" = "--format" ] && saw_format=1
+      [ "$a" = "json" ] && saw_json=1
+    done
+    if [ "$saw_ps" = "1" ] && [ "$saw_format" = "1" ] && [ "$saw_json" = "1" ]; then echo "[]"; exit 0; fi
+    saw_up=0
+    saw_detach=0
+    for a in "$@"; do
+      [ "$a" = "up" ] && saw_up=1
+      [ "$a" = "-d" ] && saw_detach=1
+    done
+    if [ "$saw_up" = "1" ] && [ "$saw_detach" = "1" ]; then exit 0; fi
+    exit 0 ;;
+  ps)
+    exit 0 ;;
+  inspect)
+    echo "{}"; exit 0 ;;
+esac
+exit 0
+`)
+	defer undo()
+
+	root := cli.TestNewRootCmd()
+	root.SetIn(strings.NewReader("yes\n"))
+	root.SetArgs([]string{"apply", "--skip-confirmation", "-c", clitest.BasicConfigPath(t)})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("expected apply to succeed in non-strict prune mode, got: %v", err)
+	}
+}
+
+func TestApply_StrictPrune_FailsOnPruneErrors(t *testing.T) {
+	t.Helper()
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
+cmd="$1"; shift
+case "$cmd" in
+  version)
+    exit 0 ;;
+  volume)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "orphan-vol"; exit 0; fi
+    if [ "$sub" = "rm" ]; then echo "volume remove failed" 1>&2; exit 1; fi ;;
+  network)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then exit 0; fi ;;
+  compose)
+    for a in "$@"; do [ "$a" = "--services" ] && { echo "nginx"; exit 0; }; done
+    prev=""
+    for a in "$@"; do
+      if [ "$prev" = "--hash" ]; then svc="$a"; echo "$svc deadbeef"; exit 0; fi
+      prev="$a"
+    done
+    saw_ps=0
+    saw_format=0
+    saw_json=0
+    for a in "$@"; do
+      [ "$a" = "ps" ] && saw_ps=1
+      [ "$a" = "--format" ] && saw_format=1
+      [ "$a" = "json" ] && saw_json=1
+    done
+    if [ "$saw_ps" = "1" ] && [ "$saw_format" = "1" ] && [ "$saw_json" = "1" ]; then echo "[]"; exit 0; fi
+    saw_up=0
+    saw_detach=0
+    for a in "$@"; do
+      [ "$a" = "up" ] && saw_up=1
+      [ "$a" = "-d" ] && saw_detach=1
+    done
+    if [ "$saw_up" = "1" ] && [ "$saw_detach" = "1" ]; then exit 0; fi
+    exit 0 ;;
+  ps)
+    exit 0 ;;
+  inspect)
+    echo "{}"; exit 0 ;;
+esac
+exit 0
+`)
+	defer undo()
+
+	root := cli.TestNewRootCmd()
+	root.SetIn(strings.NewReader("yes\n"))
+	root.SetArgs([]string{"apply", "--skip-confirmation", "--strict-prune", "-c", clitest.BasicConfigPath(t)})
+	err := root.Execute()
+	if err == nil {
+		t.Fatalf("expected apply to fail when --strict-prune is set")
+	}
+	if !strings.Contains(err.Error(), "prune") {
+		t.Fatalf("expected prune-related error, got: %v", err)
 	}
 }

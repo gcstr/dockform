@@ -80,6 +80,12 @@ project/
 
 Please visit https://dockform.io for the full documentation.
 
+## Breaking CLI Change
+
+- `--config` was removed.
+- Use `--manifest` to select a Dockform manifest file or directory.
+- `--context` is now targeting-only (for deployment/context selection), not manifest selection.
+
 ## Features
 
 - Declarative configuration in a single YAML file

@@ -290,3 +290,79 @@ exit 0
 		t.Fatalf("expected error from destroy when docker discovery fails, got nil")
 	}
 }
+
+func TestDestroy_CleanupErrors_NonStrictByDefault(t *testing.T) {
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
+cmd="$1"; shift
+case "$cmd" in
+  version)
+    exit 0 ;;
+  volume)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "app-volume"; exit 0; fi
+    if [ "$sub" = "rm" ]; then exit 0; fi ;;
+  network)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "app-network"; exit 0; fi
+    if [ "$sub" = "rm" ]; then echo "network remove failed" 1>&2; exit 1; fi ;;
+  container)
+    sub="$1"; shift
+    if [ "$sub" = "rm" ]; then exit 0; fi ;;
+  ps)
+    echo "test-project;web;test-web-1"
+    exit 0 ;;
+  inspect)
+    echo "{}"
+    exit 0 ;;
+esac
+exit 0
+`)
+	defer undo()
+
+	root := cli.TestNewRootCmd()
+	root.SetIn(strings.NewReader("demo\n"))
+	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("expected non-strict destroy to succeed, got: %v", err)
+	}
+}
+
+func TestDestroy_Strict_FailsOnCleanupErrors(t *testing.T) {
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
+cmd="$1"; shift
+case "$cmd" in
+  version)
+    exit 0 ;;
+  volume)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "app-volume"; exit 0; fi
+    if [ "$sub" = "rm" ]; then exit 0; fi ;;
+  network)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "app-network"; exit 0; fi
+    if [ "$sub" = "rm" ]; then echo "network remove failed" 1>&2; exit 1; fi ;;
+  container)
+    sub="$1"; shift
+    if [ "$sub" = "rm" ]; then exit 0; fi ;;
+  ps)
+    echo "test-project;web;test-web-1"
+    exit 0 ;;
+  inspect)
+    echo "{}"
+    exit 0 ;;
+esac
+exit 0
+`)
+	defer undo()
+
+	root := cli.TestNewRootCmd()
+	root.SetIn(strings.NewReader("demo\n"))
+	root.SetArgs([]string{"destroy", "--strict", "-c", clitest.BasicConfigPath(t)})
+	err := root.Execute()
+	if err == nil {
+		t.Fatalf("expected strict destroy to fail on cleanup errors")
+	}
+	if !strings.Contains(err.Error(), "destroy") {
+		t.Fatalf("expected destroy-related error, got: %v", err)
+	}
+}

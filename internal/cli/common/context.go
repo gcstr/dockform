@@ -113,9 +113,14 @@ func (ctx *CLIContext) PrunePlan() error {
 
 // PrunePlanWithContext executes pruning with spinner, reusing a pre-built plan.
 func (ctx *CLIContext) PrunePlanWithContext(plan *planner.Plan) error {
+	return ctx.PrunePlanWithOptions(plan, planner.CleanupOptions{Strict: true, VerboseErrors: true})
+}
+
+// PrunePlanWithOptions executes pruning with spinner, reusing a pre-built plan and explicit cleanup options.
+func (ctx *CLIContext) PrunePlanWithOptions(plan *planner.Plan, opts planner.CleanupOptions) error {
 	stdPr := ctx.Printer.(ui.StdPrinter)
 	return SpinnerOperation(stdPr, "Pruning...", func() error {
-		return ctx.Planner.PruneWithPlan(ctx.Ctx, *ctx.Config, plan)
+		return ctx.Planner.PruneWithPlanOptions(ctx.Ctx, *ctx.Config, plan, opts)
 	})
 }
 
@@ -135,8 +140,13 @@ func (ctx *CLIContext) BuildDestroyPlan() (*planner.Plan, error) {
 
 // ExecuteDestroy executes the destruction of all managed resources.
 func (ctx *CLIContext) ExecuteDestroy(bgCtx context.Context) error {
+	return ctx.ExecuteDestroyWithOptions(bgCtx, planner.CleanupOptions{Strict: true, VerboseErrors: true})
+}
+
+// ExecuteDestroyWithOptions executes destruction with explicit cleanup options.
+func (ctx *CLIContext) ExecuteDestroyWithOptions(bgCtx context.Context, opts planner.CleanupOptions) error {
 	stdPr := ctx.Printer.(ui.StdPrinter)
 	return DynamicSpinnerOperation(stdPr, "Destroying", func(s *ui.Spinner) error {
-		return ctx.Planner.WithSpinner(s, "Destroying").Destroy(bgCtx, *ctx.Config)
+		return ctx.Planner.WithSpinner(s, "Destroying").DestroyWithOptions(bgCtx, *ctx.Config, opts)
 	})
 }

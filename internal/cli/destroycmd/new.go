@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/gcstr/dockform/internal/cli/common"
+	"github.com/gcstr/dockform/internal/planner"
 	"github.com/spf13/cobra"
 )
 
@@ -70,11 +71,16 @@ regardless of what's in your current configuration file.`,
 
 			// Execute the destruction with rolling logs (or direct when verbose)
 			verbose, _ := cmd.Flags().GetBool("verbose")
+			strict, _ := cmd.Flags().GetBool("strict")
+			verboseErrors, _ := cmd.Flags().GetBool("verbose-errors")
 			_, _, err = common.RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
 				prev := ctx.Ctx
 				ctx.Ctx = runCtx
 				defer func() { ctx.Ctx = prev }()
-				if err := ctx.ExecuteDestroy(context.Background()); err != nil {
+				if err := ctx.ExecuteDestroyWithOptions(runCtx, planner.CleanupOptions{
+					Strict:        strict,
+					VerboseErrors: verboseErrors,
+				}); err != nil {
 					return "", err
 				}
 				return "│ Done.", nil
@@ -87,6 +93,8 @@ regardless of what's in your current configuration file.`,
 		},
 	}
 	cmd.Flags().Bool("skip-confirmation", false, "Skip confirmation prompt and destroy immediately")
+	cmd.Flags().Bool("strict", false, "Fail destroy when cleanup operations encounter errors")
+	cmd.Flags().Bool("verbose-errors", false, "Print detailed cleanup error details when not using --strict")
 	common.AddTargetFlags(cmd)
 	return cmd
 }
