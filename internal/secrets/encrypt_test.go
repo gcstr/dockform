@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	age "filippo.io/age"
+	"github.com/gcstr/dockform/internal/apperr"
 )
 
 func writeTempAgeKey(t *testing.T, dir string, includeComment bool) (keyPath string, recipient string) {
@@ -106,5 +107,25 @@ func TestEncryptDotenvFileWithSops_BadRecipient_Error(t *testing.T) {
 	_ = os.WriteFile(path, []byte("K=V\n"), 0o600)
 	if err := EncryptDotenvFileWithSops(context.Background(), path, []string{"not-a-valid-recipient"}, "", nil, "", false, "", ""); err == nil || !strings.Contains(err.Error(), "age recipient") {
 		t.Fatalf("expected age recipient error, got %v", err)
+	}
+}
+
+func TestAgeRecipientsFromKeyFile_ErrorPaths(t *testing.T) {
+	if _, err := AgeRecipientsFromKeyFile(""); err == nil || !apperr.IsKind(err, apperr.InvalidInput) {
+		t.Fatalf("expected invalid input error for empty key path, got: %v", err)
+	}
+
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "missing.age")
+	if _, err := AgeRecipientsFromKeyFile(missing); err == nil || !apperr.IsKind(err, apperr.NotFound) {
+		t.Fatalf("expected not found error for missing key file, got: %v", err)
+	}
+
+	bad := filepath.Join(dir, "bad.age")
+	if err := os.WriteFile(bad, []byte("not-an-age-key\n"), 0o600); err != nil {
+		t.Fatalf("write bad key file: %v", err)
+	}
+	if _, err := AgeRecipientsFromKeyFile(bad); err == nil || !apperr.IsKind(err, apperr.InvalidInput) {
+		t.Fatalf("expected invalid input error for malformed key file, got: %v", err)
 	}
 }
