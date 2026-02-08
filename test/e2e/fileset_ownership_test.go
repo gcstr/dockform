@@ -67,28 +67,28 @@ volumes:
 
 	// Create manifest with ownership settings using numeric IDs
 	manifest := fmt.Sprintf(`
-docker:
-  identifier: %s
-  context: default
+identifier: %s
+
+contexts:
+  default: {}
 
 stacks:
-  app:
+  default/app:
     root: .
     files:
       - docker-compose.yaml
     project:
       name: df_e2e_%s
-
-filesets:
-  config:
-    source: ./config
-    target_volume: df_e2e_%s_data
-    target_path: /data
-    ownership:
-      user: "1000"
-      group: "1000"
-      file_mode: "0640"
-      dir_mode: "0750"
+    filesets:
+      config:
+        source: ./config
+        target_volume: df_e2e_%s_data
+        target_path: /data
+        ownership:
+          user: "1000"
+          group: "1000"
+          file_mode: "0640"
+          dir_mode: "0750"
 `, identifier, runID, runID)
 
 	manifestPath := filepath.Join(projectDir, "dockform.yaml")
@@ -186,27 +186,27 @@ volumes:
 
 	// Create manifest without preserve_existing (will apply to all)
 	manifest := fmt.Sprintf(`
-docker:
-  identifier: %s
-  context: default
+identifier: %s
+
+contexts:
+  default: {}
 
 stacks:
-  app:
+  default/app:
     root: .
     files:
       - docker-compose.yaml
     project:
       name: df_e2e_%s
-
-filesets:
-  config:
-    source: ./config
-    target_volume: df_e2e_%s_data
-    target_path: /data
-    ownership:
-      user: "2000"
-      group: "2000"
-      file_mode: "0600"
+    filesets:
+      config:
+        source: ./config
+        target_volume: df_e2e_%s_data
+        target_path: /data
+        ownership:
+          user: "2000"
+          group: "2000"
+          file_mode: "0600"
 `, identifier, runID, runID)
 
 	manifestPath := filepath.Join(projectDir, "dockform.yaml")
@@ -238,28 +238,28 @@ filesets:
 
 	// Update manifest with preserve_existing and different ownership
 	manifest = fmt.Sprintf(`
-docker:
-  identifier: %s
-  context: default
+identifier: %s
+
+contexts:
+  default: {}
 
 stacks:
-  app:
+  default/app:
     root: .
     files:
       - docker-compose.yaml
     project:
       name: df_e2e_%s
-
-filesets:
-  config:
-    source: ./config
-    target_volume: df_e2e_%s_data
-    target_path: /data
-    ownership:
-      user: "3000"
-      group: "3000"
-      file_mode: "0644"
-      preserve_existing: true
+    filesets:
+      config:
+        source: ./config
+        target_volume: df_e2e_%s_data
+        target_path: /data
+        ownership:
+          user: "3000"
+          group: "3000"
+          file_mode: "0644"
+          preserve_existing: true
 `, identifier, runID, runID)
 
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0644); err != nil {
