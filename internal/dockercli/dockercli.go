@@ -7,14 +7,23 @@ import (
 	"io"
 	"path"
 	"strings"
-	"sync"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/util"
 )
 
+// ComposeCacheMaxSize is the maximum number of compose config entries to cache.
+// This prevents unbounded memory growth in long-running processes.
+const ComposeCacheMaxSize = 100
+
 // HelperImage is the Docker image used for file operations on volumes
 const HelperImage = "alpine:3.22"
+
+// LabelPrefix is the prefix for all Dockform labels
+const LabelPrefix = "io.dockform."
+
+// LabelIdentifier is the full label key for the Dockform identifier
+const LabelIdentifier = LabelPrefix + "identifier"
 
 // Client provides higher-level helpers around docker CLI.
 type Client struct {
@@ -22,12 +31,15 @@ type Client struct {
 	identifier  string
 	contextName string
 
-	composeCache   map[string]ComposeConfigDoc
-	composeCacheMu sync.RWMutex
+	composeCache *LRUCache[string, ComposeConfigDoc]
 }
 
 func New(contextName string) *Client {
-	return &Client{exec: SystemExec{ContextName: contextName}, contextName: contextName}
+	return &Client{
+		exec:         SystemExec{ContextName: contextName},
+		contextName:  contextName,
+		composeCache: NewLRUCache[string, ComposeConfigDoc](ComposeCacheMaxSize),
+	}
 }
 
 // WithIdentifier sets an optional label identifier to scope discovery.
@@ -37,22 +49,17 @@ func (c *Client) WithIdentifier(id string) *Client {
 }
 
 func (c *Client) loadComposeCache(key string) (ComposeConfigDoc, bool) {
-	c.composeCacheMu.RLock()
-	defer c.composeCacheMu.RUnlock()
 	if c.composeCache == nil {
 		return ComposeConfigDoc{}, false
 	}
-	doc, ok := c.composeCache[key]
-	return doc, ok
+	return c.composeCache.Get(key)
 }
 
 func (c *Client) storeComposeCache(key string, doc ComposeConfigDoc) {
-	c.composeCacheMu.Lock()
-	defer c.composeCacheMu.Unlock()
 	if c.composeCache == nil {
-		c.composeCache = make(map[string]ComposeConfigDoc)
+		c.composeCache = NewLRUCache[string, ComposeConfigDoc](ComposeCacheMaxSize)
 	}
-	c.composeCache[key] = doc
+	c.composeCache.Set(key, doc)
 }
 
 // CheckDaemon verifies the docker daemon for the configured context is reachable.
@@ -84,8 +91,8 @@ func (c *Client) RemoveContainer(ctx context.Context, name string, force bool) e
 
 // RestartContainer restarts a container by name.
 func (c *Client) RestartContainer(ctx context.Context, name string) error {
-	if strings.TrimSpace(name) == "" {
-		return apperr.New("dockercli.RestartContainer", apperr.InvalidInput, "container name required")
+	if err := requireNonEmpty(name, "dockercli.RestartContainer", "container name required"); err != nil {
+		return err
 	}
 	_, err := c.exec.Run(ctx, "container", "restart", name)
 	return err
@@ -93,8 +100,8 @@ func (c *Client) RestartContainer(ctx context.Context, name string) error {
 
 // PauseContainer pauses a running container by name.
 func (c *Client) PauseContainer(ctx context.Context, name string) error {
-	if strings.TrimSpace(name) == "" {
-		return apperr.New("dockercli.PauseContainer", apperr.InvalidInput, "container name required")
+	if err := requireNonEmpty(name, "dockercli.PauseContainer", "container name required"); err != nil {
+		return err
 	}
 	_, err := c.exec.Run(ctx, "container", "pause", name)
 	return err
@@ -192,7 +199,7 @@ func (c *Client) ListComposeContainersAll(ctx context.Context) ([]PsBrief, error
 	format := `{{.Label "com.docker.compose.project"}};{{.Label "com.docker.compose.service"}};{{.Names}}`
 	args := []string{"ps", "-a", "--format", format}
 	if c.identifier != "" {
-		args = append(args, "--filter", "label=io.dockform.identifier="+c.identifier)
+		args = append(args, "--filter", "label="+LabelIdentifier+"="+c.identifier)
 	}
 	out, err := c.exec.Run(ctx, args...)
 	if err != nil {
@@ -248,18 +255,28 @@ func (c *Client) SyncDirToVolume(ctx context.Context, volumeName, targetPath, lo
 	return err
 }
 
+// normalizeVolumeMountPath returns a safe mount path for volumes.
+// Docker doesn't allow mounting at /, so we use /data instead.
+func normalizeVolumeMountPath(targetPath string) string {
+	if targetPath == "/" {
+		return "/data"
+	}
+	return targetPath
+}
+
 // ReadFileFromVolume returns the contents of a file inside a mounted volume target path.
 // If the file does not exist, it returns an empty string and no error.
 func (c *Client) ReadFileFromVolume(ctx context.Context, volumeName, targetPath, relFile string) (string, error) {
 	if volumeName == "" || !strings.HasPrefix(targetPath, "/") {
 		return "", apperr.New("dockercli.ReadFileFromVolume", apperr.InvalidInput, "invalid volume or target path")
 	}
-	full := path.Join(targetPath, relFile)
+	mountPath := normalizeVolumeMountPath(targetPath)
+	full := path.Join(mountPath, relFile)
 	cmd := []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"-v", fmt.Sprintf("%s:%s", volumeName, mountPath),
 		HelperImage, "sh", "-c",
-		"cat '" + full + "' 2>/dev/null || true",
+		"cat '" + util.ShellEscape(full) + "' 2>/dev/null || true",
 	}
 	out, err := c.exec.Run(ctx, cmd...)
 	if err != nil {
@@ -273,13 +290,14 @@ func (c *Client) WriteFileToVolume(ctx context.Context, volumeName, targetPath, 
 	if volumeName == "" || !strings.HasPrefix(targetPath, "/") {
 		return apperr.New("dockercli.WriteFileToVolume", apperr.InvalidInput, "invalid volume or target path")
 	}
-	full := path.Join(targetPath, relFile)
+	mountPath := normalizeVolumeMountPath(targetPath)
+	full := path.Join(mountPath, relFile)
 	dir := path.Dir(full)
 	cmd := []string{
 		"run", "--rm", "-i",
-		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"-v", fmt.Sprintf("%s:%s", volumeName, mountPath),
 		HelperImage, "sh", "-c",
-		"mkdir -p '" + dir + "' && cat > '" + full + "'",
+		"mkdir -p '" + util.ShellEscape(dir) + "' && cat > '" + util.ShellEscape(full) + "'",
 	}
 	_, err := c.exec.RunWithStdin(ctx, strings.NewReader(content), cmd...)
 	return err
@@ -291,11 +309,13 @@ func (c *Client) ExtractTarToVolume(ctx context.Context, volumeName, targetPath 
 	if volumeName == "" || !strings.HasPrefix(targetPath, "/") {
 		return apperr.New("dockercli.ExtractTarToVolume", apperr.InvalidInput, "invalid volume or target path")
 	}
+	mountPath := normalizeVolumeMountPath(targetPath)
+	escapedPath := util.ShellEscape(mountPath)
 	cmd := []string{
 		"run", "--rm", "-i",
-		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"-v", fmt.Sprintf("%s:%s", volumeName, mountPath),
 		HelperImage, "sh", "-c",
-		"mkdir -p '" + targetPath + "' && tar -xpf - -C '" + targetPath + "'",
+		"mkdir -p '" + escapedPath + "' && tar -xpf - -C '" + escapedPath + "'",
 	}
 	_, err := c.exec.RunWithStdin(ctx, r, cmd...)
 	return err
@@ -309,19 +329,20 @@ func (c *Client) RemovePathsFromVolume(ctx context.Context, volumeName, targetPa
 	if len(relPaths) == 0 {
 		return nil
 	}
+	mountPath := normalizeVolumeMountPath(targetPath)
 	// Build a safe rm command using printf with NUL and xargs -0 to avoid globbing
 	printfArgs := strings.Builder{}
 	for _, p := range relPaths {
 		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		full := path.Join(targetPath, p)
+		full := path.Join(mountPath, p)
 		printfArgs.WriteString(full)
 		printfArgs.WriteByte('\x00')
 	}
 	cmd := []string{
 		"run", "--rm", "-i",
-		"-v", fmt.Sprintf("%s:%s", volumeName, targetPath),
+		"-v", fmt.Sprintf("%s:%s", volumeName, mountPath),
 		HelperImage, "sh", "-eu", "-c",
 		"xargs -0 rm -rf -- 2>/dev/null || true",
 	}
@@ -338,14 +359,14 @@ type VolumeScriptResult struct {
 // RunVolumeScript executes a shell script inside a helper container with the specified volume mounted.
 // The volume is mounted at targetPath (e.g., /app), matching where files were synced.
 func (c *Client) RunVolumeScript(ctx context.Context, volumeName, targetPath, script string, env []string) (VolumeScriptResult, error) {
-	if volumeName == "" {
-		return VolumeScriptResult{}, apperr.New("dockercli.RunVolumeScript", apperr.InvalidInput, "volume name required")
+	if err := requireNonEmpty(volumeName, "dockercli.RunVolumeScript", "volume name required"); err != nil {
+		return VolumeScriptResult{}, err
 	}
 	if !strings.HasPrefix(targetPath, "/") {
 		return VolumeScriptResult{}, apperr.New("dockercli.RunVolumeScript", apperr.InvalidInput, "target path must be absolute")
 	}
-	if strings.TrimSpace(script) == "" {
-		return VolumeScriptResult{}, apperr.New("dockercli.RunVolumeScript", apperr.InvalidInput, "script cannot be empty")
+	if err := requireNonEmpty(script, "dockercli.RunVolumeScript", "script cannot be empty"); err != nil {
+		return VolumeScriptResult{}, err
 	}
 
 	// Build docker run command
@@ -359,7 +380,8 @@ func (c *Client) RunVolumeScript(ctx context.Context, volumeName, targetPath, sc
 	}
 
 	// Mount volume at targetPath (same as ExtractTarToVolume does)
-	cmd = append(cmd, "-v", fmt.Sprintf("%s:%s", volumeName, targetPath))
+	mountPath := normalizeVolumeMountPath(targetPath)
+	cmd = append(cmd, "-v", fmt.Sprintf("%s:%s", volumeName, mountPath))
 
 	// Use helper image and run script with sh
 	cmd = append(cmd, HelperImage, "sh", "-c", script)
@@ -376,8 +398,8 @@ func (c *Client) RunVolumeScript(ctx context.Context, volumeName, targetPath, sc
 // RunInHelperImage executes a command in the helper image without mounting volumes.
 // Useful for checking if binaries are available.
 func (c *Client) RunInHelperImage(ctx context.Context, script string) (string, error) {
-	if strings.TrimSpace(script) == "" {
-		return "", apperr.New("dockercli.RunInHelperImage", apperr.InvalidInput, "script cannot be empty")
+	if err := requireNonEmpty(script, "dockercli.RunInHelperImage", "script cannot be empty"); err != nil {
+		return "", err
 	}
 
 	cmd := []string{"run", "--rm", HelperImage, "sh", "-c", script}

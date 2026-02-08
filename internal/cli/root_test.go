@@ -15,10 +15,10 @@ import (
 	"github.com/gcstr/dockform/internal/cli/clitest"
 )
 
-func TestRoot_HasSubcommandsAndConfigFlag(t *testing.T) {
+func TestRoot_HasSubcommandsAndManifestFlag(t *testing.T) {
 	cmd := newRootCmd()
-	if cmd.PersistentFlags().Lookup("config") == nil {
-		t.Fatalf("expected persistent --config flag on root command")
+	if cmd.PersistentFlags().Lookup("manifest") == nil {
+		t.Fatalf("expected persistent --manifest flag on root command")
 	}
 	foundPlan := false
 	foundApply := false
@@ -44,6 +44,43 @@ func TestRoot_HasSubcommandsAndConfigFlag(t *testing.T) {
 	}
 	if !foundPlan || !foundApply || !foundValidate || !foundSecret || !foundManifest {
 		t.Fatalf("expected plan, apply, validate, secrets, manifest subcommands; got plan=%v apply=%v validate=%v secrets=%v manifest=%v", foundPlan, foundApply, foundValidate, foundSecret, foundManifest)
+	}
+}
+
+func TestRoot_ContextIsNotPersistentFlag(t *testing.T) {
+	cmd := newRootCmd()
+	if cmd.PersistentFlags().Lookup("context") != nil {
+		t.Fatalf("did not expect persistent --context flag on root command")
+	}
+}
+
+func TestRoot_ConfigFlagRemoved(t *testing.T) {
+	cmd := newRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--config", "dockform.yml"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected unknown flag error for --config")
+	}
+	if !strings.Contains(err.Error(), "unknown flag: --config") {
+		t.Fatalf("expected unknown --config flag error, got: %v", err)
+	}
+}
+
+func TestRoot_ManifestShorthandRemoved(t *testing.T) {
+	cmd := newRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "-c", "dockform.yml"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected unknown flag error for -c")
+	}
+	if !strings.Contains(err.Error(), "unknown shorthand flag: 'c' in -c") {
+		t.Fatalf("expected unknown shorthand -c flag error, got: %v", err)
 	}
 }
 
@@ -125,13 +162,13 @@ func TestExecute_ReturnCodes_ByErrorKind(t *testing.T) {
 	_ = badFile.Close()
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"dockform", "validate", "-c", badFile.Name()}
+	os.Args = []string{"dockform", "validate", "--manifest", badFile.Name()}
 	if code := Execute(context.Background()); code != 2 {
 		t.Fatalf("expected exit code 2 for invalid input, got %d", code)
 	}
 
 	// NotFound default mapping -> 1
-	os.Args = []string{"dockform", "validate", "-c", "/path/does/not/exist.yml"}
+	os.Args = []string{"dockform", "validate", "--manifest", "/path/does/not/exist.yml"}
 	if code := Execute(context.Background()); code != 1 {
 		t.Fatalf("expected exit code 1 for not found, got %d", code)
 	}
@@ -139,7 +176,7 @@ func TestExecute_ReturnCodes_ByErrorKind(t *testing.T) {
 	// Unavailable -> 69 (stub failing docker)
 	defer withFailingDockerRoot(t)()
 	cfg := clitest.BasicConfigPath(t)
-	os.Args = []string{"dockform", "validate", "-c", cfg}
+	os.Args = []string{"dockform", "validate", "--manifest", cfg}
 	if code := Execute(context.Background()); code != 69 {
 		t.Fatalf("expected exit code 69 for unavailable, got %d", code)
 	}

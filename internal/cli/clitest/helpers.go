@@ -77,16 +77,34 @@ case "$cmd" in
     ;;
   compose)
     for a in "$@"; do [ "$a" = "--services" ] && { echo "nginx"; exit 0; }; done
-    if [ "$1" = "config" ] && [ "$2" = "--hash" ]; then
-      svc="$3"
-      echo "$svc deadbeefcafebabe"
-      exit 0
-    fi
-    if [ "$1" = "ps" ] && [ "$2" = "--format" ] && [ "$3" = "json" ]; then
+    prev=""
+    for a in "$@"; do
+      if [ "$prev" = "--hash" ]; then
+        svc="$a"
+        echo "$svc deadbeefcafebabe"
+        exit 0
+      fi
+      prev="$a"
+    done
+    saw_ps=0
+    saw_format=0
+    saw_json=0
+    for a in "$@"; do
+      [ "$a" = "ps" ] && saw_ps=1
+      [ "$a" = "--format" ] && saw_format=1
+      [ "$a" = "json" ] && saw_json=1
+    done
+    if [ "$saw_ps" = "1" ] && [ "$saw_format" = "1" ] && [ "$saw_json" = "1" ]; then
       echo "[]"
       exit 0
     fi
-    if [ "$1" = "up" ] && [ "$2" = "-d" ]; then
+    saw_up=0
+    saw_detach=0
+    for a in "$@"; do
+      [ "$a" = "up" ] && saw_up=1
+      [ "$a" = "-d" ] && saw_detach=1
+    done
+    if [ "$saw_up" = "1" ] && [ "$saw_detach" = "1" ]; then
       exit 0
     fi
     exit 0
@@ -158,16 +176,14 @@ func BasicConfigPath(t *testing.T) string {
 		t.Fatalf("write compose: %v", err)
 	}
 	cfg := strings.Join([]string{
-		"docker:",
-		"  context: default",
-		"  identifier: demo",
+		"identifier: demo",
+		"contexts:",
+		"  default: {}",
 		"stacks:",
-		"  website:",
+		"  default/website:",
 		"    root: website",
 		"    files:",
 		"      - docker-compose.yaml",
-		"networks:",
-		"  demo-network: {}",
 	}, "\n") + "\n"
 	cfgPath := filepath.Join(dir, "dockform.yml")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {

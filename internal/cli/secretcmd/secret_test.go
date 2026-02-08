@@ -46,7 +46,7 @@ func TestSecret_Create_Success(t *testing.T) {
 	t.Setenv("SOPS_AGE_KEY_FILE", keyPath)
 	cfgPath := filepath.Join(dir, "dockform.yml")
 	// Minimal config with required docker.identifier and sops key; recipients can be empty as they will be derived from key file
-	cfg := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n"
+	cfg := "identifier: test-id\ncontexts:\n  default: {}\nsops:\n  age:\n    key_file: " + keyPath + "\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestSecret_Create_Success(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "create", target, "-c", cfgPath})
+	root.SetArgs([]string{"secrets", "create", target, "--manifest", cfgPath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("secret create execute: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestSecret_Create_FileExists_Error(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, _ := writeTempAgeKey(t, dir)
 	cfgPath := filepath.Join(dir, "dockform.yml")
-	cfg := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n"
+	cfg := "identifier: test-id\ncontexts:\n  default: {}\nsops:\n  age:\n    key_file: " + keyPath + "\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestSecret_Create_FileExists_Error(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "create", target, "-c", cfgPath})
+	root.SetArgs([]string{"secrets", "create", target, "--manifest", cfgPath})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error when target exists, got nil")
 	}
@@ -105,7 +105,7 @@ func TestSecret_Create_FileExists_Error(t *testing.T) {
 func TestSecret_Create_MissingKeyConfig_Error(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "dockform.yml")
-	if err := os.WriteFile(cfgPath, []byte("docker:\n  identifier: test-id\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("identifier: test-id\ncontexts:\n  default: {}\n"), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	target := filepath.Join(dir, "secrets.env")
@@ -113,7 +113,7 @@ func TestSecret_Create_MissingKeyConfig_Error(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "create", target, "-c", cfgPath})
+	root.SetArgs([]string{"secrets", "create", target, "--manifest", cfgPath})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for missing sops key config, got nil")
 	}
@@ -131,7 +131,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 	t.Setenv("SOPS_AGE_KEY_FILE", keyPath)
 	// First, create an encrypted secret using create
 	cfgCreatePath := filepath.Join(dir, "create.yml")
-	cfgCreate := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\n"
+	cfgCreate := "identifier: test-id\ncontexts:\n  default: {}\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\n"
 	if err := os.WriteFile(cfgCreatePath, []byte(cfgCreate), 0o644); err != nil {
 		t.Fatalf("write create config: %v", err)
 	}
@@ -140,14 +140,14 @@ func TestSecret_Rekey_Success(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "create", target, "-c", cfgCreatePath})
+	root.SetArgs([]string{"secrets", "create", target, "--manifest", cfgCreatePath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("secret create execute: %v", err)
 	}
 
 	// Now, run rekey pointing to the created secret path via config
 	cfgRekeyPath := filepath.Join(dir, "rekey.yml")
-	cfgRekey := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\nsecrets:\n  sops:\n    - secrets.env\n"
+	cfgRekey := "identifier: test-id\ncontexts:\n  default: {}\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\nstacks:\n  default/app:\n    root: .\n    secrets:\n      sops:\n        - secrets.env\n"
 	if err := os.WriteFile(cfgRekeyPath, []byte(cfgRekey), 0o644); err != nil {
 		t.Fatalf("write rekey config: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestSecret_Rekey_Success(t *testing.T) {
 	root = cli.TestNewRootCmd()
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "rekey", "-c", cfgRekeyPath})
+	root.SetArgs([]string{"secrets", "rekey", "--manifest", cfgRekeyPath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("secret rekey execute: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestSecret_Rekey_DecryptError(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, recipient := writeTempAgeKey(t, dir)
 	cfgPath := filepath.Join(dir, "cfg.yml")
-	cfg := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\nsecrets:\n  sops:\n    - missing.env\n"
+	cfg := "identifier: test-id\ncontexts:\n  default: {}\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\nstacks:\n  default/app:\n    root: .\n    secrets:\n      sops:\n        - missing.env\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write cfg: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestSecret_Rekey_DecryptError(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "rekey", "-c", cfgPath})
+	root.SetArgs([]string{"secrets", "rekey", "--manifest", cfgPath})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected decrypt error for missing file, got nil")
 	}
@@ -198,7 +198,7 @@ func TestSecret_Rekey_NoSecretsConfigured(t *testing.T) {
 	keyPath, recipient := writeTempAgeKey(t, dir)
 	cfgPath := filepath.Join(dir, "cfg.yml")
 	// Config with sops setup but no secrets.sops entries
-	cfg := "docker:\n  identifier: test-id\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\n"
+	cfg := "identifier: test-id\ncontexts:\n  default: {}\nsops:\n  age:\n    key_file: " + keyPath + "\n    recipients:\n      - " + recipient + "\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write cfg: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestSecret_Rekey_NoSecretsConfigured(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"secrets", "rekey", "-c", cfgPath})
+	root.SetArgs([]string{"secrets", "rekey", "--manifest", cfgPath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("expected no error when no secrets configured, got: %v", err)
 	}

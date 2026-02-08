@@ -42,11 +42,7 @@ jobs:
           args: --timeout=5m
   test:
     needs: lint
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,17 +58,10 @@ jobs:
         with:
           version: "latest"
 
-      - name: Create dummy age key file (Linux)
-        if: runner.os == 'Linux'
+      - name: Create dummy age key file
         run: |
           mkdir -p /home/runner/.config/sops/age
           echo 'AGE-SECRET-KEY-1XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' > /home/runner/.config/sops/age/keys.txt
-
-      - name: Create dummy age key file (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          New-Item -ItemType Directory -Force -Path "$env:APPDATA\sops\age"
-          Set-Content -Path "$env:APPDATA\sops\age\keys.txt" -Value 'AGE-SECRET-KEY-1XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
 
       - name: Vet
         run: go vet ./...

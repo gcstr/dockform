@@ -80,7 +80,7 @@ func (d *ServiceStateDetector) GetPlannedServices(ctx context.Context, stack man
 }
 
 // BuildInlineEnv constructs the inline environment variables for a stack, including SOPS secrets.
-func (d *ServiceStateDetector) BuildInlineEnv(ctx context.Context, stack manifest.Stack, sopsConfig *manifest.SopsConfig) []string {
+func (d *ServiceStateDetector) BuildInlineEnv(ctx context.Context, stack manifest.Stack, sopsConfig *manifest.SopsConfig) ([]string, error) {
 	inline := append([]string(nil), stack.EnvInline...)
 
 	ageKeyFile := ""
@@ -103,12 +103,20 @@ func (d *ServiceStateDetector) BuildInlineEnv(ctx context.Context, stack manifes
 		if pth != "" && !filepath.IsAbs(pth) {
 			pth = filepath.Join(stack.Root, pth)
 		}
-		if pairs, err := secrets.DecryptAndParse(ctx, pth, secrets.SopsOptions{AgeKeyFile: ageKeyFile, PgpKeyringDir: pgpDir, PgpUseAgent: pgpAgent, PgpPinentryMode: pgpMode, PgpPassphrase: pgpPass}); err == nil {
-			inline = append(inline, pairs...)
+		pairs, err := secrets.DecryptAndParse(ctx, pth, secrets.SopsOptions{
+			AgeKeyFile:      ageKeyFile,
+			PgpKeyringDir:   pgpDir,
+			PgpUseAgent:     pgpAgent,
+			PgpPinentryMode: pgpMode,
+			PgpPassphrase:   pgpPass,
+		})
+		if err != nil {
+			return nil, apperr.Wrap("servicestate.BuildInlineEnv", apperr.External, err, "decrypt sops secret %s", pth)
 		}
+		inline = append(inline, pairs...)
 	}
 
-	return inline
+	return inline, nil
 }
 
 // GetRunningServices returns a map of currently running services for the stack.
@@ -226,7 +234,10 @@ func (d *ServiceStateDetector) detectServiceStateFast(ctx context.Context, servi
 // DetectAllServicesState analyzes the state of all services in a stack.
 func (d *ServiceStateDetector) DetectAllServicesState(ctx context.Context, stackName string, stack manifest.Stack, identifier string, sopsConfig *manifest.SopsConfig) ([]ServiceInfo, error) {
 	// Build inline environment
-	inline := d.BuildInlineEnv(ctx, stack, sopsConfig)
+	inline, err := d.BuildInlineEnv(ctx, stack, sopsConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	// Get planned services
 	plannedServices, err := d.GetPlannedServices(ctx, stack, inline)

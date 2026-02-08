@@ -51,9 +51,17 @@ func LoadWithWarnings(path string) (Config, []string, error) {
 
 	baseDir := filepath.Dir(guessedAbs)
 	cfg.BaseDir = baseDir
+
+	// Run convention discovery (always enabled; use stacks: block to override)
+	if err := discoverResources(&cfg, baseDir); err != nil {
+		return Config{}, missing, err
+	}
+
+	// Normalize and validate the config
 	if err := cfg.normalizeAndValidate(baseDir); err != nil {
 		return Config{}, missing, err
 	}
+
 	return cfg, missing, nil
 }
 
@@ -69,6 +77,184 @@ func Load(path string) (Config, error) {
 		fmt.Fprintf(os.Stderr, "warning: environment variable %s is not set; replacing with empty string\n", name)
 	}
 	return cfg, nil
+}
+
+// discoverResources runs convention-based discovery to find stacks and filesets.
+func discoverResources(cfg *Config, baseDir string) error {
+	if cfg.DiscoveredStacks == nil {
+		cfg.DiscoveredStacks = make(map[string]Stack)
+	}
+	if cfg.DiscoveredFilesets == nil {
+		cfg.DiscoveredFilesets = make(map[string]FilesetSpec)
+	}
+
+	// Discover stacks for each declared context
+	for contextName := range cfg.Contexts {
+		contextDir := filepath.Join(baseDir, contextName)
+
+		// Check if context directory exists
+		info, err := os.Stat(contextDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// Context directory doesn't exist - that's fine, just skip discovery
+				continue
+			}
+			return apperr.Wrap("manifest.discoverResources", apperr.Internal, err, "stat context dir %s", contextDir)
+		}
+		if !info.IsDir() {
+			// Not a directory - skip
+			continue
+		}
+
+		// Find context-level secrets
+		contextSecrets := findSecretsFile(contextDir, cfg.Discovery.GetSecretsFile())
+
+		// List subdirectories as potential stacks
+		entries, err := os.ReadDir(contextDir)
+		if err != nil {
+			return apperr.Wrap("manifest.discoverResources", apperr.Internal, err, "read context dir %s", contextDir)
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			stackName := entry.Name()
+			stackDir := filepath.Join(contextDir, stackName)
+
+			// Look for compose file
+			composeFile := findComposeFile(stackDir, cfg.Discovery.GetComposeFiles())
+			if composeFile == "" {
+				// No compose file found, not a stack
+				continue
+			}
+
+			// Found a stack! Create the discovered stack entry
+			stackKey := MakeStackKey(contextName, stackName)
+
+			stack := Stack{
+				Root:    stackDir,
+				Files:   []string{composeFile},
+				Context: contextName,
+			}
+
+			// Find stack-level secrets
+			stackSecrets := findSecretsFile(stackDir, cfg.Discovery.GetSecretsFile())
+
+			// Merge secrets: context-level first, then stack-level (stack wins)
+			var sopsSecrets []string
+			if contextSecrets != "" {
+				// Rebase context secrets relative to stack dir
+				if rel, err := filepath.Rel(stackDir, contextSecrets); err == nil {
+					sopsSecrets = append(sopsSecrets, rel)
+				} else {
+					sopsSecrets = append(sopsSecrets, contextSecrets)
+				}
+			}
+			if stackSecrets != "" {
+				// Stack secrets are already relative to stack dir
+				sopsSecrets = append(sopsSecrets, filepath.Base(stackSecrets))
+			}
+			if len(sopsSecrets) > 0 {
+				stack.SopsSecrets = sopsSecrets
+			}
+
+			// Find environment file
+			envFile := findEnvFile(stackDir, cfg.Discovery.GetEnvironmentFile())
+			if envFile != "" {
+				stack.EnvFile = []string{filepath.Base(envFile)}
+			}
+
+			cfg.DiscoveredStacks[stackKey] = stack
+
+			// Discover filesets from volumes/ directory
+			if err := discoverFilesets(cfg, contextName, stackName, stackDir); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// discoverFilesets discovers filesets from the volumes/ directory of a stack.
+func discoverFilesets(cfg *Config, contextName, stackName, stackDir string) error {
+	volumesDir := filepath.Join(stackDir, cfg.Discovery.GetVolumesDir())
+
+	info, err := os.Stat(volumesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // No volumes directory, that's fine
+		}
+		return apperr.Wrap("manifest.discoverFilesets", apperr.Internal, err, "stat volumes dir %s", volumesDir)
+	}
+	if !info.IsDir() {
+		return nil
+	}
+
+	entries, err := os.ReadDir(volumesDir)
+	if err != nil {
+		return apperr.Wrap("manifest.discoverFilesets", apperr.Internal, err, "read volumes dir %s", volumesDir)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		volumeName := entry.Name()
+		sourceDir := filepath.Join(volumesDir, volumeName)
+
+		// Convention: target volume is <stack>_<volumeName>
+		targetVolume := stackName + "_" + volumeName
+
+		// Fileset key: context/stack/volumeName
+		filesetKey := fmt.Sprintf("%s/%s/%s", contextName, stackName, volumeName)
+
+		fileset := FilesetSpec{
+			Source:          sourceDir,
+			SourceAbs:       sourceDir,
+			TargetVolume:    targetVolume,
+			TargetPath:      "/", // Default to root of volume (normalized to /data during mount)
+			RestartServices: RestartTargets{Attached: true},
+			ApplyMode:       "hot",
+			Context:         contextName,
+			Stack:           stackName,
+		}
+
+		cfg.DiscoveredFilesets[filesetKey] = fileset
+	}
+
+	return nil
+}
+
+// findComposeFile looks for a compose file in the given directory.
+func findComposeFile(dir string, candidates []string) string {
+	for _, name := range candidates {
+		path := filepath.Join(dir, name)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+// findSecretsFile looks for a secrets file in the given directory.
+func findSecretsFile(dir, filename string) string {
+	path := filepath.Join(dir, filename)
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+	return ""
+}
+
+// findEnvFile looks for an environment file in the given directory.
+func findEnvFile(dir, filename string) string {
+	path := filepath.Join(dir, filename)
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+	return ""
 }
 
 // RenderWithWarnings reads the manifest file and returns interpolated YAML and the list of missing env var names.

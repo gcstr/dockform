@@ -12,7 +12,7 @@ import (
 type ProgressEstimator struct {
 	docker   DockerClient
 	progress ProgressReporter
-	execCtx  *ExecutionContext
+	execCtx  *ContextExecutionContext
 }
 
 // NewProgressEstimator creates a new progress estimator.
@@ -20,8 +20,13 @@ func NewProgressEstimator(docker DockerClient, progress ProgressReporter) *Progr
 	return &ProgressEstimator{docker: docker, progress: progress}
 }
 
+// NewProgressEstimatorWithClient creates a new progress estimator with a specific client.
+func NewProgressEstimatorWithClient(client DockerClient, progress ProgressReporter) *ProgressEstimator {
+	return &ProgressEstimator{docker: client, progress: progress}
+}
+
 // WithExecutionContext sets the execution context for reusing pre-computed data.
-func (pe *ProgressEstimator) WithExecutionContext(execCtx *ExecutionContext) *ProgressEstimator {
+func (pe *ProgressEstimator) WithExecutionContext(execCtx *ContextExecutionContext) *ProgressEstimator {
 	pe.execCtx = execCtx
 	return pe
 }
@@ -30,6 +35,13 @@ func (pe *ProgressEstimator) WithExecutionContext(execCtx *ExecutionContext) *Pr
 // Spinners don't need total work item counts, unlike progress bars.
 // This function is kept for API compatibility but does nothing.
 func (pe *ProgressEstimator) EstimateAndStartProgress(ctx context.Context, cfg manifest.Config, identifier string) error {
+	// Spinner doesn't need total count estimation
+	return nil
+}
+
+// EstimateAndStartProgressForContext is a no-op for spinner-based progress tracking.
+// This is the context-specific version for multi-context apply.
+func (pe *ProgressEstimator) EstimateAndStartProgressForContext(ctx context.Context, cfg manifest.Config, contextName string, identifier string) error {
 	// Spinner doesn't need total count estimation
 	return nil
 }

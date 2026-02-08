@@ -19,7 +19,7 @@ func TestValidate_Success_PrintsMessage(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"validate", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"validate", "--manifest", clitest.BasicConfigPath(t)})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("validate execute: %v", err)
@@ -39,7 +39,7 @@ func TestValidate_InvalidConfigPath_ReturnsError(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"validate", "-c", "does-not-exist.yml"})
+	root.SetArgs([]string{"validate", "--manifest", "does-not-exist.yml"})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for invalid config path, got nil")
 	}
@@ -62,7 +62,7 @@ esac
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"validate", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"validate", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected docker unreachable error, got nil")
 	}
@@ -81,7 +81,7 @@ func TestValidate_SopsKeyFileMissing_ReturnsError(t *testing.T) {
 	content := "sops:\n  age:\n    key_file: /no/such/key\n"
 	writeFile(t, cfg, content)
 
-	root.SetArgs([]string{"validate", "-c", cfg})
+	root.SetArgs([]string{"validate", "--manifest", cfg})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for missing sops key file, got nil")
 	}

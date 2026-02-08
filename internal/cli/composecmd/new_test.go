@@ -45,7 +45,7 @@ func TestComposeRenderMasksSecretsByDefault(t *testing.T) {
 	undo := clitest.WithCustomDockerStub(t, composeConfigStub())
 	defer undo()
 
-	stdout, stderr, err := runComposeRender(t, "web", cfgPath)
+	stdout, stderr, err := runComposeRender(t, "default/web", cfgPath)
 	if err != nil {
 		t.Fatalf("compose render: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestComposeRenderHonorsMaskStrategy(t *testing.T) {
 	undo := clitest.WithCustomDockerStub(t, composeConfigStub())
 	defer undo()
 
-	stdout, _, err := runComposeRender(t, "web", cfgPath, "--mask", "partial")
+	stdout, _, err := runComposeRender(t, "default/web", cfgPath, "--mask", "partial")
 	if err != nil {
 		t.Fatalf("compose render (mask partial): %v", err)
 	}
@@ -85,7 +85,7 @@ func TestComposeRenderShowsSecretsWhenRequested(t *testing.T) {
 	undo := clitest.WithCustomDockerStub(t, composeConfigStub())
 	defer undo()
 
-	stdout, _, err := runComposeRender(t, "web", cfgPath, "--show-secrets")
+	stdout, _, err := runComposeRender(t, "default/web", cfgPath, "--show-secrets")
 	if err != nil {
 		t.Fatalf("compose render --show-secrets: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestComposeRenderWarnsOnMissingEnv(t *testing.T) {
 	undo := clitest.WithCustomDockerStub(t, composeConfigStub())
 	defer undo()
 
-	stdout, stderr, err := runComposeRender(t, "web", cfgPath)
+	stdout, stderr, err := runComposeRender(t, "default/web", cfgPath)
 	if err != nil {
 		t.Fatalf("compose render with warning: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestComposeRenderUnknownStackReturnsError(t *testing.T) {
 	root.SetOut(&outBuf)
 	root.SetErr(&errBuf)
 	root.SetIn(bytes.NewBuffer(nil))
-	root.SetArgs([]string{"compose", "render", "does-not-exist", "-c", cfg})
+	root.SetArgs([]string{"compose", "render", "does-not-exist", "--manifest", cfg})
 
 	err := root.Execute()
 	if err == nil {
@@ -145,12 +145,14 @@ func writeComposeManifest(t *testing.T, secret string, dockerExtras string, extr
 	if err := os.WriteFile(composePath, []byte("services:\n  web:\n    image: nginx:alpine\n"), 0o644); err != nil {
 		t.Fatalf("write compose file: %v", err)
 	}
-	dockerBlock := "docker:\n  context: default\n"
+	identifierBlock := "identifier: demo\n"
 	if strings.TrimSpace(dockerExtras) != "" {
-		dockerBlock += dockerExtras
-	} else {
-		dockerBlock += "  identifier: demo\n"
+		// dockerExtras might be "identifier: xyz" - extract it
+		if strings.HasPrefix(strings.TrimSpace(dockerExtras), "identifier:") {
+			identifierBlock = strings.TrimSpace(dockerExtras) + "\n"
+		}
 	}
+	daemonBlock := identifierBlock + "contexts:\n  default: {}\n"
 
 	inlineVals := append([]string{"API_SECRET=" + secret}, extraInline...)
 	var inlineBuilder strings.Builder
@@ -161,13 +163,13 @@ func writeComposeManifest(t *testing.T, secret string, dockerExtras string, extr
 	}
 
 	manifest := fmt.Sprintf(`%sstacks:
-  web:
+  default/web:
     root: app
     files:
       - docker-compose.yml
     environment:
       inline:
-%s`, dockerBlock, inlineBuilder.String())
+%s`, daemonBlock, inlineBuilder.String())
 	manifestPath := filepath.Join(baseDir, "dockform.yml")
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -230,7 +232,7 @@ func runComposeRender(t *testing.T, stack, cfgPath string, extraArgs ...string) 
 	root.SetOut(&outBuf)
 	root.SetErr(&errBuf)
 	root.SetIn(bytes.NewBuffer(nil))
-	args := []string{"compose", "render", stack, "-c", cfgPath}
+	args := []string{"compose", "render", stack, "--manifest", cfgPath}
 	args = append(args, extraArgs...)
 	root.SetArgs(args)
 	err := root.Execute()

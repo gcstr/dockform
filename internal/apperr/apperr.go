@@ -3,6 +3,7 @@ package apperr
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Kind is a stable category for application errors.
@@ -66,4 +67,58 @@ func IsKind(err error, k Kind) bool {
 		return e.Kind == k
 	}
 	return false
+}
+
+// MultiError groups multiple errors and supports errors.Is/errors.As traversal.
+type MultiError struct {
+	Errors []error
+}
+
+func (m *MultiError) Error() string {
+	if m == nil || len(m.Errors) == 0 {
+		return ""
+	}
+	if len(m.Errors) == 1 {
+		return m.Errors[0].Error()
+	}
+	lines := make([]string, 0, len(m.Errors))
+	for _, err := range m.Errors {
+		if err == nil {
+			continue
+		}
+		lines = append(lines, err.Error())
+	}
+	return strings.Join(lines, "; ")
+}
+
+// Unwrap exposes all inner errors for errors.Is/errors.As in Go 1.20+.
+func (m *MultiError) Unwrap() []error {
+	if m == nil {
+		return nil
+	}
+	return m.Errors
+}
+
+// Aggregate wraps one or more errors with a stable kind and operation.
+// nil errors are ignored. Returns nil when errs has no non-nil entries.
+func Aggregate(op string, kind Kind, msg string, errs ...error) error {
+	nonNil := make([]error, 0, len(errs))
+	for _, err := range errs {
+		if err != nil {
+			nonNil = append(nonNil, err)
+		}
+	}
+	switch len(nonNil) {
+	case 0:
+		return nil
+	case 1:
+		return &E{Op: op, Kind: kind, Err: nonNil[0], Msg: msg}
+	default:
+		return &E{
+			Op:   op,
+			Kind: kind,
+			Err:  &MultiError{Errors: nonNil},
+			Msg:  msg,
+		}
+	}
 }

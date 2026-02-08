@@ -45,17 +45,18 @@ func TestNetworkDrift_Recreate(t *testing.T) {
 	b, err := os.ReadFile(manifestPath)
 	if err == nil {
 		s := string(b)
+		// The network entry is indented 6 spaces, so driver/options need 8 spaces
 		s = strings.Replace(s,
 			"df_e2e_${DOCKFORM_RUN_ID}_net: {}",
-			"df_e2e_${DOCKFORM_RUN_ID}_net:\n    driver: bridge\n    options:\n      com.docker.network.bridge.enable_icc: \"false\"",
+			"df_e2e_${DOCKFORM_RUN_ID}_net:\n        driver: bridge\n        options:\n          com.docker.network.bridge.enable_icc: \"false\"",
 			1,
 		)
 		_ = os.WriteFile(manifestPath, []byte(s), 0644)
 	}
 
 	// First plan/apply should detect drift and recreate network, then start service
-	_ = runCmd(t, tempDir, env, bin, "plan", "-c", tempDir)
-	_ = runCmd(t, tempDir, env, bin, "apply", "--skip-confirmation", "-c", tempDir)
+	_ = runCmd(t, tempDir, env, bin, "plan", "--manifest", tempDir)
+	_ = runCmd(t, tempDir, env, bin, "apply", "--skip-confirmation", "--manifest", tempDir)
 
 	// Verify container is running with our label and network exists
 	names := dockerLines(t, ctx, "ps", "--format", "{{.Names}}", "--filter", "label=io.dockform.identifier="+identifier)
@@ -68,7 +69,7 @@ func TestNetworkDrift_Recreate(t *testing.T) {
 	}
 
 	// Clean up via prune to leave environment tidy
-	_ = runCmd(t, tempDir, env, bin, "destroy", "--skip-confirmation", "-c", tempDir)
+	_ = runCmd(t, tempDir, env, bin, "destroy", "--skip-confirmation", "--manifest", tempDir)
 }
 
 func contains(ss []string, s string) bool {

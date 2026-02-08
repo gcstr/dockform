@@ -158,24 +158,24 @@ func TestBuildPlan_WithDocker_AddsAndRemoves(t *testing.T) {
 	}
 	defer withPlannerDockerStub_Basic(t)()
 	cfg := manifest.Config{
-		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
 		Stacks: map[string]manifest.Stack{
-			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
+			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
-		Filesets: map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app"}},
-		Networks: map[string]manifest.NetworkSpec{"n1": {}},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
+			"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app", Context: "default"},
+		},
 	}
-	d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
+	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("build plan: %v", err)
 	}
 	out := pln.String()
-	// Check volume/network adds and removals (new icon-based UI)
+	// Check volume adds and removals (new icon-based UI)
 	mustContain(t, out, "↑ v1 will be created")
 	mustContain(t, out, "× vOld will be deleted")
-	mustContain(t, out, "↑ n1 will be created")
-	mustContain(t, out, "× nOld will be deleted")
 	// Service to be created (now in nested format)
 	mustContain(t, out, "↑ nginx will be created")
 	// Unmanaged running service should appear under Applications for deletion
@@ -188,12 +188,13 @@ func TestBuildPlan_IdentifierMismatch_Reconciles(t *testing.T) {
 	}
 	defer withPlannerDockerStub_Mismatch(t)()
 	cfg := manifest.Config{
-		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
 		Stacks: map[string]manifest.Stack{
-			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
+			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
 	}
-	d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
+	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("build plan: %v", err)
@@ -208,32 +209,30 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 	}
 	defer withPlannerDockerStub_Basic(t)()
 	cfg := manifest.Config{
-		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
 		Stacks: map[string]manifest.Stack{
-			"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
+			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
 		},
-		// Mix of explicit volumes and volumes from filesets
-		Volumes:  map[string]manifest.TopLevelResourceSpec{"explicit-vol": {}, "shared-data": {}},
-		Filesets: map[string]manifest.FilesetSpec{"data": {Source: "src", TargetVolume: "fileset-vol", TargetPath: "/app"}},
-		Networks: map[string]manifest.NetworkSpec{"n1": {}},
+		// Filesets now derive volumes
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
+			"data":        {Source: "src", TargetVolume: "fileset-vol", TargetPath: "/app", Context: "default"},
+			"explicit":    {Source: "src2", TargetVolume: "explicit-vol", TargetPath: "/data", Context: "default"},
+			"shared-data": {Source: "src3", TargetVolume: "shared-data", TargetPath: "/shared", Context: "default"},
+		},
 	}
-	d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
+	d := dockercli.New("").WithIdentifier("demo")
 	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("build plan: %v", err)
 	}
 	out := pln.String()
-	// Check that all volumes are properly handled:
-	// 1. Explicit volumes should be created
+	// Check that volumes from filesets are properly handled:
 	mustContain(t, out, "↑ explicit-vol will be created")
 	mustContain(t, out, "↑ shared-data will be created")
-	// 2. Volumes from filesets should also be created
 	mustContain(t, out, "↑ fileset-vol will be created")
-	// 3. Old volume should be removed
+	// Old volume should be removed
 	mustContain(t, out, "× vOld will be deleted")
-	// Networks should work as before
-	mustContain(t, out, "↑ n1 will be created")
-	mustContain(t, out, "× nOld will be deleted")
 	// Service should work as before (now in nested format)
 	mustContain(t, out, "↑ nginx will be created")
 }
@@ -241,10 +240,11 @@ func TestBuildPlan_ExplicitVolumes_HandledCorrectly(t *testing.T) {
 func TestApply_PropagatesVolumeListError(t *testing.T) {
 	defer withPlannerDockerStub_VolumeLsError(t)()
 	cfg := manifest.Config{
-		Docker: manifest.DockerConfig{Context: "", Identifier: "demo"},
-		Stacks: map[string]manifest.Stack{},
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks:     map[string]manifest.Stack{},
 	}
-	d := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
+	d := dockercli.New("").WithIdentifier("demo")
 	err := NewWithDocker(d).Apply(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "list volumes") {
 		t.Fatalf("expected list volumes error, got: %v", err)

@@ -38,7 +38,7 @@ exit 0
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("demo\n")) // Provide identifier for confirmation
-	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -93,7 +93,7 @@ exit 0
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -132,7 +132,7 @@ exit 0
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("wrong-identifier\n")) // Wrong identifier
-	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -148,6 +148,9 @@ exit 0
 }
 
 func TestDestroy_CorrectIdentifier_ProceedsWithDestruction(t *testing.T) {
+	// Clear env var that overrides identifier from config
+	t.Setenv("DOCKFORM_RUN_ID", "")
+
 	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
 cmd="$1"; shift
 case "$cmd" in
@@ -180,7 +183,7 @@ exit 0
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("demo\n")) // Correct identifier
-	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute: %v", err)
 	}
@@ -227,7 +230,7 @@ exit 0
 	root.SetOut(&out)
 	root.SetErr(&out)
 	// No stdin provided; should not prompt when flag is set.
-	root.SetArgs([]string{"destroy", "--skip-confirmation", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--skip-confirmation", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("destroy execute with --skip-confirmation: %v", err)
 	}
@@ -249,7 +252,7 @@ func TestDestroy_InvalidConfigPath_ReturnsError(t *testing.T) {
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("demo\n"))
-	root.SetArgs([]string{"destroy", "-c", "does-not-exist.yml"})
+	root.SetArgs([]string{"destroy", "--manifest", "does-not-exist.yml"})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for invalid config path, got nil")
 	}
@@ -282,8 +285,84 @@ exit 0
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader("demo\n"))
-	root.SetArgs([]string{"destroy", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error from destroy when docker discovery fails, got nil")
+	}
+}
+
+func TestDestroy_CleanupErrors_NonStrictByDefault(t *testing.T) {
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
+cmd="$1"; shift
+case "$cmd" in
+  version)
+    exit 0 ;;
+  volume)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "app-volume"; exit 0; fi
+    if [ "$sub" = "rm" ]; then exit 0; fi ;;
+  network)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "app-network"; exit 0; fi
+    if [ "$sub" = "rm" ]; then echo "network remove failed" 1>&2; exit 1; fi ;;
+  container)
+    sub="$1"; shift
+    if [ "$sub" = "rm" ]; then exit 0; fi ;;
+  ps)
+    echo "test-project;web;test-web-1"
+    exit 0 ;;
+  inspect)
+    echo "{}"
+    exit 0 ;;
+esac
+exit 0
+`)
+	defer undo()
+
+	root := cli.TestNewRootCmd()
+	root.SetIn(strings.NewReader("demo\n"))
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("expected non-strict destroy to succeed, got: %v", err)
+	}
+}
+
+func TestDestroy_Strict_FailsOnCleanupErrors(t *testing.T) {
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
+cmd="$1"; shift
+case "$cmd" in
+  version)
+    exit 0 ;;
+  volume)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "app-volume"; exit 0; fi
+    if [ "$sub" = "rm" ]; then exit 0; fi ;;
+  network)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "app-network"; exit 0; fi
+    if [ "$sub" = "rm" ]; then echo "network remove failed" 1>&2; exit 1; fi ;;
+  container)
+    sub="$1"; shift
+    if [ "$sub" = "rm" ]; then exit 0; fi ;;
+  ps)
+    echo "test-project;web;test-web-1"
+    exit 0 ;;
+  inspect)
+    echo "{}"
+    exit 0 ;;
+esac
+exit 0
+`)
+	defer undo()
+
+	root := cli.TestNewRootCmd()
+	root.SetIn(strings.NewReader("demo\n"))
+	root.SetArgs([]string{"destroy", "--strict", "--manifest", clitest.BasicConfigPath(t)})
+	err := root.Execute()
+	if err == nil {
+		t.Fatalf("expected strict destroy to fail on cleanup errors")
+	}
+	if !strings.Contains(err.Error(), "destroy") {
+		t.Fatalf("expected destroy-related error, got: %v", err)
 	}
 }

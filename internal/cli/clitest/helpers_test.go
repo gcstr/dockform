@@ -54,7 +54,7 @@ func TestBasicConfigPathCreatesComposeAndConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	if !bytes.Contains(content, []byte("stacks:\n  website:")) {
+	if !bytes.Contains(content, []byte("stacks:\n  default/website:")) {
 		t.Fatalf("expected stack definition in config, got: %s", content)
 	}
 

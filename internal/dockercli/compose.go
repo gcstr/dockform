@@ -13,6 +13,15 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+// runInDirOptionalEnv runs a command in workingDir, adding inlineEnv to the
+// process environment only when the slice is non-empty.
+func (c *Client) runInDirOptionalEnv(ctx context.Context, workingDir string, inlineEnv []string, args ...string) (string, error) {
+	if len(inlineEnv) > 0 {
+		return c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
+	}
+	return c.exec.RunInDir(ctx, workingDir, args...)
+}
+
 // ComposeUp runs docker compose up -d with the given parameters.
 // workingDir is where compose files and relative paths are resolved.
 func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string) (string, error) {
@@ -27,30 +36,14 @@ func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profil
 	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
 	args = append(args, "up", "-d")
 
-	// DEBUG: Print the command to be run
-	// cmdStr := "docker " + strings.Join(args, " ")
-	// if len(inlineEnv) > 0 {
-	// 	fmt.Fprintf(os.Stderr, "RUN: %s %s\n", strings.Join(inlineEnv, " "), cmdStr)
-	// } else {
-	// 	fmt.Fprintf(os.Stderr, "RUN: %s\n", cmdStr)
-	// }
-	if len(inlineEnv) > 0 {
-		return c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
-	}
-	return c.exec.RunInDir(ctx, workingDir, args...)
+	return c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
 }
 
 // ComposeConfigServices returns the list of service names that would be part of the project.
 func (c *Client) ComposeConfigServices(ctx context.Context, workingDir string, files, profiles, envFiles []string, inlineEnv []string) ([]string, error) {
 	args := c.composeBaseArgs(files, profiles, envFiles, "")
 	args = append(args, "config", "--services")
-	var out string
-	var err error
-	if len(inlineEnv) > 0 {
-		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
-	} else {
-		out, err = c.exec.RunInDir(ctx, workingDir, args...)
-	}
+	out, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -66,13 +59,7 @@ func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files
 	args := c.composeBaseArgs(files, profiles, envFiles, "")
 	// Prefer JSON when available
 	argsJSON := append(append([]string{}, args...), "config", "--format", "json")
-	var out string
-	var err error
-	if len(inlineEnv) > 0 {
-		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, argsJSON...)
-	} else {
-		out, err = c.exec.RunInDir(ctx, workingDir, argsJSON...)
-	}
+	out, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, argsJSON...)
 	if err == nil {
 		var doc ComposeConfigDoc
 		if json.Unmarshal([]byte(out), &doc) == nil {
@@ -82,11 +69,7 @@ func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files
 	}
 	// Fallback to YAML
 	argsYAML := append(append([]string{}, args...), "config")
-	if len(inlineEnv) > 0 {
-		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, argsYAML...)
-	} else {
-		out, err = c.exec.RunInDir(ctx, workingDir, argsYAML...)
-	}
+	out, err = c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, argsYAML...)
 	if err != nil {
 		return ComposeConfigDoc{}, apperr.Wrap("dockercli.ComposeConfigFull", apperr.Internal, err, "parse compose yaml")
 	}
@@ -105,23 +88,14 @@ func (c *Client) ComposeConfigFull(ctx context.Context, workingDir string, files
 func (c *Client) ComposeConfigRaw(ctx context.Context, workingDir string, files, profiles, envFiles []string, inlineEnv []string) (string, error) {
 	args := c.composeBaseArgs(files, profiles, envFiles, "")
 	args = append(args, "config")
-	if len(inlineEnv) > 0 {
-		return c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
-	}
-	return c.exec.RunInDir(ctx, workingDir, args...)
+	return c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
 }
 
 // ComposePs lists running (or created) compose services for the project.
 func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string) ([]ComposePsItem, error) {
 	args := c.composeBaseArgs(files, profiles, envFiles, projectName)
 	args = append(args, "ps", "--format", "json")
-	var out string
-	var err error
-	if len(inlineEnv) > 0 {
-		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
-	} else {
-		out, err = c.exec.RunInDir(ctx, workingDir, args...)
-	}
+	out, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -165,13 +139,7 @@ func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files
 	}
 	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
 	args = append(args, "config", "--hash", service)
-	var out string
-	var err error
-	if len(inlineEnv) > 0 {
-		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
-	} else {
-		out, err = c.exec.RunInDir(ctx, workingDir, args...)
-	}
+	out, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
 	if err != nil {
 		return "", err
 	}
@@ -205,13 +173,7 @@ func (c *Client) ComposeConfigHashes(ctx context.Context, workingDir string, fil
 	out := make(map[string]string, len(services))
 	for _, svc := range services {
 		args := append(append([]string{}, base...), "config", "--hash", svc)
-		var txt string
-		var err error
-		if len(inlineEnv) > 0 {
-			txt, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
-		} else {
-			txt, err = c.exec.RunInDir(ctx, workingDir, args...)
-		}
+		txt, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -255,13 +217,7 @@ func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string,
 	}
 	args := c.composeBaseArgs(files, profiles, envFiles, projectName)
 	args = append(args, "config")
-	var out string
-	var err error
-	if len(inlineEnv) > 0 {
-		out, err = c.exec.RunInDirWithEnv(ctx, workingDir, inlineEnv, args...)
-	} else {
-		out, err = c.exec.RunInDir(ctx, workingDir, args...)
-	}
+	out, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
 	if err != nil {
 		return "", err
 	}

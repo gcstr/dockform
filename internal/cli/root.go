@@ -30,12 +30,15 @@ import (
 var verbose bool
 
 // build-time variables injected via -ldflags are now in buildinfo.
+type logCloserKey struct{}
 
 // Execute runs the root command and handles error formatting and exit codes.
 // It accepts a context that should be cancelled on interrupt signals.
 func Execute(ctx context.Context) int {
 	cmd := newRootCmd()
-	if err := cmd.ExecuteContext(ctx); err != nil {
+	err := cmd.ExecuteContext(ctx)
+	closeLogCloser(cmd)
+	if err != nil {
 		// Check if the error is a context cancellation (user interrupted)
 		// If so, don't print the error and exit with code 130 (128 + SIGINT)
 		if errors.Is(err, context.Canceled) {
@@ -83,9 +86,7 @@ func newRootCmd() *cobra.Command {
 				return err
 			}
 			if closer != nil {
-				// Ensure file is closed on process exit; cobra doesn't give a post-run hook for root easily.
-				// We register a finalizer via command context.
-				cmd.SetContext(context.WithValue(cmd.Context(), struct{ k string }{"logCloser"}, closer))
+				cmd.SetContext(context.WithValue(cmd.Context(), logCloserKey{}, closer))
 			}
 			// Attach per-run fields
 			runID := logger.NewRunID()
@@ -98,7 +99,7 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringP("config", "c", "", "Path to configuration file or directory (defaults: dockform.yml, dockform.yaml, Dockform.yml, Dockform.yaml in current directory)")
+	cmd.PersistentFlags().String("manifest", "", "Path to manifest file or directory (defaults: dockform.yml, dockform.yaml, Dockform.yml, Dockform.yaml in current directory)")
 	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose error output")
 	// Logging flags
 	cmd.PersistentFlags().String("log-level", "info", "Log level: debug, info, warn, error")
@@ -140,6 +141,19 @@ func TestPrintUserFriendly(err error) {
 
 // TestNewRootCmd exposes the root command for integration tests.
 func TestNewRootCmd() *cobra.Command { return newRootCmd() }
+
+func closeLogCloser(cmd *cobra.Command) {
+	if cmd == nil || cmd.Context() == nil {
+		return
+	}
+	v := cmd.Context().Value(logCloserKey{})
+	if v == nil {
+		return
+	}
+	if closer, ok := v.(io.Closer); ok && closer != nil {
+		_ = closer.Close()
+	}
+}
 
 func provideExternalErrorHints(err error) {
 	msg := err.Error()

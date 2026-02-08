@@ -65,17 +65,17 @@ func createSampleManifest(t *testing.T) (string, string) {
 	}
 	manifestPath := filepath.Join(root, "dockform.yml")
 	content := strings.Join([]string{
-		"docker:",
-		"  context: default",
-		"  identifier: demo",
+		"identifier: demo",
+		"contexts:",
+		"  default: {}",
 		"stacks:",
-		"  app:",
+		"  default/app:",
 		"    root: stack",
 		"    files:",
 		"      - docker-compose.yml",
-		"environment:",
-		"  inline:",
-		"    - API_KEY=${API_KEY}",
+		"    environment:",
+		"      inline:",
+		"        - API_KEY=${API_KEY}",
 	}, "\n") + "\n"
 	writeManifest(t, manifestPath, content)
 	return manifestPath, root
@@ -85,11 +85,11 @@ func TestLoadConfigWithWarningsEmitsMessages(t *testing.T) {
 	path, _ := createSampleManifest(t)
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetContext(context.Background())
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	if err := cmd.Flags().Set("config", path); err != nil {
+	if err := cmd.Flags().Set("manifest", path); err != nil {
 		t.Fatalf("set flag: %v", err)
 	}
 
@@ -142,7 +142,7 @@ func TestLoadConfigWithWarningsInteractiveSelection(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(root) })
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetIn(slave)
 	cmd.SetOut(slave)
 	cmd.SetErr(slave)
@@ -167,7 +167,7 @@ func TestLoadConfigWithWarningsInteractiveSelection(t *testing.T) {
 	if res.cfg == nil {
 		t.Fatalf("expected config from interactive selection")
 	}
-	if got, _ := cmd.Flags().GetString("config"); true {
+	if got, _ := cmd.Flags().GetString("manifest"); true {
 		gotEval, _ := filepath.EvalSymlinks(got)
 		wantEval, _ := filepath.EvalSymlinks(manifestPath)
 		if filepath.Clean(gotEval) != filepath.Clean(wantEval) {
@@ -180,8 +180,8 @@ func TestSelectManifestPathNonTTYReturnsFalse(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetIn(bytes.NewReader(nil))
 	cmd.SetOut(io.Discard)
-	cmd.Flags().String("config", "", "")
-	okPath, ok, err := SelectManifestPath(cmd, ui.StdPrinter{}, ".", 1)
+	cmd.Flags().String("manifest", "", "")
+	okPath, ok, err := SelectManifestPath(cmd, ui.StdPrinter{}, t.TempDir(), 1)
 	if err != nil {
 		t.Fatalf("SelectManifestPath non-tty: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestSelectManifestPathTTY(t *testing.T) {
 	drainTTY(t, master)
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetIn(slave)
 	cmd.SetOut(slave)
 	cmd.SetErr(slave)
@@ -261,7 +261,7 @@ func TestSelectManifestPathTTYNoFiles(t *testing.T) {
 	drainTTY(t, master)
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetIn(slave)
 	cmd.SetOut(slave)
 	cmd.SetErr(slave)
@@ -277,7 +277,7 @@ func TestSelectManifestPathTTYNoFiles(t *testing.T) {
 		resCh <- result{path: path, ok: ok, err: err}
 	}()
 	time.Sleep(50 * time.Millisecond)
-	_, _ = master.Write([]byte{''})
+	_, _ = master.Write([]byte{'\r'})
 	res := <-resCh
 	if res.err != nil {
 		t.Fatalf("SelectManifestPath no files: %v", res.err)
@@ -291,6 +291,11 @@ func TestSelectManifestPathTTYCancel(t *testing.T) {
 	temp := t.TempDir()
 	manifest := filepath.Join(temp, "dockform.yml")
 	writeManifest(t, manifest, "docker:\n  context: default\n")
+	otherDir := filepath.Join(temp, "other")
+	if err := os.MkdirAll(otherDir, 0o755); err != nil {
+		t.Fatalf("mkdir other: %v", err)
+	}
+	writeManifest(t, filepath.Join(otherDir, "dockform.yml"), "docker:\n  context: alt\n")
 
 	master, slave := openTTYOrSkip(t)
 	t.Cleanup(func() {
@@ -306,7 +311,7 @@ func TestSelectManifestPathTTYCancel(t *testing.T) {
 	drainTTY(t, master)
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetIn(slave)
 	cmd.SetOut(slave)
 	cmd.SetErr(slave)
@@ -350,7 +355,7 @@ func TestSelectManifestPathTTYError(t *testing.T) {
 	drainTTY(t, master)
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetIn(slave)
 	cmd.SetOut(slave)
 	cmd.SetErr(slave)
@@ -388,18 +393,24 @@ exit 0
 	}
 	defer clitest.WithCustomDockerStub(t, stub)()
 
-	cfg := &manifest.Config{Docker: manifest.DockerConfig{Context: "default", Identifier: "demo"}}
-	client := CreateDockerClient(cfg)
-	if client == nil {
-		t.Fatalf("expected docker client")
+	cfg := &manifest.Config{
+		Identifier: "demo",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
+		},
 	}
-	if err := ValidateWithDocker(context.Background(), cfg, client); err != nil {
-		t.Fatalf("ValidateWithDocker: %v", err)
+	factory := CreateClientFactory()
+	if factory == nil {
+		t.Fatalf("expected client factory")
+	}
+	if err := ValidateWithFactory(context.Background(), cfg, factory); err != nil {
+		t.Fatalf("ValidateWithFactory: %v", err)
 	}
 }
 
-func TestCreatePlanner(t *testing.T) {
-	p := CreatePlanner(nil, ui.StdPrinter{})
+func TestCreatePlannerWithFactory(t *testing.T) {
+	factory := CreateClientFactory()
+	p := CreatePlannerWithFactory(factory, ui.StdPrinter{})
 	if p == nil {
 		t.Fatalf("expected planner")
 	}
@@ -492,9 +503,12 @@ func TestRunWithRollingOrDirectPaths(t *testing.T) {
 
 func TestCLIContextOperations(t *testing.T) {
 	cfg := &manifest.Config{
-		Docker: manifest.DockerConfig{Identifier: "demo"},
+		Identifier: "demo",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
+		},
 		Stacks: map[string]manifest.Stack{
-			"app": {Root: ".", Files: nil},
+			"default/app": {Root: ".", Files: nil},
 		},
 	}
 	std := ui.StdPrinter{Out: io.Discard, Err: io.Discard}
@@ -685,15 +699,15 @@ exit 0
 
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "dockform.yml")
-	writeManifest(t, manifestPath, "docker:\n  context: default\n  identifier: demo\n")
+	writeManifest(t, manifestPath, "identifier: demo\ncontexts:\n  default: {}\n")
 
 	cmd := &cobra.Command{}
-	cmd.Flags().String("config", "", "")
+	cmd.Flags().String("manifest", "", "")
 	cmd.SetContext(context.Background())
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	if err := cmd.Flags().Set("config", manifestPath); err != nil {
+	if err := cmd.Flags().Set("manifest", manifestPath); err != nil {
 		t.Fatalf("set config flag: %v", err)
 	}
 
@@ -701,7 +715,7 @@ exit 0
 	if err != nil {
 		t.Fatalf("SetupCLIContext: %v", err)
 	}
-	if ctx == nil || ctx.Config == nil || ctx.Docker == nil || ctx.Planner == nil {
+	if ctx == nil || ctx.Config == nil || ctx.Factory == nil || ctx.Planner == nil {
 		t.Fatalf("expected cli context to be fully populated")
 	}
 }

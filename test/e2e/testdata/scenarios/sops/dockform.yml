@@ -1,21 +1,19 @@
-docker:
-  context: ""
-  identifier: ${DOCKFORM_RUN_ID}
+identifier: ${DOCKFORM_RUN_ID}
+
+contexts:
+  default: {}
 
 stacks:
-  app:
+  default/app:
     root: .
     files:
       - docker-compose.yaml
     project:
       name: df_e2e_${DOCKFORM_RUN_ID}
+    secrets:
+      sops:
+        - secrets/app.env
 
 sops:
   age:
     key_file: age.key
-
-secrets:
-  sops:
-    - secrets/app.env
-
-

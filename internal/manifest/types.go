@@ -8,46 +8,121 @@ import (
 )
 
 // Config is the root desired-state structure parsed from YAML.
+// This is the new multi-context schema with convention-over-configuration support.
 type Config struct {
-	Docker      DockerConfig                    `yaml:"docker"`
-	Sops        *SopsConfig                     `yaml:"sops"`
-	Secrets     *Secrets                        `yaml:"secrets"`
-	Environment *Environment                    `yaml:"environment"`
-	Stacks      map[string]Stack                `yaml:"stacks" validate:"dive"`
-	Networks    map[string]NetworkSpec          `yaml:"networks"`
-	Volumes     map[string]TopLevelResourceSpec `yaml:"volumes"`
-	Filesets    map[string]FilesetSpec          `yaml:"filesets"`
-	BaseDir     string                          `yaml:"-"`
+	// Project-wide identifier for resource labeling (io.dockform.identifier)
+	Identifier string `yaml:"identifier" validate:"required"`
+
+	// Global settings
+	Sops      *SopsConfig     `yaml:"sops"`
+	Discovery DiscoveryConfig `yaml:"discovery"`
+
+	// Multi-context support (maps context name to config)
+	Contexts    map[string]ContextConfig    `yaml:"contexts" validate:"required"`
+	Deployments map[string]DeploymentConfig `yaml:"deployments"`
+
+	// Explicit overrides (optional - discovery finds most of this automatically)
+	// Stack keys are in "context/stack" format (e.g., "hetzner-one/traefik")
+	Stacks map[string]Stack `yaml:"stacks" validate:"dive"`
+
+	// Computed
+	BaseDir string `yaml:"-"`
+
+	// Discovered resources (populated by convention discovery)
+	DiscoveredStacks   map[string]Stack       `yaml:"-"` // context/stack -> Stack
+	DiscoveredFilesets map[string]FilesetSpec `yaml:"-"` // context/stack/fileset -> FilesetSpec
 }
 
-type DockerConfig struct {
-	Context    string `yaml:"context"`
-	Identifier string `yaml:"identifier"`
+// ContextConfig defines a Docker context to manage.
+// The key in the Contexts map IS the docker context name.
+type ContextConfig struct {
+	Volumes  map[string]TopLevelResourceSpec `yaml:"volumes"`  // Explicit volumes to create
+	Networks map[string]NetworkSpec          `yaml:"networks"` // Explicit networks to create
 }
 
+// DeploymentConfig defines a named deployment group for targeting multiple contexts/stacks.
+type DeploymentConfig struct {
+	Description string   `yaml:"description"`
+	Contexts    []string `yaml:"contexts"` // Target all stacks in these contexts
+	Stacks      []string `yaml:"stacks"`   // Target specific stacks (context/stack format)
+}
+
+// DiscoveryConfig controls automatic resource discovery behavior.
+// Discovery is always enabled; use explicit stacks: block to override discovered values.
+type DiscoveryConfig struct {
+	ComposeFiles    []string `yaml:"compose_files"`    // Default: [compose.yaml, compose.yml, docker-compose.yaml, docker-compose.yml]
+	SecretsFile     string   `yaml:"secrets_file"`     // Default: secrets.env
+	EnvironmentFile string   `yaml:"environment_file"` // Default: environment.env
+	VolumesDir      string   `yaml:"volumes_dir"`      // Default: volumes
+}
+
+// GetComposeFiles returns the compose file patterns to search for.
+func (d DiscoveryConfig) GetComposeFiles() []string {
+	if len(d.ComposeFiles) == 0 {
+		return []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
+	}
+	return d.ComposeFiles
+}
+
+// GetSecretsFile returns the secrets file name to look for.
+func (d DiscoveryConfig) GetSecretsFile() string {
+	if d.SecretsFile == "" {
+		return "secrets.env"
+	}
+	return d.SecretsFile
+}
+
+// GetEnvironmentFile returns the environment file name to look for.
+func (d DiscoveryConfig) GetEnvironmentFile() string {
+	if d.EnvironmentFile == "" {
+		return "environment.env"
+	}
+	return d.EnvironmentFile
+}
+
+// GetVolumesDir returns the volumes directory name to look for.
+func (d DiscoveryConfig) GetVolumesDir() string {
+	if d.VolumesDir == "" {
+		return "volumes"
+	}
+	return d.VolumesDir
+}
+
+// Stack defines a Docker Compose stack to manage.
+// Stacks are discovered automatically from context directories.
+// The stacks: block can augment discovered stacks or define explicit stacks.
 type Stack struct {
-	Root        string       `yaml:"root" validate:"required"`
-	Files       []string     `yaml:"files"`
-	Profiles    []string     `yaml:"profiles"`
-	EnvFile     []string     `yaml:"env-file"`
-	Environment *Environment `yaml:"environment"`
-	Secrets     *Secrets     `yaml:"secrets"`
-	Project     *Project     `yaml:"project"`
-	EnvInline   []string     `yaml:"-"`
-	SopsSecrets []string     `yaml:"-"`
+	// Core fields (set by discovery, can be overridden explicitly for non-standard setups)
+	Root    string   `yaml:"root"`     // Stack directory (usually set by discovery)
+	Files   []string `yaml:"files"`    // Compose files (usually set by discovery)
+	EnvFile []string `yaml:"env-file"` // Env files
+
+	// Override fields (typically set in stacks: block to augment discovered stacks)
+	Profiles    []string                `yaml:"profiles"`    // Compose profiles to activate
+	Environment *Environment            `yaml:"environment"` // Additional environment config
+	Secrets     *Secrets                `yaml:"secrets"`     // Additional SOPS secrets
+	Project     *Project                `yaml:"project"`     // Compose project name override
+	Filesets    map[string]FilesetSpec  `yaml:"filesets"`    // Fileset overrides/declarations
+
+	// Computed fields
+	Context     string   `yaml:"-"` // Which context this belongs to (from key prefix)
+	EnvInline   []string `yaml:"-"` // Merged inline env vars
+	SopsSecrets []string `yaml:"-"` // Merged SOPS secret paths
+	RootAbs     string   `yaml:"-"` // Absolute path to stack root
 }
 
+// Project allows overriding the Compose project name.
 type Project struct {
 	Name string `yaml:"name"`
 }
 
-// Environment holds environment file references
+// Environment holds environment file references and inline variables.
 type Environment struct {
 	Files  []string `yaml:"files"`
 	Inline []string `yaml:"inline"`
 }
 
-// SopsConfig configures SOPS provider(s)
+// SopsConfig configures SOPS provider(s) for secret decryption.
 type SopsConfig struct {
 	Age *SopsAgeConfig `yaml:"age"`
 	// Recipients is deprecated; kept for migration error messaging
@@ -55,12 +130,13 @@ type SopsConfig struct {
 	Pgp        *SopsPgpConfig `yaml:"pgp"`
 }
 
+// SopsAgeConfig configures the Age backend for SOPS.
 type SopsAgeConfig struct {
 	KeyFile    string   `yaml:"key_file"`
 	Recipients []string `yaml:"recipients"`
 }
 
-// SopsPgpConfig configures PGP (GnuPG) backend for SOPS
+// SopsPgpConfig configures the PGP (GnuPG) backend for SOPS.
 type SopsPgpConfig struct {
 	KeyringDir   string   `yaml:"keyring_dir"`
 	UseAgent     bool     `yaml:"use_agent"`
@@ -69,15 +145,12 @@ type SopsPgpConfig struct {
 	Passphrase   string   `yaml:"passphrase"`
 }
 
-// Secrets holds secret sources
+// Secrets holds secret sources (SOPS-encrypted files).
 type Secrets struct {
 	Sops []string `yaml:"sops"`
 }
 
-// TopLevelResourceSpec mirrors YAML for volumes.
-type TopLevelResourceSpec struct{}
-
-// NetworkSpec allows configuring docker network driver and options.
+// NetworkSpec allows configuring Docker network driver and options.
 type NetworkSpec struct {
 	Driver       string            `yaml:"driver"`
 	Options      map[string]string `yaml:"options"`
@@ -90,6 +163,9 @@ type NetworkSpec struct {
 	AuxAddresses map[string]string `yaml:"aux_addresses"`
 }
 
+// TopLevelResourceSpec is an empty marker for explicitly declared volumes.
+type TopLevelResourceSpec struct{}
+
 // Ownership defines optional ownership and permission settings for fileset files.
 type Ownership struct {
 	User             string `yaml:"user"`              // numeric UID string preferred; allow names
@@ -99,7 +175,7 @@ type Ownership struct {
 	PreserveExisting bool   `yaml:"preserve_existing"` // if true, only apply to new/updated paths
 }
 
-// FilesetSpec defines a local directory to sync into a docker volume at a target path.
+// FilesetSpec defines a local directory to sync into a Docker volume at a target path.
 type FilesetSpec struct {
 	Source          string         `yaml:"source"`
 	TargetVolume    string         `yaml:"target_volume"`
@@ -108,7 +184,11 @@ type FilesetSpec struct {
 	ApplyMode       string         `yaml:"apply_mode"`
 	Exclude         []string       `yaml:"exclude"`
 	Ownership       *Ownership     `yaml:"ownership"`
-	SourceAbs       string         `yaml:"-"`
+
+	// Computed fields
+	SourceAbs string `yaml:"-"`
+	Context   string `yaml:"-"` // Which context this belongs to
+	Stack     string `yaml:"-"` // Which stack this belongs to (for restart discovery)
 }
 
 // RestartTargets represents either an explicit list of services to restart, or
@@ -168,5 +248,124 @@ func (r *RestartTargets) UnmarshalYAML(unmarshal func(interface{}) error) error 
 }
 
 var (
-	appKeyRegex = regexp.MustCompile(`^[a-z0-9_.-]+$`)
+	appKeyRegex     = regexp.MustCompile(`^[a-z0-9_.-]+$`)
+	contextKeyRegex = regexp.MustCompile(`^[a-z0-9_-]+$`)
 )
+
+// ParseStackKey splits a "context/stack" key into its components.
+func ParseStackKey(key string) (context, stack string, err error) {
+	parts := strings.SplitN(key, "/", 2)
+	if len(parts) != 2 {
+		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key must be in 'context/stack' format: %s", key)
+	}
+	if parts[0] == "" {
+		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key has empty context name: %s", key)
+	}
+	if parts[1] == "" {
+		return "", "", apperr.New("manifest.ParseStackKey", apperr.InvalidInput, "stack key has empty stack name: %s", key)
+	}
+	return parts[0], parts[1], nil
+}
+
+// MakeStackKey creates a "context/stack" key from components.
+func MakeStackKey(context, stack string) string {
+	return context + "/" + stack
+}
+
+// GetAllStacks returns all stacks (discovered + explicit merged).
+// Discovery is preferred; explicit stacks can augment or provide fallback.
+func (c *Config) GetAllStacks() map[string]Stack {
+	result := make(map[string]Stack)
+
+	// Start with discovered stacks
+	for k, v := range c.DiscoveredStacks {
+		result[k] = v
+	}
+
+	// Merge explicit stacks
+	for k, v := range c.Stacks {
+		if existing, ok := result[k]; ok {
+			// Discovered stack exists: merge augmentation fields only
+			// (discovery wins for root/files/env-file)
+			merged := existing
+			if len(v.Profiles) > 0 {
+				merged.Profiles = v.Profiles
+			}
+			if v.Environment != nil {
+				merged.Environment = v.Environment
+			}
+			if v.Secrets != nil {
+				merged.Secrets = v.Secrets
+			}
+			if v.Project != nil {
+				merged.Project = v.Project
+			}
+			result[k] = merged
+		} else {
+			// No discovered stack: use explicit stack as fallback
+			result[k] = v
+		}
+	}
+
+	return result
+}
+
+// GetAllFilesets returns all filesets (discovered).
+func (c *Config) GetAllFilesets() map[string]FilesetSpec {
+	if c.DiscoveredFilesets == nil {
+		return make(map[string]FilesetSpec)
+	}
+	return c.DiscoveredFilesets
+}
+
+// GetStacksForContext returns all stacks belonging to a specific context.
+func (c *Config) GetStacksForContext(contextName string) map[string]Stack {
+	result := make(map[string]Stack)
+	for key, stack := range c.GetAllStacks() {
+		context, stackName, err := ParseStackKey(key)
+		if err != nil {
+			continue
+		}
+		if context == contextName {
+			result[stackName] = stack
+		}
+	}
+	return result
+}
+
+// GetFilesetsForContext returns all filesets belonging to a specific context.
+func (c *Config) GetFilesetsForContext(contextName string) map[string]FilesetSpec {
+	result := make(map[string]FilesetSpec)
+	for key, fileset := range c.GetAllFilesets() {
+		if fileset.Context == contextName {
+			result[key] = fileset
+		}
+	}
+	return result
+}
+
+// GetFirstContext returns the name of the first context in the config, or "default" if none.
+// Used for backward compatibility with deprecated single-context APIs.
+func (c *Config) GetFirstContext() string {
+	for name := range c.Contexts {
+		return name
+	}
+	return "default"
+}
+
+// GetAllSopsSecrets collects all unique SOPS secret file paths from all stacks.
+func (c *Config) GetAllSopsSecrets() []string {
+	seen := make(map[string]struct{})
+	var result []string
+
+	for _, stack := range c.GetAllStacks() {
+		for _, sopsPath := range stack.SopsSecrets {
+			if _, exists := seen[sopsPath]; !exists {
+				seen[sopsPath] = struct{}{}
+				result = append(result, sopsPath)
+			}
+		}
+	}
+
+	return result
+}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/cli/common"
@@ -33,9 +34,15 @@ func newRenderCmd() *cobra.Command {
 		Short: "Render a stack's docker compose config fully resolved",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			stackName := args[0]
-			file, _ := cmd.Flags().GetString("config")
+			stackInput := args[0]
 			pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
+			file, err := common.ResolveManifestPath(cmd, pr, ".", 3)
+			if err != nil {
+				return err
+			}
+			if file != "" {
+				_ = cmd.Flags().Set("manifest", file)
+			}
 
 			// Load manifest with warnings
 			cfg, missing, err := manifest.LoadWithWarnings(file)
@@ -46,17 +53,59 @@ func newRenderCmd() *cobra.Command {
 				pr.Warn("environment variable %s is not set; replacing with empty string", name)
 			}
 
-			stack, ok := cfg.Stacks[stackName]
+			allStacks := cfg.GetAllStacks()
+			stackKey := stackInput
+			stack, ok := allStacks[stackKey]
+			if !ok && !strings.Contains(stackInput, "/") {
+				var matches []string
+				for k := range allStacks {
+					if strings.HasSuffix(k, "/"+stackInput) {
+						matches = append(matches, k)
+					}
+				}
+				if len(matches) == 1 {
+					stackKey = matches[0]
+					stack = allStacks[stackKey]
+					ok = true
+				} else if len(matches) > 1 {
+					return apperr.New("cli.compose.render", apperr.InvalidInput, "stack %q is ambiguous; use context/stack format", stackInput)
+				}
+			}
 			if !ok {
-				return apperr.New("cli.compose.render", apperr.InvalidInput, "unknown stack %q", stackName)
+				return apperr.New("cli.compose.render", apperr.InvalidInput, "unknown stack %q", stackInput)
 			}
 
 			// Build inline env including SOPS secrets
 			detector := planner.NewServiceStateDetector(nil)
-			inline := detector.BuildInlineEnv(cmd.Context(), stack, cfg.Sops)
+			inline, err := detector.BuildInlineEnv(cmd.Context(), stack, cfg.Sops)
+			if err != nil {
+				return err
+			}
+
+			// Get docker client for the stack's daemon
+			var contextName string
+			identifier := cfg.Identifier
+			if stack.Context != "" {
+				contextName = stack.Context
+			}
+			if contextName == "" {
+				parts := strings.SplitN(stackKey, "/", 2)
+				if len(parts) == 2 {
+					if _, ok := cfg.Contexts[parts[0]]; ok {
+						contextName = parts[0]
+					}
+				}
+			}
+			// Fall back to first context if stack key doesn't have context prefix
+			if contextName == "" {
+				for name := range cfg.Contexts {
+					contextName = name
+					break
+				}
+			}
 
 			// Compose raw config
-			docker := dockercli.New(cfg.Docker.Context).WithIdentifier(cfg.Docker.Identifier)
+			docker := dockercli.New(contextName).WithIdentifier(identifier)
 			raw, err := docker.ComposeConfigRaw(cmd.Context(), stack.Root, stack.Files, stack.Profiles, stack.EnvFile, inline)
 			if err != nil {
 				return err

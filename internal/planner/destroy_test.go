@@ -34,8 +34,11 @@ func TestDestroy_ListsContainersOnce(t *testing.T) {
 	mockCounter := &mockDockerListCounter{mockDockerClient: baseMock}
 
 	cfg := manifest.Config{
-		Docker:   manifest.DockerConfig{Identifier: "test"},
-		Filesets: map[string]manifest.FilesetSpec{},
+		Identifier: "test",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
+		},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{},
 	}
 
 	planner := NewWithDocker(mockCounter)
@@ -46,12 +49,10 @@ func TestDestroy_ListsContainersOnce(t *testing.T) {
 		t.Fatalf("Destroy failed: %v", err)
 	}
 
-	// Verify ListComposeContainersAll was called exactly once during execution
-	// (Note: BuildDestroyPlan also calls it once, so total should be 2: one for plan, one for execute)
-	// Actually, looking at the code, Destroy calls BuildDestroyPlan internally, then uses the optimized loop
-	// So we expect: 1 call in BuildDestroyPlan + 1 call in Destroy's optimized container removal = 2 total
-	if mockCounter.listCallCount != 2 {
-		t.Errorf("Expected ListComposeContainersAll to be called 2 times (once in plan, once in destroy), got %d", mockCounter.listCallCount)
+	// Verify ListComposeContainersAll was called exactly once during execution.
+	// Destroy directly removes containers per-daemon without building a plan first.
+	if mockCounter.listCallCount != 1 {
+		t.Errorf("Expected ListComposeContainersAll to be called 1 time, got %d", mockCounter.listCallCount)
 	}
 
 	// Verify all containers were removed
@@ -83,7 +84,10 @@ func TestDestroy_OptimizedContainerLookup(t *testing.T) {
 	mockCounter := &mockDockerListCounter{mockDockerClient: baseMock}
 
 	cfg := manifest.Config{
-		Docker: manifest.DockerConfig{Identifier: "test"},
+		Identifier: "test",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
+		},
 	}
 
 	planner := NewWithDocker(mockCounter)

@@ -15,7 +15,10 @@ func TestServiceStateDetector_BuildInlineEnv(t *testing.T) {
 		EnvInline: []string{"FOO=bar", "BAZ=qux"},
 	}
 
-	result := detector.BuildInlineEnv(context.Background(), app, nil)
+	result, err := detector.BuildInlineEnv(context.Background(), app, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	expected := []string{"FOO=bar", "BAZ=qux"}
 	if len(result) != len(expected) {

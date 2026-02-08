@@ -67,28 +67,28 @@ volumes:
 
 	// Create manifest with ownership settings using numeric IDs
 	manifest := fmt.Sprintf(`
-docker:
-  identifier: %s
-  context: default
+identifier: %s
+
+contexts:
+  default: {}
 
 stacks:
-  app:
+  default/app:
     root: .
     files:
       - docker-compose.yaml
     project:
       name: df_e2e_%s
-
-filesets:
-  config:
-    source: ./config
-    target_volume: df_e2e_%s_data
-    target_path: /data
-    ownership:
-      user: "1000"
-      group: "1000"
-      file_mode: "0640"
-      dir_mode: "0750"
+    filesets:
+      config:
+        source: ./config
+        target_volume: df_e2e_%s_data
+        target_path: /data
+        ownership:
+          user: "1000"
+          group: "1000"
+          file_mode: "0640"
+          dir_mode: "0750"
 `, identifier, runID, runID)
 
 	manifestPath := filepath.Join(projectDir, "dockform.yaml")
@@ -99,7 +99,7 @@ filesets:
 	env := os.Environ()
 
 	// Apply the manifest
-	applyOut := runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "-c", manifestPath)
+	applyOut := runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "--manifest", manifestPath)
 	t.Logf("Apply output:\n%s", applyOut)
 
 	// Verify ownership and permissions inside the volume
@@ -186,27 +186,27 @@ volumes:
 
 	// Create manifest without preserve_existing (will apply to all)
 	manifest := fmt.Sprintf(`
-docker:
-  identifier: %s
-  context: default
+identifier: %s
+
+contexts:
+  default: {}
 
 stacks:
-  app:
+  default/app:
     root: .
     files:
       - docker-compose.yaml
     project:
       name: df_e2e_%s
-
-filesets:
-  config:
-    source: ./config
-    target_volume: df_e2e_%s_data
-    target_path: /data
-    ownership:
-      user: "2000"
-      group: "2000"
-      file_mode: "0600"
+    filesets:
+      config:
+        source: ./config
+        target_volume: df_e2e_%s_data
+        target_path: /data
+        ownership:
+          user: "2000"
+          group: "2000"
+          file_mode: "0600"
 `, identifier, runID, runID)
 
 	manifestPath := filepath.Join(projectDir, "dockform.yaml")
@@ -217,7 +217,7 @@ filesets:
 	env := os.Environ()
 
 	// First apply
-	_ = runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "-c", manifestPath)
+	_ = runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "--manifest", manifestPath)
 
 	volumeName := fmt.Sprintf("df_e2e_%s_data", runID)
 
@@ -238,28 +238,28 @@ filesets:
 
 	// Update manifest with preserve_existing and different ownership
 	manifest = fmt.Sprintf(`
-docker:
-  identifier: %s
-  context: default
+identifier: %s
+
+contexts:
+  default: {}
 
 stacks:
-  app:
+  default/app:
     root: .
     files:
       - docker-compose.yaml
     project:
       name: df_e2e_%s
-
-filesets:
-  config:
-    source: ./config
-    target_volume: df_e2e_%s_data
-    target_path: /data
-    ownership:
-      user: "3000"
-      group: "3000"
-      file_mode: "0644"
-      preserve_existing: true
+    filesets:
+      config:
+        source: ./config
+        target_volume: df_e2e_%s_data
+        target_path: /data
+        ownership:
+          user: "3000"
+          group: "3000"
+          file_mode: "0644"
+          preserve_existing: true
 `, identifier, runID, runID)
 
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0644); err != nil {
@@ -267,7 +267,7 @@ filesets:
 	}
 
 	// Second apply
-	_ = runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "-c", manifestPath)
+	_ = runCmdWithStdin(t, projectDir, env, bin, "yes\n", "apply", "--manifest", manifestPath)
 
 	// Verify: file1 should still be 2000:2000, file2 should be 3000:3000
 	result, err = docker.RunVolumeScript(ctx, volumeName, "/data", "stat -c '%u:%g %n' /data/file1.txt /data/file2.txt", nil)

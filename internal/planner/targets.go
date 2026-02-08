@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
@@ -33,13 +34,12 @@ func resolveTargetServices(ctx context.Context, docker DockerClient, fs manifest
 
 	// Attached discovery: find compose services that have containers using the volume
 	if docker == nil {
-		return nil, nil
+		return nil, apperr.New("planner.resolveTargetServices", apperr.Precondition, "docker client not configured")
 	}
 	// Containers referencing volume (running or stopped)
 	volNames, err := docker.ListContainersUsingVolume(ctx, fs.TargetVolume)
 	if err != nil {
-		// treat errors as no discovery rather than fatal
-		return nil, nil
+		return nil, apperr.Wrap("planner.resolveTargetServices", apperr.External, err, "list containers using volume %s", fs.TargetVolume)
 	}
 	if len(volNames) == 0 {
 		return nil, nil
@@ -48,7 +48,7 @@ func resolveTargetServices(ctx context.Context, docker DockerClient, fs manifest
 	// Map container name -> service via compose labels
 	items, err := docker.ListComposeContainersAll(ctx)
 	if err != nil {
-		return nil, nil
+		return nil, apperr.Wrap("planner.resolveTargetServices", apperr.External, err, "list compose containers for volume %s", fs.TargetVolume)
 	}
 	// Build set of volume containers for fast lookup
 	volSet := map[string]struct{}{}

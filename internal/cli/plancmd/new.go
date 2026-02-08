@@ -37,27 +37,25 @@ func New() *cobra.Command {
 			} else {
 				var out string
 				_, err = ui.RunWithRollingLog(cmd.Context(), func(runCtx context.Context) (string, error) {
-					prev := ctx.Ctx
-					ctx.Ctx = runCtx
-					defer func() { ctx.Ctx = prev }()
+					return "", ctx.WithRunContext(runCtx, func() error {
+						// Check if context is already cancelled before starting
+						if runCtx.Err() != nil {
+							return runCtx.Err()
+						}
 
-					// Check if context is already cancelled before starting
-					if runCtx.Err() != nil {
-						return "", runCtx.Err()
-					}
+						plan, err := ctx.BuildPlan()
+						if err != nil {
+							return err
+						}
 
-					plan, err := ctx.BuildPlan()
-					if err != nil {
-						return "", err
-					}
+						// Check again after BuildPlan in case it was cancelled during execution
+						if runCtx.Err() != nil {
+							return runCtx.Err()
+						}
 
-					// Check again after BuildPlan in case it was cancelled during execution
-					if runCtx.Err() != nil {
-						return "", runCtx.Err()
-					}
-
-					out = plan.String()
-					return "", nil
+						out = plan.String()
+						return nil
+					})
 				})
 				if err != nil {
 					return err
@@ -70,6 +68,9 @@ func New() *cobra.Command {
 
 	// Add sequential flag
 	cmd.Flags().Bool("sequential", false, "Use sequential processing instead of the default parallel processing (slower but uses less CPU and Docker daemon resources)")
+
+	// Add targeting flags
+	common.AddTargetFlags(cmd)
 
 	return cmd
 }

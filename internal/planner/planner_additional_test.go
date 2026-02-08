@@ -50,7 +50,11 @@ func TestBuildPlan_NoDocker_ClientNil(t *testing.T) {
 }
 
 func TestBuildPlan_NoDocker_AppsPlannedTBD(t *testing.T) {
-	cfg := manifest.Config{Stacks: map[string]manifest.Stack{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks:     map[string]manifest.Stack{"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}}},
+	}
 	pln, err := New().BuildPlan(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
@@ -63,24 +67,35 @@ func TestBuildPlan_NoDocker_AppsPlannedTBD(t *testing.T) {
 
 func TestBuildPlan_ComposeConfigError(t *testing.T) {
 	_ = writeComposeErrorStub(t)
-	cfg := manifest.Config{Stacks: map[string]manifest.Stack{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
-	d := dockercli.New("")
-	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
-	if err != nil {
-		t.Fatalf("BuildPlan should not fail, got: %v", err)
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks:     map[string]manifest.Stack{"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}}},
 	}
-	// With the new ServiceStateDetector, compose config errors result in fallback "TBD" messages instead of hard errors
-	out := pln.String()
-	if !strings.Contains(out, "planned (services diff TBD)") {
-		t.Fatalf("expected TBD fallback for compose config error, got:\n%s", out)
+	d := dockercli.New("")
+	_, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "one or more stack analyses failed") {
+		t.Fatalf("expected aggregate stack analysis error, got: %v", err)
 	}
 }
 
 func TestApply_Precondition_NoDocker(t *testing.T) {
+	// With multi-context architecture, empty config is a no-op (no contexts to process)
 	cfg := manifest.Config{}
 	err := New().Apply(context.Background(), cfg)
-	if err == nil || !strings.Contains(err.Error(), "docker client not configured") {
-		t.Fatalf("expected precondition error, got: %v", err)
+	if err != nil {
+		t.Fatalf("expected no error for empty config, got: %v", err)
+	}
+
+	// But if there's a context configured, we should get an error with no client
+	cfg = manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks:     map[string]manifest.Stack{"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}}},
+	}
+	err = New().Apply(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "docker client not available") {
+		t.Fatalf("expected docker client error for context with no client, got: %v", err)
 	}
 }
 
@@ -89,7 +104,11 @@ func TestApply_ComposeConfigError(t *testing.T) {
 		t.Skip("skipping on Windows due to shell script compatibility")
 	}
 	_ = writeComposeErrorStub(t)
-	cfg := manifest.Config{Stacks: map[string]manifest.Stack{"app": {Root: t.TempDir(), Files: []string{"compose.yml"}}}}
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks:     map[string]manifest.Stack{"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}}},
+	}
 	d := dockercli.New("")
 	err := NewWithDocker(d).Apply(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to detect service states") {
@@ -140,9 +159,13 @@ exit 0
 	_ = os.Setenv("PATH", dir+string(os.PathListSeparator)+old)
 	t.Cleanup(func() { _ = os.Setenv("PATH", old) })
 
-	cfg := manifest.Config{Docker: manifest.DockerConfig{Identifier: "demo"}, Stacks: map[string]manifest.Stack{
-		"app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
-	}}
+	cfg := manifest.Config{
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks: map[string]manifest.Stack{
+			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
+		},
+	}
 	d := dockercli.New("").WithIdentifier("demo")
 	log := filepath.Join(t.TempDir(), "log.txt")
 	if err := os.Setenv("DOCKER_STUB_LOG", log); err != nil {

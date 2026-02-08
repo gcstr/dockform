@@ -22,19 +22,32 @@ type mockDockerClient struct {
 	createdVolumes      []string
 	createdNetworks     []string
 	restartedContainers []string
+	startedContainers   []string
+	stoppedContainers   []string
 	removedContainers   []string
 	removedVolumes      []string
 	removedNetworks     []string
 	writtenFiles        map[string]string   // fileName -> content
 	extractedTars       []string            // volume names that had tars extracted
 	removedPaths        map[string][]string // volumeName -> removed paths
+	runVolumeScriptRuns int
 
 	// Control behavior
-	listVolumesError   error
-	listNetworksError  error
-	createVolumeError  error
-	createNetworkError error
-	restartError       error
+	listVolumesError             error
+	listNetworksError            error
+	createVolumeError            error
+	createNetworkError           error
+	listComposeContainersError   error
+	listContainersUsingVolError  error
+	stopContainersError          error
+	startContainersError         error
+	restartError                 error
+	writeFileError               error
+	extractTarError              error
+	removePathsError             error
+	runVolumeScriptError         error
+	containersUsingVolume        []string
+	runningContainersUsingVolume []string
 }
 
 // newMockDocker creates a new mock Docker client with sensible defaults.
@@ -49,6 +62,8 @@ func newMockDocker() *mockDockerClient {
 		createdVolumes:      []string{},
 		createdNetworks:     []string{},
 		restartedContainers: []string{},
+		startedContainers:   []string{},
+		stoppedContainers:   []string{},
 		removedContainers:   []string{},
 		removedVolumes:      []string{},
 		removedNetworks:     []string{},
@@ -97,11 +112,18 @@ func (m *mockDockerClient) ReadFileFromVolume(ctx context.Context, volumeName, t
 }
 
 func (m *mockDockerClient) RunVolumeScript(ctx context.Context, volumeName, targetPath, script string, env []string) (dockercli.VolumeScriptResult, error) {
+	m.runVolumeScriptRuns++
 	// Mock implementation - just return success
+	if m.runVolumeScriptError != nil {
+		return dockercli.VolumeScriptResult{}, m.runVolumeScriptError
+	}
 	return dockercli.VolumeScriptResult{Stdout: "Ownership applied successfully\n"}, nil
 }
 
 func (m *mockDockerClient) WriteFileToVolume(ctx context.Context, volumeName, targetPath, relFile, content string) error {
+	if m.writeFileError != nil {
+		return m.writeFileError
+	}
 	if m.writtenFiles == nil {
 		m.writtenFiles = make(map[string]string)
 	}
@@ -110,11 +132,17 @@ func (m *mockDockerClient) WriteFileToVolume(ctx context.Context, volumeName, ta
 }
 
 func (m *mockDockerClient) ExtractTarToVolume(ctx context.Context, volumeName, targetPath string, tarReader io.Reader) error {
+	if m.extractTarError != nil {
+		return m.extractTarError
+	}
 	m.extractedTars = append(m.extractedTars, volumeName)
 	return nil
 }
 
 func (m *mockDockerClient) RemovePathsFromVolume(ctx context.Context, volumeName, targetPath string, relPaths []string) error {
+	if m.removePathsError != nil {
+		return m.removePathsError
+	}
 	if m.removedPaths == nil {
 		m.removedPaths = make(map[string][]string)
 	}
@@ -157,10 +185,19 @@ func (m *mockDockerClient) InspectNetwork(ctx context.Context, name string) (doc
 
 // Container operations
 func (m *mockDockerClient) ListComposeContainersAll(ctx context.Context) ([]dockercli.PsBrief, error) {
+	if m.listComposeContainersError != nil {
+		return nil, m.listComposeContainersError
+	}
 	return m.containers, nil
 }
 
 func (m *mockDockerClient) ListContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error) {
+	if m.listContainersUsingVolError != nil {
+		return nil, m.listContainersUsingVolError
+	}
+	if m.containersUsingVolume != nil {
+		return append([]string(nil), m.containersUsingVolume...), nil
+	}
 	// For tests, return all container names to simulate volume attachment
 	var out []string
 	for _, c := range m.containers {
@@ -170,6 +207,9 @@ func (m *mockDockerClient) ListContainersUsingVolume(ctx context.Context, volume
 }
 
 func (m *mockDockerClient) ListRunningContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error) {
+	if m.runningContainersUsingVolume != nil {
+		return append([]string(nil), m.runningContainersUsingVolume...), nil
+	}
 	// For tests that need it, derive from containers slice by matching a label or name
 	// Here we just return any container names we have to simulate running ones
 	out := []string{}
@@ -188,12 +228,18 @@ func (m *mockDockerClient) RestartContainer(ctx context.Context, name string) er
 }
 
 func (m *mockDockerClient) StopContainers(ctx context.Context, names []string) error {
-	// No-op for tests
+	if m.stopContainersError != nil {
+		return m.stopContainersError
+	}
+	m.stoppedContainers = append(m.stoppedContainers, names...)
 	return nil
 }
 
 func (m *mockDockerClient) StartContainers(ctx context.Context, names []string) error {
-	// No-op for tests
+	if m.startContainersError != nil {
+		return m.startContainersError
+	}
+	m.startedContainers = append(m.startedContainers, names...)
 	return nil
 }
 

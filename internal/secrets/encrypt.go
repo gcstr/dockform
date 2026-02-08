@@ -63,7 +63,8 @@ func AgeRecipientsFromKeyFile(ageKeyFile string) ([]string, error) {
 }
 
 // EncryptDotenvFileWithSops encrypts a plaintext dotenv file in-place using the system SOPS binary with provided recipients.
-// Age recipients are passed with --age, PGP recipients are passed with --pgp
+// Age recipients are passed with --age, PGP recipients are passed with --pgp.
+// This function is safe for concurrent use across multiple goroutines.
 func EncryptDotenvFileWithSops(ctx context.Context, path string, ageRecipients []string, ageKeyFile string, pgpRecipients []string, pgpKeyringDir string, pgpUseAgent bool, pgpPinentryMode string, pgpPassphrase string) error {
 	totalRecips := len(ageRecipients) + len(pgpRecipients)
 	if totalRecips == 0 {
@@ -77,29 +78,14 @@ func EncryptDotenvFileWithSops(ctx context.Context, path string, ageRecipients [
 	if _, err := exec.LookPath("sops"); err != nil {
 		return apperr.New("secrets.EncryptDotenvFileWithSops", apperr.NotFound, "sops binary not found on PATH; please install sops")
 	}
-	// Ensure SOPS_AGE_KEY_FILE set for decrypt compatibility and environments that need it
-	if ageKeyFile != "" {
-		key := ageKeyFile
-		if strings.HasPrefix(key, "~/") {
-			if home, err := os.UserHomeDir(); err == nil {
-				key = filepath.Join(home, key[2:])
-			}
-		}
-		_ = os.Setenv("SOPS_AGE_KEY_FILE", key)
-	}
-	// Prepare GnuPG settings if provided
-	if strings.TrimSpace(pgpKeyringDir) != "" {
-		dir := pgpKeyringDir
-		if strings.HasPrefix(dir, "~/") {
-			if home, err := os.UserHomeDir(); err == nil {
-				dir = filepath.Join(home, dir[2:])
-			}
-		}
-		_ = os.Setenv("GNUPGHOME", dir)
-		if strings.ToLower(strings.TrimSpace(pgpPinentryMode)) == "loopback" && !pgpUseAgent {
-			_ = os.Setenv("SOPS_GPG_EXEC", "gpg --pinentry-mode loopback")
-		}
-	}
+
+	// Build environment for subprocess without mutating global state
+	env := buildSopsEnv(SopsOptions{
+		AgeKeyFile:      ageKeyFile,
+		PgpKeyringDir:   pgpKeyringDir,
+		PgpUseAgent:     pgpUseAgent,
+		PgpPinentryMode: pgpPinentryMode,
+	})
 
 	// Build args with a single --age flag carrying a comma-separated list
 	validAgeRecipients := make([]string, 0, len(ageRecipients))
@@ -125,7 +111,7 @@ func EncryptDotenvFileWithSops(ctx context.Context, path string, ageRecipients [
 	}
 	args = append(args, path)
 	cmd := exec.CommandContext(ctx, "sops", args...)
-	cmd.Env = os.Environ()
+	cmd.Env = env
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return apperr.Wrap("secrets.EncryptDotenvFileWithSops", apperr.External, errors.New(string(out)), "sops encrypt %s", path)
 	}

@@ -35,25 +35,30 @@ func TestFindManifestFilesRespectsDepth(t *testing.T) {
 	}
 }
 
-func TestReadDockerContextLabel(t *testing.T) {
+func TestReadDaemonContextLabels(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dockform.yml")
-	content := "docker:\n  context: prod\n"
+	content := "identifier: test\ncontexts:\n  prod: {}\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
-	if got := readDockerContextLabel(path); got != "prod" {
-		t.Fatalf("expected context label 'prod', got %q", got)
+	if got := readDaemonContextLabels(path); got != "prod" {
+		t.Fatalf("expected daemon name 'prod', got %q", got)
 	}
-	if got := readDockerContextLabel(filepath.Join(t.TempDir(), "missing.yml")); got != "" {
+	if got := readDaemonContextLabels(filepath.Join(t.TempDir(), "missing.yml")); got != "" {
 		t.Fatalf("expected empty context for missing file, got %q", got)
 	}
 }
 
-func TestDisplayDockerInfoDefaults(t *testing.T) {
+func TestDisplayDaemonInfoDefaults(t *testing.T) {
 	var out bytes.Buffer
 	pr := ui.StdPrinter{Out: &out}
-	cfg := &manifest.Config{Docker: manifest.DockerConfig{Context: "", Identifier: "demo"}}
-	DisplayDockerInfo(pr, cfg)
+	cfg := &manifest.Config{
+		Identifier: "demo",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
+		},
+	}
+	DisplayDaemonInfo(pr, cfg)
 	got := ui.StripANSI(out.String())
 	if !bytes.Contains([]byte(got), []byte("Context: default")) {
 		t.Fatalf("expected default context fallback, got: %q", got)

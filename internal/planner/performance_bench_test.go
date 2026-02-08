@@ -3,6 +3,8 @@ package planner
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/manifest"
@@ -26,29 +28,41 @@ func benchmarkBuildPlan(b *testing.B, parallel bool) {
 	docker.networks = []string{"net1", "net2", "net3", "existing-network"}
 
 	planner := NewWithDocker(docker).WithParallel(parallel)
+	sourceBase := b.TempDir()
+	assets1Dir := filepath.Join(sourceBase, "assets1")
+	assets2Dir := filepath.Join(sourceBase, "assets2")
+	configDir := filepath.Join(sourceBase, "config")
+	for _, dir := range []string{assets1Dir, assets2Dir, configDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			b.Fatalf("mkdir %s: %v", dir, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "sample.txt"), []byte("sample"), 0o644); err != nil {
+			b.Fatalf("write sample file in %s: %v", dir, err)
+		}
+	}
 
 	// Create a test configuration with multiple applications and filesets
 	cfg := manifest.Config{
-		Docker: manifest.DockerConfig{
-			Context:    "default",
-			Identifier: "benchmark-test",
+		Identifier: "benchmark-test",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
 		Stacks: map[string]manifest.Stack{
-			"app1": {
+			"default/app1": {
 				Root:  "/tmp/app1",
 				Files: []string{"docker-compose.yml"},
 				Environment: &manifest.Environment{
 					Inline: []string{"PORT=3000"},
 				},
 			},
-			"app2": {
+			"default/app2": {
 				Root:  "/tmp/app2",
 				Files: []string{"docker-compose.yml"},
 				Environment: &manifest.Environment{
 					Inline: []string{"PORT=3001"},
 				},
 			},
-			"app3": {
+			"default/app3": {
 				Root:  "/tmp/app3",
 				Files: []string{"docker-compose.yml"},
 				Environment: &manifest.Environment{
@@ -56,31 +70,24 @@ func benchmarkBuildPlan(b *testing.B, parallel bool) {
 				},
 			},
 		},
-		Volumes: map[string]manifest.TopLevelResourceSpec{
-			"shared-vol1": {},
-			"shared-vol2": {},
-		},
-		Networks: map[string]manifest.NetworkSpec{
-			"app-network": {},
-		},
-		Filesets: map[string]manifest.FilesetSpec{
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
 			"assets1": {
 				Source:       "./assets1",
-				SourceAbs:    "/tmp/assets1",
+				SourceAbs:    assets1Dir,
 				TargetVolume: "assets-vol1",
 				TargetPath:   "/var/www/assets",
 				Exclude:      []string{".git"},
 			},
 			"assets2": {
 				Source:       "./assets2",
-				SourceAbs:    "/tmp/assets2",
+				SourceAbs:    assets2Dir,
 				TargetVolume: "assets-vol2",
 				TargetPath:   "/var/www/assets2",
 				Exclude:      []string{".git"},
 			},
 			"config": {
 				Source:       "./config",
-				SourceAbs:    "/tmp/config",
+				SourceAbs:    configDir,
 				TargetVolume: "config-vol",
 				TargetPath:   "/etc/app",
 				Exclude:      []string{"*.tmp"},
@@ -122,16 +129,15 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 	}
 
 	planner := NewWithDocker(docker).WithParallel(parallel)
+	sourceBase := b.TempDir()
 
 	// Create a large configuration with many applications and filesets
 	applications := make(map[string]manifest.Stack)
 	filesets := make(map[string]manifest.FilesetSpec)
-	volumes := make(map[string]manifest.TopLevelResourceSpec)
-	networks := make(map[string]manifest.NetworkSpec)
 
 	// Add 10 applications
 	for i := 0; i < 10; i++ {
-		applications[fmt.Sprintf("app%d", i)] = manifest.Stack{
+		applications[fmt.Sprintf("default/app%d", i)] = manifest.Stack{
 			Root:  fmt.Sprintf("/tmp/app%d", i),
 			Files: []string{"docker-compose.yml"},
 			Environment: &manifest.Environment{
@@ -142,34 +148,29 @@ func benchmarkBuildPlanLarge(b *testing.B, parallel bool) {
 
 	// Add 15 filesets
 	for i := 0; i < 15; i++ {
+		sourceAbs := filepath.Join(sourceBase, fmt.Sprintf("assets%d", i))
+		if err := os.MkdirAll(sourceAbs, 0o755); err != nil {
+			b.Fatalf("mkdir %s: %v", sourceAbs, err)
+		}
+		if err := os.WriteFile(filepath.Join(sourceAbs, "sample.txt"), []byte("sample"), 0o644); err != nil {
+			b.Fatalf("write sample file in %s: %v", sourceAbs, err)
+		}
 		filesets[fmt.Sprintf("assets%d", i)] = manifest.FilesetSpec{
 			Source:       fmt.Sprintf("./assets%d", i),
-			SourceAbs:    fmt.Sprintf("/tmp/assets%d", i),
+			SourceAbs:    sourceAbs,
 			TargetVolume: fmt.Sprintf("assets-vol%d", i),
 			TargetPath:   fmt.Sprintf("/var/www/assets%d", i),
 			Exclude:      []string{".git", "*.tmp"},
 		}
 	}
 
-	// Add 5 volumes
-	for i := 0; i < 5; i++ {
-		volumes[fmt.Sprintf("shared-vol%d", i)] = manifest.TopLevelResourceSpec{}
-	}
-
-	// Add 5 networks
-	for i := 0; i < 5; i++ {
-		networks[fmt.Sprintf("app-network%d", i)] = manifest.NetworkSpec{}
-	}
-
 	cfg := manifest.Config{
-		Docker: manifest.DockerConfig{
-			Context:    "default",
-			Identifier: "benchmark-large",
+		Identifier: "benchmark-large",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
 		},
-		Stacks:   applications,
-		Volumes:  volumes,
-		Networks: networks,
-		Filesets: filesets,
+		Stacks:             applications,
+		DiscoveredFilesets: filesets,
 	}
 
 	ctx := context.Background()

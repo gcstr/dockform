@@ -25,9 +25,9 @@ func TestComputeSpecHashDeterministic(t *testing.T) {
 
 func TestManifestHasVolume(t *testing.T) {
 	cfg := &manifest.Config{
-		Volumes: map[string]manifest.TopLevelResourceSpec{"data": {}},
-		Filesets: map[string]manifest.FilesetSpec{
-			"web": {TargetVolume: "cache"},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
+			"data": {TargetVolume: "data"},
+			"web":  {TargetVolume: "cache"},
 		},
 	}
 	tests := []struct {

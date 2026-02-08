@@ -32,15 +32,17 @@ func New() *cobra.Command {
 			var builtPlan *planner.Plan
 			verbose, _ := cmd.Flags().GetBool("verbose")
 			planOut, usedTUI, err := common.RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
-				prev := ctx.Ctx
-				ctx.Ctx = runCtx
-				defer func() { ctx.Ctx = prev }()
-				plan, err := ctx.BuildPlan()
-				if err != nil {
-					return "", err
-				}
-				builtPlan = plan
-				return plan.String(), nil
+				var s string
+				err := ctx.WithRunContext(runCtx, func() error {
+					plan, err := ctx.BuildPlan()
+					if err != nil {
+						return err
+					}
+					builtPlan = plan
+					s = plan.String()
+					return nil
+				})
+				return s, err
 			})
 			if err != nil {
 				return err
@@ -72,16 +74,21 @@ func New() *cobra.Command {
 			}
 
 			// Apply + Prune with rolling logs (or direct when verbose)
+			strictPrune, _ := cmd.Flags().GetBool("strict-prune")
+			verbosePruneErrors, _ := cmd.Flags().GetBool("verbose-prune-errors")
 			_, _, err = common.RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
-				prev := ctx.Ctx
-				ctx.Ctx = runCtx
-				defer func() { ctx.Ctx = prev }()
-				// Pass the pre-built plan to avoid redundant state detection
-				if err := ctx.ApplyPlanWithContext(builtPlan); err != nil {
-					return "", err
-				}
-				// Also pass the plan to prune to reuse execution context
-				if err := ctx.PrunePlanWithContext(builtPlan); err != nil {
+				err := ctx.WithRunContext(runCtx, func() error {
+					// Pass the pre-built plan to avoid redundant state detection
+					if err := ctx.ApplyPlanWithContext(builtPlan); err != nil {
+						return err
+					}
+					// Also pass the plan to prune to reuse execution context
+					return ctx.PrunePlanWithOptions(builtPlan, planner.CleanupOptions{
+						Strict:        strictPrune,
+						VerboseErrors: verbosePruneErrors,
+					})
+				})
+				if err != nil {
 					return "", err
 				}
 				return "│ Done.", nil
@@ -95,5 +102,8 @@ func New() *cobra.Command {
 	}
 	cmd.Flags().Bool("skip-confirmation", false, "Skip confirmation prompt and apply immediately")
 	cmd.Flags().Bool("sequential", false, "Use sequential processing instead of the default parallel processing (slower but uses less CPU and Docker daemon resources)")
+	cmd.Flags().Bool("strict-prune", false, "Fail apply when prune operations encounter errors")
+	cmd.Flags().Bool("verbose-prune-errors", false, "Print detailed prune error details when not using --strict-prune")
+	common.AddTargetFlags(cmd)
 	return cmd
 }

@@ -34,3 +34,10 @@ func DirPath(p string) string {
 	}
 	return dir
 }
+
+// ShellEscape escapes a string for safe use in a shell script within single quotes.
+// It replaces any single quotes with '\'' (end quote, escaped quote, start quote).
+// Usage: sh -c "echo '" + ShellEscape(userInput) + "'"
+func ShellEscape(s string) string {
+	return strings.ReplaceAll(s, "'", "'\\''")
+}

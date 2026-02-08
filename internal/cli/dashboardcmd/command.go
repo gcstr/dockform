@@ -24,7 +24,10 @@ func New() *cobra.Command {
 				return err
 			}
 
-			loader, err := data.NewLoader(cliCtx.Config, cliCtx.Docker)
+			// Get the default Docker client for the dashboard
+			docker := cliCtx.GetDefaultClient()
+
+			loader, err := data.NewLoader(cliCtx.Config, docker)
 			if err != nil {
 				return err
 			}
@@ -33,15 +36,12 @@ func New() *cobra.Command {
 				return err
 			}
 
-			identifier := ""
-			if cliCtx.Config != nil {
-				identifier = cliCtx.Config.Docker.Identifier
-			}
+			identifier := common.GetFirstIdentifier(cliCtx.Config)
 			manifestPath := resolveManifestPath(cmd, cliCtx.Config)
 			contextName := dockerContextName(cliCtx.Config)
 
-			m := newModel(cliCtx.Ctx, cliCtx.Docker, stacks, buildinfo.Version(), identifier, manifestPath, contextName, "", "")
-			m.statusProvider = data.NewStatusProvider(cliCtx.Docker, identifier)
+			m := newModel(cliCtx.Ctx, docker, stacks, buildinfo.Version(), identifier, manifestPath, contextName, "", "")
+			m.statusProvider = data.NewStatusProvider(docker, identifier)
 
 			p := tea.NewProgram(m, tea.WithAltScreen())
 			_, err = p.Run()
@@ -59,11 +59,13 @@ func dockerContextName(cfg *manifest.Config) string {
 	if cfg == nil {
 		return ""
 	}
-	return strings.TrimSpace(cfg.Docker.Context)
+	// Get context from first context in multi-context schema
+	name, _ := common.GetFirstDaemon(cfg)
+	return strings.TrimSpace(name)
 }
 
 func resolveManifestPath(cmd *cobra.Command, cfg *manifest.Config) string {
-	flagVal, _ := cmd.Flags().GetString("config")
+	flagVal, _ := cmd.Flags().GetString("manifest")
 	flagVal = strings.TrimSpace(flagVal)
 	baseDir := ""
 	if cfg != nil {

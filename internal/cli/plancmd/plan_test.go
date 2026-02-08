@@ -17,7 +17,7 @@ func TestPlan_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"plan", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"plan", "--manifest", clitest.BasicConfigPath(t)})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("plan execute: %v", err)
@@ -40,7 +40,7 @@ case "$cmd" in
     if [ "$sub" = "ls" ]; then exit 0; fi ;;
   network)
     sub="$1"; shift
-    if [ "$sub" = "ls" ]; then echo "demo-network"; exit 0; fi ;;
+    if [ "$sub" = "ls" ]; then exit 0; fi ;;
   compose)
     for a in "$@"; do [ "$a" = "--services" ] && { echo "nginx"; exit 0; }; done
     if [ "$1" = "config" ] && [ "$2" = "--hash" ]; then svc="$3"; echo "$svc deadbeef"; exit 0; fi
@@ -60,7 +60,7 @@ case "$cmd" in
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"plan", "-c", clitest.BasicConfigPath(t)})
+	root.SetArgs([]string{"plan", "--manifest", clitest.BasicConfigPath(t)})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("plan execute: %v", err)
@@ -77,7 +77,7 @@ func TestPlan_InvalidConfigPath_ReturnsError(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"plan", "-c", "does-not-exist.yml"})
+	root.SetArgs([]string{"plan", "--manifest", "does-not-exist.yml"})
 	if err := root.Execute(); err == nil {
 		t.Fatalf("expected error for invalid config path, got nil")
 	}

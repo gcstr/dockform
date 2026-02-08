@@ -13,94 +13,52 @@ import (
 )
 
 // Validate performs comprehensive validation of the user config and environment.
-// - Verifies docker daemon liveness for the configured context
-// - Ensures stack roots and referenced files exist (compose files, env files, sops secrets)
-// - Verifies SOPS key file exists when SOPS is configured
-func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) error {
-	// 1) Docker daemon liveness
-	if err := d.CheckDaemon(ctx); err != nil {
-		// Check if this is a context cancellation - if so, return it directly
-		if ctx.Err() != nil {
-			return ctx.Err()
+// For multi-context configs, it validates each context's context and all stacks.
+func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.DefaultClientFactory) error {
+	// 1) Validate each context's Docker context is reachable
+	for contextName := range cfg.Contexts {
+		client := factory.GetClient(contextName, cfg.Identifier)
+		if err := client.CheckDaemon(ctx); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return apperr.Wrap("validator.Validate", apperr.Unavailable, err, "context %s", contextName)
 		}
-		return err
 	}
 
-	// 1.1) docker.identifier validation: only letters, numbers, hyphen
-	if cfg.Docker.Identifier != "" {
+	// Validate identifier format (project-wide)
+	if cfg.Identifier != "" {
 		validIdent := regexp.MustCompile(`^[A-Za-z0-9-]+$`)
-		if !validIdent.MatchString(cfg.Docker.Identifier) {
-			return apperr.New("validator.Validate", apperr.InvalidInput, "docker.identifier: must match [A-Za-z0-9-]+")
+		if !validIdent.MatchString(cfg.Identifier) {
+			return apperr.New("validator.Validate", apperr.InvalidInput, "identifier: must match [A-Za-z0-9-]+")
 		}
 	}
 
-	// 2) Root-level environment files
-	if cfg.Environment != nil {
-		for _, f := range cfg.Environment.Files {
-			if f == "" {
-				continue
-			}
-			p := f
-			if !filepath.IsAbs(p) {
-				p = filepath.Join(cfg.BaseDir, p)
-			}
-			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "environment file %s not found", f)
-			}
-		}
-	}
-
-	// 3) Root-level SOPS secrets
-	if cfg.Secrets != nil && len(cfg.Secrets.Sops) > 0 {
-		for _, sp := range cfg.Secrets.Sops {
-			if sp == "" {
-				continue
-			}
-			p := sp
-			if !filepath.IsAbs(p) {
-				p = filepath.Join(cfg.BaseDir, p)
-			}
-			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "SOPS secret file %s not found", sp)
-			}
-		}
-	}
-
-	// 4) SOPS key file validation
-	// Check if any SOPS secrets are configured (root level or stack level)
+	// 2) Check if any SOPS secrets are configured (in any stack)
 	hasSopsSecrets := false
-	if cfg.Secrets != nil && len(cfg.Secrets.Sops) > 0 {
-		for _, s := range cfg.Secrets.Sops {
-			if s != "" {
-				hasSopsSecrets = true
-				break
-			}
-		}
-	}
-	if !hasSopsSecrets {
-		for _, stack := range cfg.Stacks {
-			if len(stack.SopsSecrets) > 0 {
-				for _, s := range stack.SopsSecrets {
-					if s != "" {
-						hasSopsSecrets = true
-						break
-					}
+	allStacks := cfg.GetAllStacks()
+	for _, stack := range allStacks {
+		if len(stack.SopsSecrets) > 0 {
+			for _, s := range stack.SopsSecrets {
+				if s != "" {
+					hasSopsSecrets = true
+					break
 				}
 			}
-			if hasSopsSecrets {
-				break
-			}
+		}
+		if hasSopsSecrets {
+			break
 		}
 	}
 
-	// If SOPS secrets are configured, validate key file configuration
+	// 3) SOPS key file validation
 	if hasSopsSecrets && cfg.Sops != nil && cfg.Sops.Age != nil {
 		// Check if key_file is empty - this indicates a missing environment variable
 		if cfg.Sops.Age.KeyFile == "" {
 			return apperr.New("validator.Validate", apperr.InvalidInput,
 				"SOPS age key_file is empty but SOPS secrets are configured; "+
-				"if using environment variable interpolation (e.g., ${AGE_KEY_FILE}), "+
-				"ensure the variable is set in your environment")
+					"if using environment variable interpolation (e.g., ${AGE_KEY_FILE}), "+
+					"ensure the variable is set in your environment")
 		}
 
 		// Validate that the key file exists
@@ -115,75 +73,154 @@ func Validate(ctx context.Context, cfg manifest.Config, d *dockercli.Client) err
 		}
 	}
 
-	// 5) Stacks: roots and referenced files
-	for stackName, stack := range cfg.Stacks {
-		// Root must exist
-		if st, err := os.Stat(stack.Root); err != nil || !st.IsDir() {
-			if err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s root", stackName)
-			}
-			return apperr.New("validator.Validate", apperr.InvalidInput, "stack %s root is not a directory: %s", stackName, stack.Root)
+	// 4) Validate all stacks (discovered + explicit)
+	for stackKey, stack := range allStacks {
+		contextName, stackName, err := manifest.ParseStackKey(stackKey)
+		if err != nil {
+			return apperr.Wrap("validator.Validate", apperr.InvalidInput, err, "invalid stack key %s", stackKey)
 		}
+
+		// Get context config and client
+		_, ok := cfg.Contexts[contextName]
+		if !ok {
+			return apperr.New("validator.Validate", apperr.InvalidInput, "stack %s references unknown context %s", stackKey, contextName)
+		}
+		client := factory.GetClient(contextName, cfg.Identifier)
+
+		// Root must exist
+		if stack.Root != "" {
+			if st, err := os.Stat(stack.Root); err != nil || !st.IsDir() {
+				if err != nil {
+					return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s root", stackKey)
+				}
+				return apperr.New("validator.Validate", apperr.InvalidInput, "stack %s root is not a directory: %s", stackKey, stack.Root)
+			}
+		}
+
 		// Compose files
 		for _, f := range stack.Files {
 			p := f
-			if !filepath.IsAbs(p) {
+			if !filepath.IsAbs(p) && stack.Root != "" {
 				p = filepath.Join(stack.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s compose file %s", stackName, f)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s compose file %s", stackKey, f)
 			}
 		}
 
 		// Validate compose file syntax by attempting to parse it with Docker
-		if _, err := d.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, []string{}, []string{}); err != nil {
-			// Check if this is a context cancellation error - if so, return it directly
-			if ctx.Err() != nil {
-				return ctx.Err()
+		// Note: We pass env files but skip inline env (which includes SOPS secrets) to avoid
+		// slow decryption and key availability issues. This means stacks relying on SOPS
+		// secrets for variable interpolation may fail validation but work at apply.
+		// See TECHNICAL_DEBT.md for details.
+		if len(stack.Files) > 0 && stack.Root != "" {
+			if _, err := client.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, []string{}); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				if len(stack.Files) == 1 {
+					return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file %s for stack %s", stack.Files[0], stackName)
+				} else if len(stack.Files) > 1 {
+					return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose files %v for stack %s", stack.Files, stackName)
+				}
+				return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file for stack %s", stackName)
 			}
-			if len(stack.Files) == 1 {
-				return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file %s for stack %s", stack.Files[0], stackName)
-			} else if len(stack.Files) > 1 {
-				return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose files %v for stack %s", stack.Files, stackName)
-			}
-			return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file for stack %s", stackName)
 		}
+
 		// Env files (already rebased to stack root semantics in config normalization)
 		for _, e := range stack.EnvFile {
 			p := e
-			if !filepath.IsAbs(p) {
+			if !filepath.IsAbs(p) && stack.Root != "" {
 				p = filepath.Join(stack.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s env file %s", stackName, e)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s env file %s", stackKey, e)
 			}
 		}
+
 		// SOPS secrets (merged and rebased in config normalization)
 		for _, sp := range stack.SopsSecrets {
 			p := sp
 			if p == "" {
 				continue
 			}
-			if !filepath.IsAbs(p) {
+			if !filepath.IsAbs(p) && stack.Root != "" {
 				p = filepath.Join(stack.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s sops secret %s", stackName, sp)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s sops secret %s", stackKey, sp)
 			}
 		}
 	}
 
-	// 6) Filesets: ensure sources exist and are directories
-	for name, a := range cfg.Filesets {
-		if a.SourceAbs == "" {
-			return apperr.Wrap("validator.Validate", apperr.InvalidInput, manifest.ErrMissingRequired, "fileset %s: source path is required", name)
+	// 5) Validate discovered filesets
+	for name, fs := range cfg.GetAllFilesets() {
+		if fs.SourceAbs == "" {
+			return apperr.New("validator.Validate", apperr.InvalidInput, "fileset %s: source path is required", name)
 		}
-		st, err := os.Stat(a.SourceAbs)
+		st, err := os.Stat(fs.SourceAbs)
 		if err != nil {
 			return apperr.Wrap("validator.Validate", apperr.NotFound, err, "fileset %s source", name)
 		}
 		if !st.IsDir() {
-			return apperr.New("validator.Validate", apperr.InvalidInput, "fileset %s source is not a directory: %s", name, a.SourceAbs)
+			return apperr.New("validator.Validate", apperr.InvalidInput, "fileset %s source is not a directory: %s", name, fs.SourceAbs)
+		}
+	}
+
+	return nil
+}
+
+// ValidateContext validates a single context's configuration.
+// This is useful for targeted validation when using --context flag.
+func ValidateContext(ctx context.Context, cfg manifest.Config, contextName string, client *dockercli.Client) error {
+	_, ok := cfg.Contexts[contextName]
+	if !ok {
+		return apperr.New("validator.ValidateContext", apperr.InvalidInput, "unknown context: %s", contextName)
+	}
+
+	// Check context is reachable
+	if err := client.CheckDaemon(ctx); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return apperr.Wrap("validator.ValidateContext", apperr.Unavailable, err, "context %s", contextName)
+	}
+
+	// Identifier validation is done at project level, not per-context
+
+	// Validate stacks for this context
+	for stackName, stack := range cfg.GetStacksForContext(contextName) {
+		stackKey := manifest.MakeStackKey(contextName, stackName)
+
+		// Root must exist
+		if stack.Root != "" {
+			if st, err := os.Stat(stack.Root); err != nil || !st.IsDir() {
+				if err != nil {
+					return apperr.Wrap("validator.ValidateDaemon", apperr.NotFound, err, "stack %s root", stackKey)
+				}
+				return apperr.New("validator.ValidateDaemon", apperr.InvalidInput, "stack %s root is not a directory: %s", stackKey, stack.Root)
+			}
+		}
+
+		// Compose files
+		for _, f := range stack.Files {
+			p := f
+			if !filepath.IsAbs(p) && stack.Root != "" {
+				p = filepath.Join(stack.Root, p)
+			}
+			if _, err := os.Stat(p); err != nil {
+				return apperr.Wrap("validator.ValidateDaemon", apperr.NotFound, err, "stack %s compose file %s", stackKey, f)
+			}
+		}
+
+		// Validate compose file syntax
+		if len(stack.Files) > 0 && stack.Root != "" {
+			if _, err := client.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, []string{}, []string{}); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				return apperr.Wrap("validator.ValidateDaemon", apperr.External, err, "invalid compose file for stack %s", stackKey)
+			}
 		}
 	}
 
