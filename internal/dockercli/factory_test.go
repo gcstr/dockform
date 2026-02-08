@@ -8,9 +8,6 @@ import (
 
 func TestNewClientFactory(t *testing.T) {
 	factory := NewClientFactory()
-	if factory == nil {
-		t.Fatal("expected non-nil factory")
-	}
 	if factory.clients == nil {
 		t.Fatal("expected initialized clients map")
 	}
