@@ -184,6 +184,50 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 		}
 	}
 
+	// Merge explicit filesets from stacks into DiscoveredFilesets
+	for stackKey, stack := range c.GetAllStacks() {
+		if len(stack.Filesets) == 0 {
+			continue
+		}
+		ctx, _, err := ParseStackKey(stackKey)
+		if err != nil {
+			continue
+		}
+		for fsName, fs := range stack.Filesets {
+			fsKey := stackKey + "/" + fsName
+			if existing, ok := c.DiscoveredFilesets[fsKey]; ok {
+				// Merge: explicit overrides discovered for non-zero values
+				if fs.Source != "" {
+					existing.Source = fs.Source
+				}
+				if fs.TargetVolume != "" {
+					existing.TargetVolume = fs.TargetVolume
+				}
+				if fs.TargetPath != "" {
+					existing.TargetPath = fs.TargetPath
+				}
+				if fs.ApplyMode != "" {
+					existing.ApplyMode = fs.ApplyMode
+				}
+				if len(fs.Exclude) > 0 {
+					existing.Exclude = fs.Exclude
+				}
+				if fs.Ownership != nil {
+					existing.Ownership = fs.Ownership
+				}
+				if fs.RestartServices.Attached || len(fs.RestartServices.Services) > 0 {
+					existing.RestartServices = fs.RestartServices
+				}
+				c.DiscoveredFilesets[fsKey] = existing
+			} else {
+				// No discovered fileset: insert as-is with context/stack set
+				fs.Context = ctx
+				fs.Stack = stackKey
+				c.DiscoveredFilesets[fsKey] = fs
+			}
+		}
+	}
+
 	// Validate SOPS config (global)
 	if c.Sops != nil {
 		// Migration error: top-level recipients deprecated

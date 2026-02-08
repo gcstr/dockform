@@ -98,10 +98,11 @@ type Stack struct {
 	EnvFile []string `yaml:"env-file"` // Env files
 
 	// Override fields (typically set in stacks: block to augment discovered stacks)
-	Profiles    []string     `yaml:"profiles"`    // Compose profiles to activate
-	Environment *Environment `yaml:"environment"` // Additional environment config
-	Secrets     *Secrets     `yaml:"secrets"`     // Additional SOPS secrets
-	Project     *Project     `yaml:"project"`     // Compose project name override
+	Profiles    []string                `yaml:"profiles"`    // Compose profiles to activate
+	Environment *Environment            `yaml:"environment"` // Additional environment config
+	Secrets     *Secrets                `yaml:"secrets"`     // Additional SOPS secrets
+	Project     *Project                `yaml:"project"`     // Compose project name override
+	Filesets    map[string]FilesetSpec  `yaml:"filesets"`    // Fileset overrides/declarations
 
 	// Computed fields
 	Context     string   `yaml:"-"` // Which context this belongs to (from key prefix)
