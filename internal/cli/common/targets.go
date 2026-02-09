@@ -65,6 +65,7 @@ func ResolveTargets(cfg *manifest.Config, opts TargetOptions) (*manifest.Config,
 	contextOnly := len(opts.Stacks) == 0
 
 	filtered := *cfg
+	filtered.Targeted = true
 	filtered.Contexts = make(map[string]manifest.ContextConfig)
 	filtered.Stacks = make(map[string]manifest.Stack)
 	filtered.DiscoveredStacks = make(map[string]manifest.Stack)

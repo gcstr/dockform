@@ -26,7 +26,8 @@ type Config struct {
 	Stacks map[string]Stack `yaml:"stacks" validate:"dive"`
 
 	// Computed
-	BaseDir string `yaml:"-"`
+	BaseDir  string `yaml:"-"`
+	Targeted bool   `yaml:"-"` // True when config was filtered by --stack/--context/--deployment
 
 	// Discovered resources (populated by convention discovery)
 	DiscoveredStacks   map[string]Stack       `yaml:"-"` // context/stack -> Stack

@@ -21,6 +21,11 @@ func (p *Planner) PruneWithPlan(ctx context.Context, cfg manifest.Config, plan *
 
 // PruneWithPlanOptions removes unmanaged resources using explicit cleanup behavior options.
 func (p *Planner) PruneWithPlanOptions(ctx context.Context, cfg manifest.Config, plan *Plan, opts CleanupOptions) error {
+	// Skip pruning when targeting specific stacks — we only have a partial view of desired state
+	if cfg.Targeted {
+		return nil
+	}
+
 	if p.docker == nil && p.factory == nil {
 		return apperr.New("planner.Prune", apperr.Precondition, "docker client not configured")
 	}

@@ -147,11 +147,13 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 				NewResource(ResourceVolume, name, ActionCreate, ""))
 		}
 	}
-	// Plan removals for labeled volumes no longer needed
-	for name := range existingVolumes {
-		if _, want := desiredVolumes[name]; !want {
-			resourcePlan.Volumes = append(resourcePlan.Volumes,
-				NewResource(ResourceVolume, name, ActionDelete, ""))
+	// Plan removals for labeled volumes no longer needed (skip when targeting specific stacks)
+	if !cfg.Targeted {
+		for name := range existingVolumes {
+			if _, want := desiredVolumes[name]; !want {
+				resourcePlan.Volumes = append(resourcePlan.Volumes,
+					NewResource(ResourceVolume, name, ActionDelete, ""))
+			}
 		}
 	}
 
@@ -175,11 +177,13 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 				NewResource(ResourceNetwork, name, ActionCreate, ""))
 		}
 	}
-	// Plan removals for labeled networks no longer needed
-	for name := range existingNetworks {
-		if _, want := desiredNetworks[name]; !want {
-			resourcePlan.Networks = append(resourcePlan.Networks,
-				NewResource(ResourceNetwork, name, ActionDelete, ""))
+	// Plan removals for labeled networks no longer needed (skip when targeting specific stacks)
+	if !cfg.Targeted {
+		for name := range existingNetworks {
+			if _, want := desiredNetworks[name]; !want {
+				resourcePlan.Networks = append(resourcePlan.Networks,
+					NewResource(ResourceNetwork, name, ActionDelete, ""))
+			}
 		}
 	}
 
@@ -189,7 +193,8 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 	}
 
 	// Track services that should be removed (orphan detection)
-	if client != nil {
+	// Skip when targeting specific stacks — we only have a partial view of desired state
+	if client != nil && !cfg.Targeted {
 		desiredServices, err := p.collectDesiredServicesForContext(ctx, cfg, contextStacks, client)
 		if err != nil {
 			return nil, err
