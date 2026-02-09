@@ -27,9 +27,10 @@ const LabelIdentifier = LabelPrefix + "identifier"
 
 // Client provides higher-level helpers around docker CLI.
 type Client struct {
-	exec        Exec
-	identifier  string
-	contextName string
+	exec         Exec
+	identifier   string
+	contextName  string
+	hostOverride string // Manifest-provided DOCKER_HOST override
 
 	composeCache *LRUCache[string, ComposeConfigDoc]
 }
@@ -38,6 +39,17 @@ func New(contextName string) *Client {
 	return &Client{
 		exec:         SystemExec{ContextName: contextName},
 		contextName:  contextName,
+		composeCache: NewLRUCache[string, ComposeConfigDoc](ComposeCacheMaxSize),
+	}
+}
+
+// NewWithHost creates a Client that uses a direct Docker host URI instead of a named Docker context.
+// When host is non-empty, DOCKER_HOST is set instead of DOCKER_CONTEXT for all CLI invocations.
+func NewWithHost(contextName, host string) *Client {
+	return &Client{
+		exec:         SystemExec{ContextName: contextName, HostOverride: host},
+		contextName:  contextName,
+		hostOverride: host,
 		composeCache: NewLRUCache[string, ComposeConfigDoc](ComposeCacheMaxSize),
 	}
 }

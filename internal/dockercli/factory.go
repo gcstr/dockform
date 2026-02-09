@@ -63,14 +63,40 @@ func (f *DefaultClientFactory) GetClient(contextName, identifier string) *Client
 }
 
 // GetClientForContext returns a Docker client configured for the specified context.
+// When the context has a host override in the manifest, the client uses DOCKER_HOST instead of DOCKER_CONTEXT.
 func (f *DefaultClientFactory) GetClientForContext(contextName string, cfg *manifest.Config) *Client {
-	_, ok := cfg.Contexts[contextName]
+	ctxCfg, ok := cfg.Contexts[contextName]
 	if !ok {
 		// Fallback: return a client with context name (shouldn't happen in normal use)
 		return f.GetClient(contextName, cfg.Identifier)
 	}
-	// In the new schema, context name IS the Docker context, and identifier is project-wide
+	if ctxCfg.Host != "" {
+		return f.getOrCreateClientWithHost(contextName, cfg.Identifier, ctxCfg.Host)
+	}
 	return f.GetClient(contextName, cfg.Identifier)
+}
+
+// getOrCreateClientWithHost returns a cached or newly created client that uses a direct Docker host URI.
+func (f *DefaultClientFactory) getOrCreateClientWithHost(contextName, identifier, host string) *Client {
+	key := cacheKey(contextName, identifier)
+
+	f.mu.RLock()
+	if client, ok := f.clients[key]; ok {
+		f.mu.RUnlock()
+		return client
+	}
+	f.mu.RUnlock()
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if client, ok := f.clients[key]; ok {
+		return client
+	}
+
+	client := NewWithHost(contextName, host).WithIdentifier(identifier)
+	f.clients[key] = client
+	return client
 }
 
 // GetAllClients returns all cached clients. Useful for cleanup or bulk operations.
