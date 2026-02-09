@@ -31,6 +31,10 @@ if "%1"=="envcmd" (
   echo PWD=%CD% FOO=%FOO%
   exit /b 0
 )
+if "%1"=="hostcmd" (
+  echo HOST=%DOCKER_HOST% CTX=%DOCKER_CONTEXT%
+  exit /b 0
+)
 if "%1"=="stdin" (
   more
   exit /b 0
@@ -54,6 +58,8 @@ case "$cmd" in
     pwd; exit 0 ;;
   envcmd)
     echo "PWD=$(pwd) FOO=$FOO"; exit 0 ;;
+  hostcmd)
+    echo "HOST=$DOCKER_HOST CTX=$DOCKER_CONTEXT"; exit 0 ;;
   stdin)
     cat -; exit 0 ;;
   fail)
@@ -94,6 +100,21 @@ func TestSystemExec_Run_SetsContextAndCapturesStdout(t *testing.T) {
 	}
 	if want := "CTX=myctx"; out[:len(want)] != want {
 		t.Fatalf("expected DOCKER_CONTEXT propagated, got %q", out)
+	}
+}
+
+func TestSystemExec_Run_HostOverrideSetsDockerHostAndSuppressesContext(t *testing.T) {
+	defer withDockerExecStub(t)()
+	s := SystemExec{ContextName: "myctx", HostOverride: "ssh://user@server"}
+	out, err := s.Run(context.Background(), "hostcmd")
+	if err != nil {
+		t.Fatalf("run hostcmd: %v", err)
+	}
+	if !stringContains(out, "HOST=ssh://user@server") {
+		t.Fatalf("expected DOCKER_HOST to be set, got %q", out)
+	}
+	if stringContains(out, "CTX=myctx") {
+		t.Fatalf("expected DOCKER_CONTEXT to NOT be set when HostOverride is used, got %q", out)
 	}
 }
 

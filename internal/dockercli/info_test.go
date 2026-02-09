@@ -102,6 +102,22 @@ func TestContextHost_DefaultContextAndQuoteTrimming(t *testing.T) {
 	}
 }
 
+func TestContextHost_ReturnsOverrideDirectly(t *testing.T) {
+	stub := &infoExecStub{}
+	c := &Client{exec: stub, hostOverride: "ssh://user@server"}
+
+	got, err := c.ContextHost(context.Background())
+	if err != nil {
+		t.Fatalf("context host: %v", err)
+	}
+	if got != "ssh://user@server" {
+		t.Fatalf("expected host override, got %q", got)
+	}
+	if len(stub.calls) != 0 {
+		t.Fatalf("expected no exec calls when host override is set, got %d", len(stub.calls))
+	}
+}
+
 func TestComposeVersion_PrefersShortAndFallsBack(t *testing.T) {
 	stub := &infoExecStub{composeShortOut: "v2.31.0\n"}
 	c := &Client{exec: stub}
