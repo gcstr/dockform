@@ -37,6 +37,7 @@ type Config struct {
 // ContextConfig defines a Docker context to manage.
 // The key in the Contexts map IS the docker context name.
 type ContextConfig struct {
+	Host     string                          `yaml:"host"`     // Optional Docker host override (e.g., ssh://user@host); when set, uses DOCKER_HOST instead of DOCKER_CONTEXT
 	Volumes  map[string]TopLevelResourceSpec `yaml:"volumes"`  // Explicit volumes to create
 	Networks map[string]NetworkSpec          `yaml:"networks"` // Explicit networks to create
 }

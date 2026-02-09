@@ -54,9 +54,12 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 	}
 
 	// Validate context configurations
-	for contextName := range c.Contexts {
+	for contextName, ctxCfg := range c.Contexts {
 		if !contextKeyRegex.MatchString(contextName) {
 			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid context key %q: must match ^[a-z0-9_-]+$", contextName)
+		}
+		if ctxCfg.Host != "" && strings.TrimSpace(ctxCfg.Host) == "" {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "context %q: host cannot be whitespace-only", contextName)
 		}
 	}
 
