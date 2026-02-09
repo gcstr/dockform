@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -194,24 +195,28 @@ func checkContextReachable(ctx context.Context, docker *dockercli.Client, ctxNam
 func checkCompose(ctx context.Context, docker *dockercli.Client) checkResult {
 	ver, err := docker.ComposeVersion(ctx)
 	if err != nil {
-		return checkResult{id: "compose", title: "Docker Compose (v2)", status: StatusFail, summary: "not found", note: "Remedy: Install docker compose plugin (v2+).", errMsg: err.Error()}
+		return checkResult{id: "compose", title: "Docker Compose (v2+)", status: StatusFail, summary: "not found", note: "Remedy: Install docker compose plugin (v2+).", errMsg: err.Error()}
 	}
-	// Heuristic: ensure it mentions v2
-	if !strings.Contains(ver, "v2") && !isSemver2(ver) {
-		return checkResult{id: "compose", title: "Docker Compose (v2)", status: StatusFail, summary: "not found", note: "Remedy: Install docker compose plugin (v2+)."}
+	if !isComposeV2OrLater(ver) {
+		summary := strings.TrimSpace(ver)
+		if summary == "" {
+			summary = "not found"
+		}
+		return checkResult{id: "compose", title: "Docker Compose (v2+)", status: StatusFail, summary: summary, note: "Remedy: Install docker compose plugin (v2+)."}
 	}
-	// Extract short if full text
 	short := strings.TrimSpace(ver)
 	return checkResult{id: "compose", title: "Docker Compose plugin", status: StatusPass, summary: short}
 }
 
-func isSemver2(s string) bool {
+// isComposeV2OrLater parses a version string (e.g. "2.29.0", "v5.0.2") and returns true if major >= 2.
+func isComposeV2OrLater(s string) bool {
 	s = strings.TrimPrefix(strings.TrimSpace(s), "v")
 	if s == "" {
 		return false
 	}
-	// crude check: starts with 2.
-	return strings.HasPrefix(s, "2.")
+	major, _, _ := strings.Cut(s, ".")
+	n, err := strconv.Atoi(major)
+	return err == nil && n >= 2
 }
 
 func checkSops() checkResult {
