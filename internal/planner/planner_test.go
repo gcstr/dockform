@@ -251,6 +251,50 @@ func TestApply_PropagatesVolumeListError(t *testing.T) {
 	}
 }
 
+func TestBuildPlan_Targeted_SkipsOrphanDetection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to shell script compatibility")
+	}
+	defer withPlannerDockerStub_Basic(t)()
+	cfg := manifest.Config{
+		Identifier: "demo",
+		Targeted:   true,
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks: map[string]manifest.Stack{
+			"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}},
+		},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
+			"data": {Source: "src", TargetVolume: "v1", TargetPath: "/app", Context: "default"},
+		},
+	}
+	d := dockercli.New("").WithIdentifier("demo")
+	pln, err := NewWithDocker(d).BuildPlan(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("build plan: %v", err)
+	}
+	out := pln.String()
+	// Targeted stack's resources should still be planned
+	mustContain(t, out, "↑ v1 will be created")
+	mustContain(t, out, "↑ nginx will be created")
+	// Non-targeted resources must NOT be marked for deletion
+	if strings.Contains(out, "will be deleted") {
+		t.Fatalf("targeted plan should not delete non-targeted resources; got:\n%s", out)
+	}
+}
+
+func TestPrune_Targeted_Skips(t *testing.T) {
+	cfg := manifest.Config{
+		Identifier: "demo",
+		Targeted:   true,
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+	}
+	// Prune should return nil immediately when targeted, without needing a docker client
+	err := New().PruneWithPlanOptions(context.Background(), cfg, nil, CleanupOptions{})
+	if err != nil {
+		t.Fatalf("expected prune to skip when targeted, got: %v", err)
+	}
+}
+
 func mustContain(t *testing.T, s, sub string) {
 	t.Helper()
 	norm := func(x string) string { return strings.Join(strings.Fields(x), " ") }
