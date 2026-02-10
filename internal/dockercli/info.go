@@ -15,8 +15,12 @@ func (c *Client) ServerVersion(ctx context.Context) (string, error) {
 }
 
 // ContextHost returns the Docker host endpoint for the configured context.
+// When a host override is set (from the manifest), it is returned directly.
 // Falls back to the default context when none is set.
 func (c *Client) ContextHost(ctx context.Context) (string, error) {
+	if c.hostOverride != "" {
+		return c.hostOverride, nil
+	}
 	name := c.contextName
 	if strings.TrimSpace(name) == "" {
 		name = "default"

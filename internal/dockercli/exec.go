@@ -30,6 +30,7 @@ type Exec interface {
 // SystemExec is a real implementation that shells out to the docker CLI.
 type SystemExec struct {
 	ContextName    string
+	HostOverride   string // When set, uses DOCKER_HOST instead of DOCKER_CONTEXT
 	DefaultTimeout time.Duration
 	Logger         LoggerHook
 }
@@ -89,7 +90,9 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	baseEnv := os.Environ()
-	if s.ContextName != "" {
+	if s.HostOverride != "" {
+		baseEnv = append(baseEnv, fmt.Sprintf("DOCKER_HOST=%s", s.HostOverride))
+	} else if s.ContextName != "" {
 		baseEnv = append(baseEnv, fmt.Sprintf("DOCKER_CONTEXT=%s", s.ContextName))
 	}
 	if len(opts.Env) > 0 {

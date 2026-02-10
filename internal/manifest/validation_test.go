@@ -71,6 +71,36 @@ func TestNormalize_MissingIdentifier(t *testing.T) {
 	}
 }
 
+func TestNormalize_ContextWithValidHost(t *testing.T) {
+	base := t.TempDir()
+	cfg := Config{
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"remote": {Host: "ssh://user@server"},
+		},
+	}
+	if err := cfg.normalizeAndValidate(base); err != nil {
+		t.Fatalf("normalizeAndValidate: %v", err)
+	}
+	if cfg.Contexts["remote"].Host != "ssh://user@server" {
+		t.Fatalf("host not preserved: got %q", cfg.Contexts["remote"].Host)
+	}
+}
+
+func TestNormalize_ContextWithWhitespaceHost(t *testing.T) {
+	cfg := Config{
+		Identifier: "test",
+		Contexts: map[string]ContextConfig{
+			"remote": {Host: "  "},
+		},
+	}
+	if err := cfg.normalizeAndValidate("/base"); err == nil {
+		t.Fatalf("expected error for whitespace-only host")
+	} else if !apperr.IsKind(err, apperr.InvalidInput) {
+		t.Fatalf("expected InvalidInput, got %v", err)
+	}
+}
+
 func TestNormalize_InlineEnvLastWins(t *testing.T) {
 	base := t.TempDir()
 	cfg := Config{

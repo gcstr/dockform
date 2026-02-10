@@ -17,7 +17,7 @@ import (
 func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.DefaultClientFactory) error {
 	// 1) Validate each context's Docker context is reachable
 	for contextName := range cfg.Contexts {
-		client := factory.GetClient(contextName, cfg.Identifier)
+		client := factory.GetClientForContext(contextName, &cfg)
 		if err := client.CheckDaemon(ctx); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -85,7 +85,7 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 		if !ok {
 			return apperr.New("validator.Validate", apperr.InvalidInput, "stack %s references unknown context %s", stackKey, contextName)
 		}
-		client := factory.GetClient(contextName, cfg.Identifier)
+		client := factory.GetClientForContext(contextName, &cfg)
 
 		// Root must exist
 		if stack.Root != "" {

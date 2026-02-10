@@ -105,7 +105,12 @@ func newRenderCmd() *cobra.Command {
 			}
 
 			// Compose raw config
-			docker := dockercli.New(contextName).WithIdentifier(identifier)
+			var docker *dockercli.Client
+			if ctxCfg, ok := cfg.Contexts[contextName]; ok && ctxCfg.Host != "" {
+				docker = dockercli.NewWithHost(contextName, ctxCfg.Host).WithIdentifier(identifier)
+			} else {
+				docker = dockercli.New(contextName).WithIdentifier(identifier)
+			}
 			raw, err := docker.ComposeConfigRaw(cmd.Context(), stack.Root, stack.Files, stack.Profiles, stack.EnvFile, inline)
 			if err != nil {
 				return err

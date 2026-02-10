@@ -1,6 +1,7 @@
 package dockercli
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/manifest"
@@ -60,6 +61,36 @@ func TestDefaultClientFactory_GetClientForContext(t *testing.T) {
 	clientUnknown := factory.GetClientForContext("unknown", cfg)
 	if clientUnknown == nil {
 		t.Fatal("expected non-nil client for unknown context")
+	}
+}
+
+func TestDefaultClientFactory_GetClientForContext_WithHost(t *testing.T) {
+	factory := NewClientFactory()
+	cfg := &manifest.Config{
+		Identifier: "testapp",
+		Contexts: map[string]manifest.ContextConfig{
+			"remote": {Host: "ssh://user@server"},
+		},
+	}
+
+	client := factory.GetClientForContext("remote", cfg)
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+
+	// Client should return the host override directly from ContextHost
+	host, err := client.ContextHost(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if host != "ssh://user@server" {
+		t.Fatalf("expected ssh://user@server, got %q", host)
+	}
+
+	// Cached client should be the same instance
+	client2 := factory.GetClientForContext("remote", cfg)
+	if client != client2 {
+		t.Error("expected same client instance from cache")
 	}
 }
 
