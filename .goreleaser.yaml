@@ -28,20 +28,13 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
 
 archives:
   - id: archive
     formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        format: zip
     name_template: '{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}'
     files:
       - README.md
@@ -109,5 +102,5 @@ brews:
 release:
   draft: false
   prerelease: auto
-  # Avoid making prereleases the GitHub “Latest”
-  make_latest: false
+  # "Latest" for stable tags, skipped for pre-releases
+  make_latest: auto
