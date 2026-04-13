@@ -23,3 +23,13 @@ type CheckInput struct {
 // LocalDigestFunc returns the local digest for an image reference.
 // This is injected to avoid coupling to the docker CLI directly.
 type LocalDigestFunc func(ctx context.Context, imageRef string) (string, error)
+
+// FileChange represents a tag rewrite in a compose file.
+type FileChange struct {
+	StackKey string // Stack key (e.g., "hetzner/traefik")
+	Service  string // Service name
+	File     string // Path to compose file that was modified
+	Image    string // Image name (without tag)
+	OldTag   string // Previous tag
+	NewTag   string // New tag written
+}
