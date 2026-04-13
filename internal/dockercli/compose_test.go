@@ -238,6 +238,43 @@ func TestBuildLabeledProjectTemp_AddsIdentifierLabel(t *testing.T) {
 	}
 }
 
+func TestBuildLabeledProjectTemp_AddsIdentifierLabelToNetworks(t *testing.T) {
+	yam := `services:
+  whoami:
+    image: traefik/whoami
+    networks:
+      - whoami
+networks:
+  whoami:
+    name: whoami
+`
+	f := &fakeExec{outConfigYAML: yam}
+	c := &Client{exec: f}
+	path, err := c.buildLabeledProjectTemp(context.Background(), t.TempDir(), []string{"compose.yml"}, nil, nil, "proj", "demo", nil)
+	if err != nil {
+		t.Fatalf("build labeled: %v", err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read tmp: %v", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	nets, _ := doc["networks"].(map[string]any)
+	if len(nets) == 0 {
+		t.Fatal("expected networks section in labeled overlay")
+	}
+	for name, v := range nets {
+		net, _ := v.(map[string]any)
+		labels, _ := net["labels"].(map[string]any)
+		if labels == nil || labels["io.dockform.identifier"] != "demo" {
+			t.Fatalf("network %s missing identifier label: %#v", name, labels)
+		}
+	}
+}
+
 func TestComposeUp_UsesOverlayWhenIdentifier(t *testing.T) {
 	// Ensure that when identifier is set, the compose args include only one -f <tempfile>
 	yam := "services:\n  web:\n    image: nginx\n"
