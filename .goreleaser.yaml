@@ -102,5 +102,3 @@ brews:
 release:
   draft: false
   prerelease: auto
-  # "Latest" for stable tags, skipped for pre-releases
-  make_latest: auto

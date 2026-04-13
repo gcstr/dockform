@@ -246,6 +246,27 @@ func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string,
 		services[name] = service
 	}
 	doc["services"] = services
+
+	// Inject identifier label into compose-defined networks so they are
+	// discoverable by ListNetworks (which filters by this label) during destroy.
+	networks, _ := doc["networks"].(map[string]any)
+	if networks != nil {
+		for name, val := range networks {
+			network, _ := val.(map[string]any)
+			if network == nil {
+				network = map[string]any{}
+			}
+			labels, _ := network["labels"].(map[string]any)
+			if labels == nil {
+				labels = map[string]any{}
+			}
+			labels["io.dockform.identifier"] = identifier
+			network["labels"] = labels
+			networks[name] = network
+		}
+		doc["networks"] = networks
+	}
+
 	b, err := yaml.Marshal(doc)
 	if err != nil {
 		return "", apperr.Wrap("dockercli.buildLabeledProjectTemp", apperr.Internal, err, "marshal labeled yaml")
