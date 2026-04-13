@@ -155,6 +155,89 @@ func TestNormalize_SopsSecretsValidation(t *testing.T) {
 	}
 }
 
+func TestNormalize_SopsSecrets_RelativePathsResolved(t *testing.T) {
+	base := t.TempDir()
+
+	t.Run("relative path resolved against stack root", func(t *testing.T) {
+		stackRoot := filepath.Join(base, "app")
+		cfg := Config{
+			Identifier: "test",
+			Contexts:   map[string]ContextConfig{"default": {}},
+			Stacks: map[string]Stack{
+				"default/web": {
+					Root: stackRoot,
+					Secrets: &Secrets{
+						Sops: []string{"./secrets/secrets.env"},
+					},
+				},
+			},
+		}
+		if err := cfg.normalizeAndValidate(base); err != nil {
+			t.Fatalf("normalizeAndValidate: %v", err)
+		}
+		stack := cfg.Stacks["default/web"]
+		if len(stack.SopsSecrets) != 1 {
+			t.Fatalf("expected 1 SopsSecret, got %d: %v", len(stack.SopsSecrets), stack.SopsSecrets)
+		}
+		got := stack.SopsSecrets[0]
+		want := filepath.Join(stackRoot, "secrets/secrets.env")
+		if got != want {
+			t.Fatalf("SopsSecrets[0]: want %q, got %q", want, got)
+		}
+	})
+
+	t.Run("relative path resolved against baseDir when stack root is empty", func(t *testing.T) {
+		cfg := Config{
+			Identifier: "test",
+			Contexts:   map[string]ContextConfig{"default": {}},
+			Stacks: map[string]Stack{
+				"default/web": {
+					Secrets: &Secrets{
+						Sops: []string{"./secrets/secrets.env"},
+					},
+				},
+			},
+		}
+		if err := cfg.normalizeAndValidate(base); err != nil {
+			t.Fatalf("normalizeAndValidate: %v", err)
+		}
+		stack := cfg.Stacks["default/web"]
+		if len(stack.SopsSecrets) != 1 {
+			t.Fatalf("expected 1 SopsSecret, got %d: %v", len(stack.SopsSecrets), stack.SopsSecrets)
+		}
+		got := stack.SopsSecrets[0]
+		want := filepath.Join(base, "secrets/secrets.env")
+		if got != want {
+			t.Fatalf("SopsSecrets[0]: want %q, got %q", want, got)
+		}
+	})
+
+	t.Run("absolute path left unchanged", func(t *testing.T) {
+		abs := "/absolute/path/secrets.env"
+		cfg := Config{
+			Identifier: "test",
+			Contexts:   map[string]ContextConfig{"default": {}},
+			Stacks: map[string]Stack{
+				"default/web": {
+					Secrets: &Secrets{
+						Sops: []string{abs},
+					},
+				},
+			},
+		}
+		if err := cfg.normalizeAndValidate(base); err != nil {
+			t.Fatalf("normalizeAndValidate: %v", err)
+		}
+		stack := cfg.Stacks["default/web"]
+		if len(stack.SopsSecrets) != 1 {
+			t.Fatalf("expected 1 SopsSecret, got %d", len(stack.SopsSecrets))
+		}
+		if got := stack.SopsSecrets[0]; got != abs {
+			t.Fatalf("SopsSecrets[0]: want %q, got %q", abs, got)
+		}
+	})
+}
+
 func TestFindDefaultComposeFile(t *testing.T) {
 	// Test selection order: compose.yaml > compose.yml > docker-compose.yaml > docker-compose.yml
 	t.Run("prefer_compose_yaml_over_others", func(t *testing.T) {

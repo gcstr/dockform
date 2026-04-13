@@ -167,6 +167,18 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 			stack.SopsSecrets = append(stack.SopsSecrets, stack.Secrets.Sops...)
 		}
 
+		// Resolve relative SOPS secret paths to absolute paths.
+		// Prefer stack.Root as the base; fall back to the manifest's baseDir.
+		for i, sp := range stack.SopsSecrets {
+			if sp != "" && !filepath.IsAbs(sp) {
+				base := baseDir
+				if stack.Root != "" {
+					base = stack.Root
+				}
+				stack.SopsSecrets[i] = filepath.Clean(filepath.Join(base, sp))
+			}
+		}
+
 		// Validate SOPS secrets have .env extension
 		for _, sp := range stack.SopsSecrets {
 			if !strings.HasSuffix(strings.ToLower(sp), ".env") {
