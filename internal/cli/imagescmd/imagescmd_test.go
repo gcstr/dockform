@@ -43,7 +43,7 @@ func TestRenderTerminal_UpToDate(t *testing.T) {
 		{
 			Stack:       "default/web",
 			Service:     "nginx",
-			Image:       "nginx",
+			Image:       "nginx:1.25",
 			CurrentTag:  "1.25",
 			DigestStale: false,
 			NewerTags:   nil,
@@ -68,7 +68,7 @@ func TestRenderTerminal_NewerTagsAvailable(t *testing.T) {
 		{
 			Stack:       "default/web",
 			Service:     "nginx",
-			Image:       "nginx",
+			Image:       "nginx:1.25",
 			CurrentTag:  "1.25",
 			DigestStale: false,
 			NewerTags:   []string{"1.26", "1.27"},
@@ -136,7 +136,7 @@ func TestRenderTerminal_MultipleStacksGrouped(t *testing.T) {
 		{
 			Stack:      "default/frontend",
 			Service:    "nginx",
-			Image:      "nginx",
+			Image:      "nginx:1.25",
 			CurrentTag: "1.25",
 		},
 		{
@@ -162,8 +162,8 @@ func TestRenderTerminal_SameStackGroupedTogether(t *testing.T) {
 	pr := newTestPrinter(&buf)
 
 	results := []images.ImageStatus{
-		{Stack: "default/web", Service: "nginx", Image: "nginx", CurrentTag: "1.25"},
-		{Stack: "default/web", Service: "redis", Image: "redis", CurrentTag: "7"},
+		{Stack: "default/web", Service: "nginx", Image: "nginx:1.25", CurrentTag: "1.25"},
+		{Stack: "default/web", Service: "redis", Image: "redis:7", CurrentTag: "7"},
 	}
 	renderTerminal(pr, results)
 
@@ -186,7 +186,7 @@ func TestRenderJSON_BasicFields(t *testing.T) {
 		{
 			Stack:       "default/web",
 			Service:     "nginx",
-			Image:       "nginx",
+			Image:       "nginx:1.25",
 			CurrentTag:  "1.25",
 			DigestStale: true,
 			NewerTags:   []string{"1.26"},
@@ -213,8 +213,8 @@ func TestRenderJSON_BasicFields(t *testing.T) {
 	if r.Service != "nginx" {
 		t.Errorf("service: want %q, got %q", "nginx", r.Service)
 	}
-	if r.Image != "nginx" {
-		t.Errorf("image: want %q, got %q", "nginx", r.Image)
+	if r.Image != "nginx:1.25" {
+		t.Errorf("image: want %q, got %q", "nginx:1.25", r.Image)
 	}
 	if r.CurrentTag != "1.25" {
 		t.Errorf("current_tag: want %q, got %q", "1.25", r.CurrentTag)
@@ -236,7 +236,7 @@ func TestRenderJSON_EmptyNewerTagsOmitted(t *testing.T) {
 		{
 			Stack:      "default/web",
 			Service:    "nginx",
-			Image:      "nginx",
+			Image:      "nginx:1.25",
 			CurrentTag: "1.25",
 			NewerTags:  nil,
 		},
@@ -317,7 +317,7 @@ func TestRenderUpgradeTerminal_AlreadyLatest(t *testing.T) {
 		{
 			Stack:      "default/web",
 			Service:    "nginx",
-			Image:      "nginx",
+			Image:      "nginx:1.27",
 			CurrentTag: "1.27",
 			NewerTags:  nil,
 		},
@@ -363,7 +363,7 @@ func TestRenderUpgradeTerminal_ImageUpgraded(t *testing.T) {
 		{
 			Stack:      "default/web",
 			Service:    "nginx",
-			Image:      "nginx",
+			Image:      "nginx:1.25",
 			CurrentTag: "1.25",
 			NewerTags:  []string{"1.27"},
 		},
@@ -404,7 +404,7 @@ func TestRenderUpgradeTerminal_DryRun(t *testing.T) {
 		{
 			Stack:      "default/web",
 			Service:    "nginx",
-			Image:      "nginx",
+			Image:      "nginx:1.25",
 			CurrentTag: "1.25",
 			NewerTags:  []string{"1.27"},
 		},

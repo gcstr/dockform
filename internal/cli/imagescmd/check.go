@@ -252,17 +252,17 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus) {
 
 		for _, r := range g.results {
 			if r.Error != "" {
-				pr.Plain("  %-30s %s %s", r.Image+":"+r.CurrentTag, ui.YellowText("!"), r.Error)
+				pr.Plain("  %-40s %s %s", r.Image, ui.YellowText("⚠"), r.Error)
 				continue
 			}
 
 			if len(r.NewerTags) > 0 {
 				tags := strings.Join(r.NewerTags, ", ")
-				pr.Plain("  %-30s %s newer versions: %s", r.Image+":"+r.CurrentTag, ui.YellowText("!"), tags)
+				pr.Plain("  %-40s %s newer versions: %s", r.Image, ui.YellowText("⚠"), tags)
 			} else if r.DigestStale {
-				pr.Plain("  %-30s %s updated upstream", r.Image+":"+r.CurrentTag, ui.YellowText("!"))
+				pr.Plain("  %-40s %s updated upstream", r.Image, ui.YellowText("⚠"))
 			} else {
-				pr.Plain("  %-30s %s up to date", r.Image+":"+r.CurrentTag, ui.GreenText("ok"))
+				pr.Plain("  %-40s %s up to date", r.Image, ui.GreenText("✓"))
 			}
 		}
 	}
