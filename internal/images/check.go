@@ -4,7 +4,6 @@ import (
 	"context"
 	"regexp"
 	"sort"
-	"sync"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/gcstr/dockform/internal/registry"
@@ -15,45 +14,23 @@ import (
 //
 // Errors for individual images are captured in ImageStatus.Error so that a
 // single failing image does not abort the entire check.
-//
-// When sequential is false (the default), all images are checked concurrently.
-func Check(ctx context.Context, inputs []CheckInput, reg registry.Registry, localDigestFn LocalDigestFunc, sequential bool) ([]ImageStatus, error) {
-	// Flatten all (input, svcName) pairs first so we can preserve order.
-	type work struct {
-		input   CheckInput
-		svcName string
-	}
+func Check(ctx context.Context, inputs []CheckInput, reg registry.Registry, localDigestFn LocalDigestFunc) ([]ImageStatus, error) {
+	var results []ImageStatus
 
-	var jobs []work
 	for _, input := range inputs {
+		// Sort service names for deterministic output.
 		svcNames := make([]string, 0, len(input.Services))
 		for name := range input.Services {
 			svcNames = append(svcNames, name)
 		}
 		sort.Strings(svcNames)
+
 		for _, svcName := range svcNames {
-			jobs = append(jobs, work{input, svcName})
+			imageStr := input.Services[svcName]
+			status := checkImage(ctx, input.StackKey, svcName, imageStr, input.TagPattern, reg, localDigestFn)
+			results = append(results, status)
 		}
 	}
-
-	results := make([]ImageStatus, len(jobs))
-
-	if sequential {
-		for i, j := range jobs {
-			results[i] = checkImage(ctx, j.input.StackKey, j.svcName, j.input.Services[j.svcName], j.input.TagPattern, reg, localDigestFn)
-		}
-		return results, nil
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(len(jobs))
-	for i, j := range jobs {
-		go func(idx int, job work) {
-			defer wg.Done()
-			results[idx] = checkImage(ctx, job.input.StackKey, job.svcName, job.input.Services[job.svcName], job.input.TagPattern, reg, localDigestFn)
-		}(i, j)
-	}
-	wg.Wait()
 
 	return results, nil
 }
