@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/gcstr/dockform/internal/dockercli"
@@ -243,12 +244,12 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus) {
 		groups[idx].results = append(groups[idx].results, r)
 	}
 
+	boldStyle := lipgloss.NewStyle().Bold(true)
 	for i, g := range groups {
 		if i > 0 {
 			pr.Plain("")
 		}
-		pr.Plain("Stack: %s", g.key)
-		pr.Plain("")
+		pr.Plain("%s", boldStyle.Render(g.key))
 
 		for _, r := range g.results {
 			if r.Error != "" {
