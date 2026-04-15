@@ -75,11 +75,9 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 	localDigestFn := makeLocalDigestFunc(cfg, factory)
 
 	// Run the check.
-	sequential, _ := cmd.Flags().GetBool("sequential")
-
 	var results []images.ImageStatus
 	err = common.SpinnerOperation(pr, "Checking images...", func() error {
-		results, err = images.Check(cmd.Context(), inputs, reg, localDigestFn, sequential)
+		results, err = images.Check(cmd.Context(), inputs, reg, localDigestFn)
 		return err
 	})
 	if err != nil {
