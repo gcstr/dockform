@@ -160,12 +160,9 @@ func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes 
 
 		for _, r := range g.results {
 			imageRef := r.Image
-			if r.CurrentTag != "" && !strings.Contains(r.Image, ":") {
-				imageRef = r.Image + ":" + r.CurrentTag
-			}
 
 			if r.Error != "" {
-				pr.Plain("  %-40s %s %s", imageRef, ui.YellowText("!"), r.Error)
+				pr.Plain("  %-40s %s %s", imageRef, ui.YellowText("⚠"), r.Error)
 				continue
 			}
 
@@ -191,11 +188,11 @@ func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes 
 					if len(files) > 0 {
 						pr.Plain("  %s → %s   (dry run)", imageRef, newRef)
 					} else {
-						pr.Plain("  %-40s %s tag not found in compose file", imageRef+" → "+newRef, ui.YellowText("!"))
+						pr.Plain("  %-40s %s tag not found in compose file", imageRef+" → "+newRef, ui.YellowText("⚠"))
 					}
 				} else {
 					// Upgrade ran but image wasn't found in files.
-					pr.Plain("  %-40s %s tag not found in compose file", imageRef+" → "+newRef, ui.YellowText("!"))
+					pr.Plain("  %-40s %s tag not found in compose file", imageRef+" → "+newRef, ui.YellowText("⚠"))
 				}
 				continue
 			}
