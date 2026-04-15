@@ -308,6 +308,9 @@ func (c *Config) GetAllStacks() map[string]Stack {
 			if v.Project != nil {
 				merged.Project = v.Project
 			}
+			if v.Images != nil {
+				merged.Images = v.Images
+			}
 			result[k] = merged
 		} else {
 			// No discovered stack: use explicit stack as fallback
