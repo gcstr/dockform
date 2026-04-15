@@ -79,7 +79,7 @@ func TestCheck_DigestMatch(t *testing.T) {
 		},
 	}
 
-	results, err := Check(context.Background(), inputs, reg, localFn)
+	results, err := Check(context.Background(), inputs, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestCheck_DigestMismatch(t *testing.T) {
 		},
 	}
 
-	results, err := Check(context.Background(), inputs, reg, localFn)
+	results, err := Check(context.Background(), inputs, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestCheck_TagPatternNewerVersions(t *testing.T) {
 		},
 	}
 
-	results, err := Check(context.Background(), inputs, reg, localFn)
+	results, err := Check(context.Background(), inputs, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestCheck_TagPatternNoNewerVersions(t *testing.T) {
 		},
 	}
 
-	results, err := Check(context.Background(), inputs, reg, localFn)
+	results, err := Check(context.Background(), inputs, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestCheck_CurrentTagNotSemver(t *testing.T) {
 		},
 	}
 
-	results, err := Check(context.Background(), inputs, reg, localFn)
+	results, err := Check(context.Background(), inputs, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestCheck_TagPatternFilters(t *testing.T) {
 		},
 	}
 
-	results, err := Check(context.Background(), inputs, reg, localFn)
+	results, err := Check(context.Background(), inputs, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestCheck_ImageParseError(t *testing.T) {
 		},
 	}
 
-	results, err := Check(context.Background(), inputs, reg, localFn)
+	results, err := Check(context.Background(), inputs, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestCheck_RegistryError(t *testing.T) {
 		},
 	}
 
-	results, err := Check(context.Background(), inputs, reg, localFn)
+	results, err := Check(context.Background(), inputs, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestCheck_MultipleStacksMixedResults(t *testing.T) {
 		},
 	}
 
-	results, err := Check(context.Background(), inputs, reg, localFn)
+	results, err := Check(context.Background(), inputs, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -396,7 +396,7 @@ func TestCheck_LocalDigestError(t *testing.T) {
 		},
 	}
 
-	results, err := Check(context.Background(), inputs, reg, localFn)
+	results, err := Check(context.Background(), inputs, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestCheck_ListTagsError(t *testing.T) {
 		},
 	}
 
-	results, err := Check(context.Background(), inputs, reg, localFn)
+	results, err := Check(context.Background(), inputs, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestCheck_EmptyInputs(t *testing.T) {
 	reg := newMockRegistry()
 	localFn := mockLocalDigest(map[string]string{})
 
-	results, err := Check(context.Background(), nil, reg, localFn)
+	results, err := Check(context.Background(), nil, reg, localFn, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
