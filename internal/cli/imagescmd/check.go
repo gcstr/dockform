@@ -311,7 +311,21 @@ func statusText(r images.ImageStatus) string {
 		return ui.YellowText("newer: " + strings.Join(r.NewerTags, ", "))
 	}
 	if r.DigestStale {
+		local := shortDigest(r.LocalDigest)
+		remote := shortDigest(r.RemoteDigest)
+		if local != "" && remote != "" {
+			return ui.YellowText("updated upstream (" + local + " → " + remote + ")")
+		}
 		return ui.YellowText("updated upstream")
 	}
 	return ui.GreenText("up to date")
+}
+
+// shortDigest returns the first 12 hex characters after "sha256:" for display.
+func shortDigest(d string) string {
+	const prefix = "sha256:"
+	if after, ok := strings.CutPrefix(d, prefix); ok && len(after) >= 12 {
+		return after[:12]
+	}
+	return ""
 }

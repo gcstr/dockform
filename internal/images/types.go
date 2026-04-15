@@ -8,9 +8,11 @@ type ImageStatus struct {
 	Service     string   // Service name within the compose file
 	Image       string   // Full image reference as written in compose
 	CurrentTag  string   // Current tag
-	DigestStale bool     // True if remote digest differs from local
-	NewerTags   []string // Newer semver tags (empty if no tag_pattern or no newer tags)
-	Error       string   // Non-empty if check failed for this image
+	DigestStale  bool     // True if remote digest differs from local
+	LocalDigest  string   // Local repo digest (sha256:...), empty if not pulled
+	RemoteDigest string   // Remote manifest digest (sha256:...)
+	NewerTags    []string // Newer semver tags (empty if no tag_pattern or no newer tags)
+	Error        string   // Non-empty if check failed for this image
 }
 
 // CheckInput bundles everything needed to check images for a stack.
