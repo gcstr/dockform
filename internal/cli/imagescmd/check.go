@@ -71,13 +71,16 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// Build a local digest function using the factory.
-	localDigestFn := makeLocalDigestFunc(cfg, factory)
+	// Pre-fetch local digests sequentially before parallel registry checks.
+	// Running exec.Command concurrently (especially over SSH contexts) is unreliable.
+	localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory))
 
-	// Run the check.
+	// Run the check — registry HTTP calls run in parallel, local digests from cache.
 	var results []images.ImageStatus
 	err = common.SpinnerOperation(pr, "Checking images...", func() error {
-		results, err = images.Check(cmd.Context(), inputs, reg, localDigestFn)
+		results, err = images.Check(cmd.Context(), inputs, reg, func(ctx context.Context, imageRef string) (string, error) {
+			return localDigests[imageRef], nil
+		})
 		return err
 	})
 	if err != nil {
@@ -187,6 +190,24 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 
 		return "", nil
 	}
+}
+
+// prefetchLocalDigests calls localDigestFn sequentially for every image ref
+// across all inputs and returns a map of imageRef -> digest. This avoids
+// concurrent exec.Command calls to the Docker daemon which are unreliable
+// over SSH contexts.
+func prefetchLocalDigests(ctx context.Context, inputs []images.CheckInput, fn images.LocalDigestFunc) map[string]string {
+	out := make(map[string]string)
+	for _, input := range inputs {
+		for _, imageRef := range input.Services {
+			if _, seen := out[imageRef]; seen {
+				continue
+			}
+			digest, _ := fn(ctx, imageRef) // best-effort: empty string on failure
+			out[imageRef] = digest
+		}
+	}
+	return out
 }
 
 // jsonResult is the JSON output format for a single image check result.

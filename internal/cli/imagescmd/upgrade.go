@@ -1,6 +1,7 @@
 package imagescmd
 
 import (
+	"context"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -65,13 +66,15 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// Build a local digest function using the factory.
-	localDigestFn := makeLocalDigestFunc(cfg, factory)
+	// Pre-fetch local digests sequentially before parallel registry checks.
+	localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory))
 
 	// Run the check.
 	var results []images.ImageStatus
 	err = common.SpinnerOperation(pr, "Checking images...", func() error {
-		results, err = images.Check(cmd.Context(), inputs, reg, localDigestFn)
+		results, err = images.Check(cmd.Context(), inputs, reg, func(ctx context.Context, imageRef string) (string, error) {
+			return localDigests[imageRef], nil
+		})
 		return err
 	})
 	if err != nil {
