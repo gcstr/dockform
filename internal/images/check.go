@@ -67,8 +67,6 @@ func checkImage(
 		return status
 	}
 
-	status.LocalDigest = localDigest
-	status.RemoteDigest = remoteDigest
 	status.DigestStale = remoteDigest != localDigest
 
 	// Tag comparison (only when a pattern is configured).
