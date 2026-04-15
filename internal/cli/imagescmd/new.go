@@ -9,5 +9,6 @@ func New() *cobra.Command {
 		Short: "Manage and check container images",
 	}
 	cmd.AddCommand(newCheckCmd())
+	cmd.AddCommand(newUpgradeCmd())
 	return cmd
 }
