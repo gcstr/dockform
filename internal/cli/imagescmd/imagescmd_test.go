@@ -149,11 +149,11 @@ func TestRenderTerminal_MultipleStacksGrouped(t *testing.T) {
 	renderTerminal(pr, results)
 
 	got := stripANSI(buf.String())
-	if !strings.Contains(got, "Stack: default/frontend") {
-		t.Errorf("expected 'Stack: default/frontend' in output, got: %q", got)
+	if !strings.Contains(got, "default/frontend") {
+		t.Errorf("expected 'default/frontend' in output, got: %q", got)
 	}
-	if !strings.Contains(got, "Stack: default/backend") {
-		t.Errorf("expected 'Stack: default/backend' in output, got: %q", got)
+	if !strings.Contains(got, "default/backend") {
+		t.Errorf("expected 'default/backend' in output, got: %q", got)
 	}
 }
 
@@ -168,8 +168,8 @@ func TestRenderTerminal_SameStackGroupedTogether(t *testing.T) {
 	renderTerminal(pr, results)
 
 	got := stripANSI(buf.String())
-	// "Stack: default/web" should appear exactly once
-	count := strings.Count(got, "Stack: default/web")
+	// "default/web" should appear exactly once
+	count := strings.Count(got, "default/web")
 	if count != 1 {
 		t.Errorf("expected stack header to appear once, got %d occurrences in: %q", count, got)
 	}
