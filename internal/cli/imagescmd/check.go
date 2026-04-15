@@ -3,6 +3,7 @@ package imagescmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -25,6 +26,7 @@ func newCheckCmd() *cobra.Command {
 	}
 
 	cmd.Flags().Bool("json", false, "Output results as JSON")
+	cmd.Flags().Bool("all", false, "Show all images, including those that are up to date")
 	cmd.Flags().Bool("sequential", false, "Disable parallel checks (reserved for future use)")
 
 	common.AddTargetFlags(cmd)
@@ -88,7 +90,8 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 		return renderJSON(cmd, results)
 	}
 
-	renderTerminal(pr, results)
+	showAll, _ := cmd.Flags().GetBool("all")
+	renderTerminal(pr, results, showAll)
 	return nil
 }
 
@@ -219,52 +222,96 @@ func renderJSON(cmd *cobra.Command, results []images.ImageStatus) error {
 	return nil
 }
 
-func renderTerminal(pr ui.Printer, results []images.ImageStatus) {
+func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 	if len(results) == 0 {
 		pr.Plain("\nNo images found.")
 		return
 	}
 
-	// Group results by stack for display.
-	type stackGroup struct {
-		key     string
-		results []images.ImageStatus
-	}
-
-	seen := make(map[string]int)
-	var groups []stackGroup
-
+	// Split into attention-needed and ok.
+	var attention, ok []images.ImageStatus
 	for _, r := range results {
-		idx, ok := seen[r.Stack]
-		if !ok {
-			idx = len(groups)
-			seen[r.Stack] = idx
-			groups = append(groups, stackGroup{key: r.Stack})
+		if r.Error != "" || r.DigestStale || len(r.NewerTags) > 0 {
+			attention = append(attention, r)
+		} else {
+			ok = append(ok, r)
 		}
-		groups[idx].results = append(groups[idx].results, r)
 	}
 
-	boldStyle := lipgloss.NewStyle().Bold(true)
-	for i, g := range groups {
-		if i > 0 {
+	dimStyle := lipgloss.NewStyle().Faint(true)
+	headerStyle := lipgloss.NewStyle().Faint(true).Bold(true)
+
+	renderTable := func(rows []images.ImageStatus) {
+		// Compute column widths dynamically.
+		wStack, wImage, wTag := len("STACK"), len("IMAGE"), len("TAG")
+		for _, r := range rows {
+			stack, image, tag := r.Stack, imageNameWithoutTag(r.Image), r.CurrentTag
+			if len(stack) > wStack {
+				wStack = len(stack)
+			}
+			if len(image) > wImage {
+				wImage = len(image)
+			}
+			if len(tag) > wTag {
+				wTag = len(tag)
+			}
+		}
+		// Column header.
+		pr.Plain("  %s  %s  %s  %s",
+			headerStyle.Render(fmt.Sprintf("%-*s", wStack, "STACK")),
+			headerStyle.Render(fmt.Sprintf("%-*s", wImage, "IMAGE")),
+			headerStyle.Render(fmt.Sprintf("%-*s", wTag, "TAG")),
+			headerStyle.Render("STATUS"),
+		)
+		for _, r := range rows {
+			stack := fmt.Sprintf("%-*s", wStack, r.Stack)
+			image := fmt.Sprintf("%-*s", wImage, imageNameWithoutTag(r.Image))
+			tag := fmt.Sprintf("%-*s", wTag, r.CurrentTag)
+			status := statusText(r)
+			pr.Plain("  %s  %s  %s  %s", stack, image, tag, status)
+		}
+	}
+
+	if len(attention) > 0 {
+		pr.Plain("%s  %d image(s) need attention\n", ui.YellowText("⚠"), len(attention))
+		renderTable(attention)
+	}
+
+	if len(ok) > 0 {
+		if len(attention) > 0 {
 			pr.Plain("")
 		}
-		pr.Plain("%s", boldStyle.Render(g.key))
-
-		for _, r := range g.results {
-			if r.Error != "" {
-				pr.Plain("  %-40s %s %s", r.Image, ui.YellowText("⚠"), r.Error)
-				continue
-			}
-
-			if len(r.NewerTags) > 0 {
-				tags := strings.Join(r.NewerTags, ", ")
-				pr.Plain("  %-40s %s newer versions: %s", r.Image, ui.YellowText("⚠"), tags)
-			} else if r.DigestStale {
-				pr.Plain("  %-40s %s updated upstream", r.Image, ui.YellowText("⚠"))
-			} else {
-				pr.Plain("  %-40s %s up to date", r.Image, ui.GreenText("✓"))
-			}
+		if showAll {
+			pr.Plain("%s  %d image(s) up to date\n", ui.GreenText("✓"), len(ok))
+			renderTable(ok)
+		} else {
+			pr.Plain("%s  %d image(s) up to date  %s",
+				ui.GreenText("✓"), len(ok), dimStyle.Render("(--all to show)"))
 		}
 	}
+}
+
+// imageNameWithoutTag strips the tag from an image reference.
+func imageNameWithoutTag(image string) string {
+	// Find last slash to isolate the name:tag part.
+	lastSlash := strings.LastIndex(image, "/")
+	nameTag := image[lastSlash+1:]
+	if idx := strings.LastIndex(nameTag, ":"); idx >= 0 {
+		return image[:lastSlash+1+idx]
+	}
+	return image
+}
+
+// statusText returns the human-readable status for an image result.
+func statusText(r images.ImageStatus) string {
+	if r.Error != "" {
+		return ui.YellowText("! " + r.Error)
+	}
+	if len(r.NewerTags) > 0 {
+		return ui.YellowText("newer: " + strings.Join(r.NewerTags, ", "))
+	}
+	if r.DigestStale {
+		return ui.YellowText("updated upstream")
+	}
+	return ui.GreenText("up to date")
 }

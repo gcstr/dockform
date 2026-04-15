@@ -27,7 +27,7 @@ func stripANSI(s string) string {
 func TestRenderTerminal_EmptyResults(t *testing.T) {
 	var buf bytes.Buffer
 	pr := newTestPrinter(&buf)
-	renderTerminal(pr, nil)
+	renderTerminal(pr, nil, false)
 
 	got := buf.String()
 	if !strings.Contains(got, "No images found.") {
@@ -49,14 +49,14 @@ func TestRenderTerminal_UpToDate(t *testing.T) {
 			NewerTags:   nil,
 		},
 	}
-	renderTerminal(pr, results)
+	renderTerminal(pr, results, true)
 
 	got := stripANSI(buf.String())
 	if !strings.Contains(got, "up to date") {
 		t.Errorf("expected 'up to date', got: %q", got)
 	}
-	if !strings.Contains(got, "nginx:1.25") {
-		t.Errorf("expected 'nginx:1.25' in output, got: %q", got)
+	if !strings.Contains(got, "nginx") {
+		t.Errorf("expected 'nginx' in output, got: %q", got)
 	}
 }
 
@@ -74,11 +74,11 @@ func TestRenderTerminal_NewerTagsAvailable(t *testing.T) {
 			NewerTags:   []string{"1.26", "1.27"},
 		},
 	}
-	renderTerminal(pr, results)
+	renderTerminal(pr, results, false)
 
 	got := stripANSI(buf.String())
-	if !strings.Contains(got, "newer versions:") {
-		t.Errorf("expected 'newer versions:' in output, got: %q", got)
+	if !strings.Contains(got, "newer:") {
+		t.Errorf("expected 'newer:' in output, got: %q", got)
 	}
 	if !strings.Contains(got, "1.26") || !strings.Contains(got, "1.27") {
 		t.Errorf("expected newer tags in output, got: %q", got)
@@ -99,7 +99,7 @@ func TestRenderTerminal_DigestStaleOnly(t *testing.T) {
 			NewerTags:   nil,
 		},
 	}
-	renderTerminal(pr, results)
+	renderTerminal(pr, results, false)
 
 	got := stripANSI(buf.String())
 	if !strings.Contains(got, "updated upstream") {
@@ -120,7 +120,7 @@ func TestRenderTerminal_ImageWithError(t *testing.T) {
 			Error:      "registry timeout",
 		},
 	}
-	renderTerminal(pr, results)
+	renderTerminal(pr, results, false)
 
 	got := stripANSI(buf.String())
 	if !strings.Contains(got, "registry timeout") {
@@ -146,7 +146,7 @@ func TestRenderTerminal_MultipleStacksGrouped(t *testing.T) {
 			CurrentTag: "v2",
 		},
 	}
-	renderTerminal(pr, results)
+	renderTerminal(pr, results, true)
 
 	got := stripANSI(buf.String())
 	if !strings.Contains(got, "default/frontend") {
@@ -165,13 +165,15 @@ func TestRenderTerminal_SameStackGroupedTogether(t *testing.T) {
 		{Stack: "default/web", Service: "nginx", Image: "nginx:1.25", CurrentTag: "1.25"},
 		{Stack: "default/web", Service: "redis", Image: "redis:7", CurrentTag: "7"},
 	}
-	renderTerminal(pr, results)
+	renderTerminal(pr, results, true)
 
 	got := stripANSI(buf.String())
-	// "default/web" should appear exactly once
-	count := strings.Count(got, "default/web")
-	if count != 1 {
-		t.Errorf("expected stack header to appear once, got %d occurrences in: %q", count, got)
+	// Both services should appear in the flat table.
+	if !strings.Contains(got, "nginx") {
+		t.Errorf("expected 'nginx' row in output, got: %q", got)
+	}
+	if !strings.Contains(got, "redis") {
+		t.Errorf("expected 'redis' row in output, got: %q", got)
 	}
 }
 
