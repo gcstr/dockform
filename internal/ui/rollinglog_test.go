@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/creack/pty"
 
 	"github.com/gcstr/dockform/internal/logger"
@@ -172,21 +173,31 @@ func TestModelUpdateAndView(t *testing.T) {
 		t.Fatalf("expected width update, got %d", m.width)
 	}
 
-	// Running view is a minimal spacer — log lines stream via p.Println, not the view.
-	view := m.View()
-	if view != "\n" {
-		t.Fatalf("expected running view to be a single newline, got %q", view)
+	if updated, _ := m.Update(appendLog{line: "first"}); updated != nil {
+		m = updated.(model)
 	}
-
+	if updated, _ := m.Update(appendLog{line: "second"}); updated != nil {
+		m = updated.(model)
+	}
 	if updated, _ := m.Update(done{report: "done"}); updated != nil {
 		m = updated.(model)
 	}
 	if m.state != stateFinal || m.finalReport != "done" {
 		t.Fatalf("expected final state with report, got %+v", m)
 	}
-	view = m.View()
+	view := m.View()
 	if !bytes.Contains([]byte(view), []byte("done")) {
 		t.Fatalf("expected final report in view, got %q", view)
+	}
+
+	m = model{state: stateRunning, width: 6}
+	for i := 0; i < 7; i++ {
+		if updated, _ := m.Update(appendLog{line: "line"}); updated != nil {
+			m = updated.(model)
+		}
+	}
+	if len(m.logLines) != maxLogLines {
+		t.Fatalf("expected logs capped at %d, got %d", maxLogLines, len(m.logLines))
 	}
 }
 
@@ -226,10 +237,44 @@ func TestModelInitAndRunningView(t *testing.T) {
 	if cmd := (model{}).Init(); cmd != nil {
 		t.Fatalf("expected nil init cmd")
 	}
-	// Running view is a minimal spacer — content arrives via p.Println.
-	m := model{state: stateRunning, width: 20}
+	m := model{state: stateRunning, width: 80, logLines: []string{"line"}}
 	view := m.View()
-	if view != "\n" {
-		t.Fatalf("expected running view to be a single newline, got %q", view)
+	if !strings.Contains(view, "line") {
+		t.Fatalf("expected running view to include log line, got %q", view)
+	}
+}
+
+func TestViewTruncatesLongLines(t *testing.T) {
+	// A line much longer than the terminal width must be truncated so that
+	// the complete rendered line (border + content) fits within m.width-1.
+	longLine := strings.Repeat("x", 200)
+	m := model{state: stateRunning, width: 80, logLines: []string{longLine}}
+	view := m.View()
+	// View() includes a trailing spacer newline; split into lines.
+	lines := strings.Split(view, "\n")
+	if len(lines) < 1 {
+		t.Fatalf("expected at least one line in view")
+	}
+	firstLine := lines[0]
+	visualWidth := ansi.StringWidth(firstLine)
+	if visualWidth >= 80 {
+		t.Errorf("rendered line should be < 80 visual chars, got %d", visualWidth)
+	}
+	if visualWidth > 79 {
+		t.Errorf("rendered line should be at most 79 (width-1), got %d", visualWidth)
+	}
+}
+
+func TestViewTruncatesWithANSI(t *testing.T) {
+	// Verify that ANSI-styled lines are truncated correctly without breaking
+	// escape sequences.
+	styled := "\x1b[2mkey=\x1b[0m" + strings.Repeat("v", 200)
+	m := model{state: stateRunning, width: 40, logLines: []string{styled}}
+	view := m.View()
+	lines := strings.Split(view, "\n")
+	firstLine := lines[0]
+	visualWidth := ansi.StringWidth(firstLine)
+	if visualWidth >= 40 {
+		t.Errorf("rendered ANSI line should be < 40 visual chars, got %d", visualWidth)
 	}
 }
