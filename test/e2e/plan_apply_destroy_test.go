@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -207,7 +208,11 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 		t.Fatalf("plan failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", pCode, pOut, pErr)
 	}
 	plain := ui.StripANSI(pOut)
-	if !strings.Contains(plain, "Context: default") || !strings.Contains(plain, "Identifier: demo") {
+	// Header labels are padded for alignment (e.g. "Identifier:  demo",
+	// "Context:     default"), so match with whitespace tolerance.
+	reIdent := regexp.MustCompile(`Identifier:\s+demo`)
+	reCtx := regexp.MustCompile(`Context:\s+default`)
+	if !reIdent.MatchString(plain) || !reCtx.MatchString(plain) {
 		t.Fatalf("plan output missing context/identifier:\n%s", pOut)
 	}
 	aOut, aErr, aCode := runCmdWithStdinDetailed(t, root, env, bin, "yes\n", "apply", "--manifest", exampleCfg)
