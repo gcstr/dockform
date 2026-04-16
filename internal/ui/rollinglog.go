@@ -1,11 +1,11 @@
 package ui
 
 import (
-	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"strings"
-	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -26,24 +26,7 @@ func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string
 
 	// Signal to other UI helpers to suppress printing while rolling log is active
 	_ = os.Setenv("DOCKFORM_TUI_ACTIVE", "1")
-	// Best-effort: force color for libraries that consult these env vars
-	prevCliColorForce := os.Getenv("CLICOLOR_FORCE")
-	prevForceColor := os.Getenv("FORCE_COLOR")
-	_ = os.Setenv("CLICOLOR_FORCE", "1")
-	_ = os.Setenv("FORCE_COLOR", "1")
-	defer func() {
-		_ = os.Unsetenv("DOCKFORM_TUI_ACTIVE")
-		if prevCliColorForce == "" {
-			_ = os.Unsetenv("CLICOLOR_FORCE")
-		} else {
-			_ = os.Setenv("CLICOLOR_FORCE", prevCliColorForce)
-		}
-		if prevForceColor == "" {
-			_ = os.Unsetenv("FORCE_COLOR")
-		} else {
-			_ = os.Setenv("FORCE_COLOR", prevForceColor)
-		}
-	}()
+	defer func() { _ = os.Unsetenv("DOCKFORM_TUI_ACTIVE") }()
 
 	// Create a cancellable context so we can stop the work when Ctrl+C is pressed
 	ctx, cancel := context.WithCancel(ctx)
@@ -56,22 +39,12 @@ func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string
 	m := model{state: stateRunning, width: 80, cancelCh: cancelCh}
 	p := tea.NewProgram(m, tea.WithOutput(os.Stdout))
 
-	// Create UILogWriter that forwards each fully formatted line to the UI.
-	uis := &UILogWriter{send: func(s string) { p.Send(appendLog{line: s}) }}
+	// Wire up display logger: intercepts structured log events and formats lines for the UI.
+	displayLog := newDisplayLogger(func(line string) { p.Send(appendLog{line: line}) })
 
-	// Construct a logger sink that formats via the existing path and writes to UILogWriter.
-	uiLogger, uiCloser, err := logger.New(logger.Options{Out: uis, Level: "info", Format: "pretty"})
-	if err != nil {
-		return "", err
-	}
-	if uiCloser != nil {
-		defer func() { _ = uiCloser.Close() }()
-	}
-
-	// Fan out: base logger + UI sink
+	// Fan out: base logger (file/stderr) + display logger (rolling UI)
 	base := logger.FromContext(ctx)
-	fanout := logger.Fanout(base, uiLogger)
-	ctx = logger.WithContext(ctx, fanout)
+	ctx = logger.WithContext(ctx, logger.Fanout(base, displayLog))
 
 	// Run Bubble Tea in background
 	var runErr error
@@ -115,39 +88,105 @@ func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string
 	return finalReport, err
 }
 
-// UILogWriter buffers bytes and sends complete lines to the UI.
-type UILogWriter struct {
+// displayLogger implements logger.Logger and formats log lines directly from
+// structured data for the rolling log UI — no text parsing required.
+//
+// Fields stripped from display: run_id, command (CLI noise).
+// Fields collapsed: status + action → "action(status)".
+// Everything else is rendered as dim "key=value" pairs.
+type displayLogger struct {
 	send func(string)
-	mu   sync.Mutex
-	buf  bytes.Buffer
+	base []any // persistent key=value pairs from With()
 }
 
-// Fd reports a real terminal file descriptor so color libraries treat this
-// writer as a TTY. We reuse stdout's FD because the UI renders to stdout.
-func (w *UILogWriter) Fd() uintptr { return os.Stdout.Fd() }
+func newDisplayLogger(send func(string)) *displayLogger {
+	return &displayLogger{send: send}
+}
 
-func (w *UILogWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	n, _ := w.buf.Write(p)
-	for {
-		line, err := w.buf.ReadString('\n')
-		if err != nil {
-			// put partial back
-			if len(line) > 0 {
-				// reset and keep partial
-				var nb bytes.Buffer
-				nb.WriteString(line)
-				w.buf = nb
-			}
-			break
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line != "" {
-			w.send(line)
-		}
+// Debug is intentionally a no-op: debug lines are too verbose for the rolling UI.
+func (d *displayLogger) Debug(string, ...any) {}
+
+func (d *displayLogger) Info(msg string, kvs ...any)  { d.emit("INFO", msg, kvs) }
+func (d *displayLogger) Warn(msg string, kvs ...any)  { d.emit("WARN", msg, kvs) }
+func (d *displayLogger) Error(msg string, kvs ...any) { d.emit("ERROR", msg, kvs) }
+
+func (d *displayLogger) With(kvs ...any) logger.Logger {
+	merged := make([]any, len(d.base)+len(kvs))
+	copy(merged, d.base)
+	copy(merged[len(d.base):], kvs)
+	return &displayLogger{send: d.send, base: merged}
+}
+
+// displayNoiseKeys are key=value fields always omitted from the UI.
+var displayNoiseKeys = map[string]bool{
+	"run_id":  true,
+	"command": true,
+}
+
+var (
+	displayStyleKey = lipgloss.NewStyle().Faint(true)
+	displayLevelStyles = map[string]lipgloss.Style{
+		"INFO":  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14")),  // bright cyan
+		"WARN":  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11")),  // bright yellow
+		"ERROR": lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9")),   // bright red
 	}
-	return n, nil
+)
+
+func (d *displayLogger) emit(level, msg string, callKVs []any) {
+	// Merge persistent base fields with call-site fields.
+	all := make([]any, len(d.base)+len(callKVs))
+	copy(all, d.base)
+	copy(all[len(d.base):], callKVs)
+
+	ts := time.Now().Format("15:04:05")
+
+	lvlStyle, ok := displayLevelStyles[level]
+	if !ok {
+		lvlStyle = lipgloss.NewStyle()
+	}
+
+	var sb strings.Builder
+	sb.WriteString(ts)
+	sb.WriteByte(' ')
+	sb.WriteString(lvlStyle.Render(level))
+	sb.WriteByte(' ')
+	sb.WriteString(msg)
+
+	// Walk key=value pairs: skip noise, collapse status+action, render the rest.
+	var pendingStatus string
+	for i := 0; i+1 < len(all); i += 2 {
+		key, ok := all[i].(string)
+		if !ok {
+			continue
+		}
+		val := fmt.Sprintf("%v", all[i+1])
+
+		if displayNoiseKeys[key] {
+			continue
+		}
+		if key == "status" {
+			pendingStatus = val
+			continue
+		}
+		if key == "action" {
+			if pendingStatus != "" {
+				sb.WriteByte(' ')
+				sb.WriteString(val + "(" + pendingStatus + ")")
+				pendingStatus = ""
+			}
+			continue
+		}
+
+		// Quote values that contain spaces.
+		if strings.ContainsAny(val, " \t") {
+			val = `"` + val + `"`
+		}
+		sb.WriteByte(' ')
+		sb.WriteString(displayStyleKey.Render(key + "="))
+		sb.WriteString(val)
+	}
+
+	d.send(sb.String())
 }
 
 // Bubble Tea model -----------------------------------------------------------
@@ -217,7 +256,6 @@ func (m model) View() string {
 	case stateRunning:
 		for _, l := range m.logLines {
 			b.WriteString(styleLog.Render("│ "))
-			// Preserve original ANSI colors in the log content
 			b.WriteString(truncOneRowANSI(l, m.width))
 			b.WriteByte('\n')
 		}

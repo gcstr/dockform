@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -96,29 +95,69 @@ func TestRunWithRollingLogTTY(t *testing.T) {
 	}
 }
 
-func TestUILogWriterBuffersLines(t *testing.T) {
-	var mu sync.Mutex
+func TestDisplayLoggerEmit(t *testing.T) {
 	var lines []string
-	writer := &UILogWriter{send: func(s string) {
-		mu.Lock()
-		lines = append(lines, s)
-		mu.Unlock()
-	}}
+	dl := newDisplayLogger(func(line string) { lines = append(lines, line) })
 
-	if _, err := writer.Write([]byte("hello\npartial")); err != nil {
-		t.Fatalf("write: %v", err)
+	// Attach persistent noise fields (as root.go does) and a component field.
+	child := dl.With("run_id", "abc123", "command", "dockform plan").With("component", "dockercli")
+
+	// Simulate logger.StartStep output.
+	child.Info("docker_exec", "status", "started", "action", "docker_exec", "resource", "mynet", "resource_kind", "process")
+
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
 	}
-	if len(lines) != 1 || lines[0] != "hello" {
-		t.Fatalf("expected buffered line, got %v", lines)
+	got := StripANSI(lines[0])
+
+	// run_id and command must be absent.
+	if strings.Contains(got, "run_id") || strings.Contains(got, "command") {
+		t.Fatalf("noise fields should be stripped, got: %q", got)
 	}
-	if _, err := writer.Write([]byte(" line\n")); err != nil {
-		t.Fatalf("write continuation: %v", err)
+	// action+status collapsed.
+	if !strings.Contains(got, "docker_exec(started)") {
+		t.Fatalf("expected collapsed action(status), got: %q", got)
 	}
-	if len(lines) != 2 || lines[1] != "partial line" {
-		t.Fatalf("expected second line, got %v", lines)
+	// component and resource_kind kept.
+	if !strings.Contains(got, "component=dockercli") {
+		t.Fatalf("expected component field, got: %q", got)
 	}
-	if writer.Fd() != os.Stdout.Fd() {
-		t.Fatalf("expected UILogWriter to report stdout FD")
+	if !strings.Contains(got, "resource_kind=process") {
+		t.Fatalf("expected resource_kind field, got: %q", got)
+	}
+	// Time (HH:MM:SS) and level present.
+	if !strings.Contains(got, "INFO") {
+		t.Fatalf("expected level in output, got: %q", got)
+	}
+}
+
+func TestDisplayLoggerDebugSuppressed(t *testing.T) {
+	var lines []string
+	dl := newDisplayLogger(func(line string) { lines = append(lines, line) })
+	dl.Debug("should not appear")
+	if len(lines) != 0 {
+		t.Fatalf("debug should be suppressed, got: %v", lines)
+	}
+}
+
+func TestDisplayLoggerWithInheritance(t *testing.T) {
+	var lines []string
+	base := newDisplayLogger(func(line string) { lines = append(lines, line) })
+	child := base.With("run_id", "x").With("component", "net")
+
+	child.Info("network_ensure", "status", "ok", "action", "network_ensure")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
+	}
+	got := StripANSI(lines[0])
+	if strings.Contains(got, "run_id") {
+		t.Fatalf("run_id should be stripped, got: %q", got)
+	}
+	if !strings.Contains(got, "network_ensure(ok)") {
+		t.Fatalf("expected collapsed action(status), got: %q", got)
+	}
+	if !strings.Contains(got, "component=net") {
+		t.Fatalf("expected component field from With(), got: %q", got)
 	}
 }
 
@@ -179,6 +218,7 @@ func TestModelCtrlCTriggersCancel(t *testing.T) {
 		t.Fatalf("expected cancel signal on ctrl+c")
 	}
 }
+
 
 func TestTruncOneRowANSI(t *testing.T) {
 	if truncOneRowANSI("abcdef", 2) != "" {
