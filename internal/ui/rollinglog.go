@@ -36,8 +36,15 @@ func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string
 	// Channel to signal when user presses Ctrl+C in the UI
 	cancelCh := make(chan struct{})
 
+	// Initialise model with the real terminal width so early renders (before
+	// the first tea.WindowSizeMsg arrives) already use the correct truncation.
+	initialWidth, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || initialWidth <= 0 {
+		initialWidth = 80
+	}
+
 	// Build Bubble Tea program (no alt screen)
-	m := model{state: stateRunning, width: 80, cancelCh: cancelCh}
+	m := model{state: stateRunning, width: initialWidth, cancelCh: cancelCh}
 	p := tea.NewProgram(m, tea.WithOutput(os.Stdout))
 
 	// Wire up display logger: intercepts structured log events and formats lines for the UI.
@@ -264,7 +271,12 @@ func (m model) View() string {
 	case stateRunning:
 		for _, l := range m.logLines {
 			b.WriteString(styleLog.Render("│ "))
-			b.WriteString(truncOneRowANSI(l, m.width))
+			// Use m.width-1 rather than m.width: a one-cell safety margin
+			// prevents lines from touching the terminal's last column, which
+			// can trigger "pending autowrap" state and cause Bubble Tea's
+			// cursor-up arithmetic (based on logical line count) to undercount
+			// the physical rows, leaving stale frames above the view.
+			b.WriteString(truncOneRowANSI(l, m.width-1))
 			b.WriteByte('\n')
 		}
 		// spacer line below the rolling block
