@@ -47,6 +47,13 @@ func NewSpinner(out io.Writer, label string) *Spinner {
 			enabled = false
 		}
 	}
+	// Disable spinner when the rolling TUI is active — the Bubble Tea program
+	// owns stdout and concurrent writes from the spinner would corrupt the display.
+	if v := os.Getenv("DOCKFORM_TUI_ACTIVE"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil && b {
+			enabled = false
+		}
+	}
 	return &Spinner{
 		out:     out,
 		label:   label,
@@ -101,7 +108,7 @@ func (s *Spinner) Start() {
 				s.labelMu.RLock()
 				label := s.label
 				s.labelMu.RUnlock()
-				_, _ = fmt.Fprintf(s.out, "\r %s %s", s.style.Render(frame), label)
+				_, _ = fmt.Fprintf(s.out, "\r\x1b[K %s %s", s.style.Render(frame), label)
 			}
 		}
 	}(s.stopCh, s.doneCh)
