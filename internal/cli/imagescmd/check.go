@@ -1,0 +1,342 @@
+package imagescmd
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/cli/common"
+	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/images"
+	"github.com/gcstr/dockform/internal/manifest"
+	"github.com/gcstr/dockform/internal/registry"
+	"github.com/gcstr/dockform/internal/ui"
+	"github.com/spf13/cobra"
+)
+
+func newCheckCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "check",
+		Short: "Check image freshness across compose stacks",
+		RunE:  runCheck,
+	}
+
+	cmd.Flags().Bool("json", false, "Output results as JSON")
+	cmd.Flags().Bool("all", false, "Show all images, including those that are up to date")
+	cmd.Flags().Bool("sequential", false, "Disable parallel checks (reserved for future use)")
+
+	common.AddTargetFlags(cmd)
+
+	return cmd
+}
+
+func runCheck(cmd *cobra.Command, _ []string) error {
+	pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
+
+	// Load configuration with warnings.
+	cfg, err := common.LoadConfigWithWarnings(cmd, pr)
+	if err != nil {
+		return err
+	}
+
+	// Apply target filtering if flags are provided.
+	opts := common.ReadTargetOptions(cmd)
+	if !opts.IsEmpty() {
+		cfg, err = common.ResolveTargets(cfg, opts)
+		if err != nil {
+			return err
+		}
+	}
+
+	common.DisplayDaemonInfo(pr, cfg)
+
+	// Create client factory for multi-context support.
+	factory := common.CreateClientFactory()
+
+	// Create registry client.
+	reg := registry.NewOCIClient(nil)
+
+	// Build check inputs from all stacks.
+	inputs, err := buildCheckInputs(cmd.Context(), cfg, factory)
+	if err != nil {
+		return err
+	}
+
+	if len(inputs) == 0 {
+		pr.Plain("\nNo stacks with images found.")
+		return nil
+	}
+
+	// Pre-fetch local digests sequentially before parallel registry checks.
+	// Running exec.Command concurrently (especially over SSH contexts) is unreliable.
+	localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory))
+
+	// Run the check — registry HTTP calls run in parallel, local digests from cache.
+	var results []images.ImageStatus
+	err = common.SpinnerOperation(pr, "Checking images...", func() error {
+		results, err = images.Check(cmd.Context(), inputs, reg, func(ctx context.Context, stackKey, imageRef string) (string, error) {
+			return localDigests[stackKey+"|"+imageRef], nil
+		})
+		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	// Render output.
+	jsonFlag, _ := cmd.Flags().GetBool("json")
+	if jsonFlag {
+		return renderJSON(cmd, results)
+	}
+
+	showAll, _ := cmd.Flags().GetBool("all")
+	renderTerminal(pr, results, showAll)
+	return nil
+}
+
+// buildCheckInputs iterates over all stacks and builds CheckInput entries
+// by calling ComposeConfigFull to discover service images.
+func buildCheckInputs(ctx context.Context, cfg *manifest.Config, factory *dockercli.DefaultClientFactory) ([]images.CheckInput, error) {
+	allStacks := cfg.GetAllStacks()
+
+	// Sort stack keys for deterministic output.
+	stackKeys := make([]string, 0, len(allStacks))
+	for k := range allStacks {
+		stackKeys = append(stackKeys, k)
+	}
+	sort.Strings(stackKeys)
+
+	var inputs []images.CheckInput
+
+	for _, stackKey := range stackKeys {
+		stack := allStacks[stackKey]
+
+		ctxName, _, err := manifest.ParseStackKey(stackKey)
+		if err != nil {
+			return nil, err
+		}
+
+		// Get a docker client for this stack's context.
+		client := factory.GetClientForContext(ctxName, cfg)
+
+		// Get the full compose config to extract service images.
+		doc, err := client.ComposeConfigFull(ctx, stack.RootAbs, stack.Files, stack.Profiles, stack.EnvFile, stack.EnvInline)
+		if err != nil {
+			return nil, apperr.Wrap("imagescmd.buildCheckInputs", apperr.External, err, "failed to get compose config for stack %s", stackKey)
+		}
+
+		if len(doc.Services) == 0 {
+			continue
+		}
+
+		services := make(map[string]string, len(doc.Services))
+		for svcName, svc := range doc.Services {
+			if svc.Image != "" {
+				services[svcName] = svc.Image
+			}
+		}
+
+		if len(services) == 0 {
+			continue
+		}
+
+		input := images.CheckInput{
+			StackKey: stackKey,
+			Services: services,
+		}
+
+		if stack.Images != nil {
+			input.TagPattern = stack.Images.TagPattern
+		}
+
+		inputs = append(inputs, input)
+	}
+
+	return inputs, nil
+}
+
+// makeLocalDigestFunc creates a LocalDigestFunc that uses docker image inspect
+// to retrieve the local repo digest for an image on the Docker daemon
+// associated with the image's stack. This is best-effort: if the image is not
+// pulled or has no repo digests, it returns an empty string (which will cause
+// the image to appear stale).
+func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientFactory) images.LocalDigestFunc {
+	return func(ctx context.Context, stackKey, imageRef string) (string, error) {
+		ctxName, _, err := manifest.ParseStackKey(stackKey)
+		if err != nil {
+			return "", nil //nolint:nilerr // best-effort
+		}
+		client := factory.GetClientForContext(ctxName, cfg)
+		out, err := client.ImageInspectRepoDigests(ctx, imageRef)
+		if err != nil {
+			// Image not pulled or inspect failed — treat as stale.
+			return "", nil //nolint:nilerr // best-effort
+		}
+
+		if len(out) == 0 {
+			return "", nil
+		}
+
+		// Return the first repo digest. The format is "registry/name@sha256:abc...".
+		// We return just the digest portion for comparison with the remote digest.
+		for _, rd := range out {
+			if idx := strings.LastIndex(rd, "@"); idx >= 0 {
+				return rd[idx+1:], nil
+			}
+		}
+
+		return "", nil
+	}
+}
+
+// prefetchLocalDigests calls localDigestFn sequentially for every (stack, image)
+// pair across all inputs and returns a map keyed by "stackKey|imageRef".
+// Keying by stack is required because different stacks may target different
+// Docker daemons, so the same image ref can have different local digests
+// (or be missing) depending on the daemon. Running exec.Command concurrently
+// (especially over SSH contexts) is also unreliable, hence sequential.
+func prefetchLocalDigests(ctx context.Context, inputs []images.CheckInput, fn images.LocalDigestFunc) map[string]string {
+	out := make(map[string]string)
+	for _, input := range inputs {
+		for _, imageRef := range input.Services {
+			key := input.StackKey + "|" + imageRef
+			if _, seen := out[key]; seen {
+				continue
+			}
+			digest, _ := fn(ctx, input.StackKey, imageRef) // best-effort: empty string on failure
+			out[key] = digest
+		}
+	}
+	return out
+}
+
+// jsonResult is the JSON output format for a single image check result.
+type jsonResult struct {
+	Stack         string   `json:"stack"`
+	Service       string   `json:"service"`
+	Image         string   `json:"image"`
+	CurrentTag    string   `json:"current_tag"`
+	DigestChanged bool     `json:"digest_changed"`
+	NewerTags     []string `json:"newer_tags,omitempty"`
+	Error         string   `json:"error,omitempty"`
+}
+
+func renderJSON(cmd *cobra.Command, results []images.ImageStatus) error {
+	out := make([]jsonResult, 0, len(results))
+	for _, r := range results {
+		out = append(out, jsonResult{
+			Stack:         r.Stack,
+			Service:       r.Service,
+			Image:         r.Image,
+			CurrentTag:    r.CurrentTag,
+			DigestChanged: r.DigestStale,
+			NewerTags:     r.NewerTags,
+			Error:         r.Error,
+		})
+	}
+
+	enc := json.NewEncoder(cmd.OutOrStdout())
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(out); err != nil {
+		return apperr.Wrap("imagescmd.renderJSON", apperr.Internal, err, "failed to encode JSON output")
+	}
+	return nil
+}
+
+func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
+	if len(results) == 0 {
+		pr.Plain("\nNo images found.")
+		return
+	}
+
+	// Split into attention-needed and ok.
+	var attention, ok []images.ImageStatus
+	for _, r := range results {
+		if r.Error != "" || r.DigestStale || len(r.NewerTags) > 0 {
+			attention = append(attention, r)
+		} else {
+			ok = append(ok, r)
+		}
+	}
+
+	dimStyle := lipgloss.NewStyle().Faint(true)
+	headerStyle := lipgloss.NewStyle().Faint(true).Bold(true)
+
+	renderTable := func(rows []images.ImageStatus) {
+		// Compute column widths dynamically.
+		wStack, wImage, wTag := len("STACK"), len("IMAGE"), len("TAG")
+		for _, r := range rows {
+			stack, image, tag := r.Stack, imageNameWithoutTag(r.Image), r.CurrentTag
+			if len(stack) > wStack {
+				wStack = len(stack)
+			}
+			if len(image) > wImage {
+				wImage = len(image)
+			}
+			if len(tag) > wTag {
+				wTag = len(tag)
+			}
+		}
+		// Column header.
+		pr.Plain("  %s  %s  %s  %s",
+			headerStyle.Render(fmt.Sprintf("%-*s", wStack, "STACK")),
+			headerStyle.Render(fmt.Sprintf("%-*s", wImage, "IMAGE")),
+			headerStyle.Render(fmt.Sprintf("%-*s", wTag, "TAG")),
+			headerStyle.Render("STATUS"),
+		)
+		for _, r := range rows {
+			stack := fmt.Sprintf("%-*s", wStack, r.Stack)
+			image := fmt.Sprintf("%-*s", wImage, imageNameWithoutTag(r.Image))
+			tag := fmt.Sprintf("%-*s", wTag, r.CurrentTag)
+			status := statusText(r)
+			pr.Plain("  %s  %s  %s  %s", stack, image, tag, status)
+		}
+	}
+
+	if len(attention) > 0 {
+		pr.Plain("%s  %d image(s) need attention\n", ui.YellowText("⚠"), len(attention))
+		renderTable(attention)
+	}
+
+	if len(ok) > 0 {
+		if len(attention) > 0 {
+			pr.Plain("")
+		}
+		if showAll {
+			pr.Plain("%s  %d image(s) up to date\n", ui.GreenText("✓"), len(ok))
+			renderTable(ok)
+		} else {
+			pr.Plain("%s  %d image(s) up to date  %s",
+				ui.GreenText("✓"), len(ok), dimStyle.Render("(--all to show)"))
+		}
+	}
+}
+
+// imageNameWithoutTag strips the tag from an image reference.
+func imageNameWithoutTag(image string) string {
+	// Find last slash to isolate the name:tag part.
+	lastSlash := strings.LastIndex(image, "/")
+	nameTag := image[lastSlash+1:]
+	if idx := strings.LastIndex(nameTag, ":"); idx >= 0 {
+		return image[:lastSlash+1+idx]
+	}
+	return image
+}
+
+// statusText returns the human-readable status for an image result.
+func statusText(r images.ImageStatus) string {
+	if r.Error != "" {
+		return ui.YellowText("! " + r.Error)
+	}
+	if len(r.NewerTags) > 0 {
+		return ui.YellowText("newer: " + strings.Join(r.NewerTags, ", "))
+	}
+	if r.DigestStale {
+		return ui.YellowText("updated upstream")
+	}
+	return ui.GreenText("up to date")
+}

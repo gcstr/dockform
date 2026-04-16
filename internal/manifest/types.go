@@ -90,6 +90,11 @@ func (d DiscoveryConfig) GetVolumesDir() string {
 	return d.VolumesDir
 }
 
+// ImagesConfig configures image update checking for a stack.
+type ImagesConfig struct {
+	TagPattern string `yaml:"tag_pattern"`
+}
+
 // Stack defines a Docker Compose stack to manage.
 // Stacks are discovered automatically from context directories.
 // The stacks: block can augment discovered stacks or define explicit stacks.
@@ -100,11 +105,12 @@ type Stack struct {
 	EnvFile []string `yaml:"env-file"` // Env files
 
 	// Override fields (typically set in stacks: block to augment discovered stacks)
-	Profiles    []string                `yaml:"profiles"`    // Compose profiles to activate
-	Environment *Environment            `yaml:"environment"` // Additional environment config
-	Secrets     *Secrets                `yaml:"secrets"`     // Additional SOPS secrets
-	Project     *Project                `yaml:"project"`     // Compose project name override
-	Filesets    map[string]FilesetSpec  `yaml:"filesets"`    // Fileset overrides/declarations
+	Profiles    []string               `yaml:"profiles"`    // Compose profiles to activate
+	Environment *Environment           `yaml:"environment"` // Additional environment config
+	Secrets     *Secrets               `yaml:"secrets"`     // Additional SOPS secrets
+	Project     *Project               `yaml:"project"`     // Compose project name override
+	Filesets    map[string]FilesetSpec `yaml:"filesets"`    // Fileset overrides/declarations
+	Images      *ImagesConfig          `yaml:"images"`      // Image update checking config
 
 	// Computed fields
 	Context     string   `yaml:"-"` // Which context this belongs to (from key prefix)
@@ -301,6 +307,9 @@ func (c *Config) GetAllStacks() map[string]Stack {
 			}
 			if v.Project != nil {
 				merged.Project = v.Project
+			}
+			if v.Images != nil {
+				merged.Images = v.Images
 			}
 			result[k] = merged
 		} else {

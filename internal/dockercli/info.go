@@ -2,6 +2,7 @@ package dockercli
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 )
 
@@ -49,6 +50,23 @@ func (c *Client) ComposeVersion(ctx context.Context) (string, error) {
 		return "", err2
 	}
 	return strings.TrimSpace(out2), nil
+}
+
+// ImageInspectRepoDigests returns the RepoDigests list for a local image.
+// Returns nil and an error if the image is not found or inspect fails.
+func (c *Client) ImageInspectRepoDigests(ctx context.Context, imageRef string) ([]string, error) {
+	if strings.TrimSpace(imageRef) == "" {
+		return nil, nil
+	}
+	out, err := c.exec.Run(ctx, "image", "inspect", "--format", "{{json .RepoDigests}}", imageRef)
+	if err != nil {
+		return nil, err
+	}
+	var digests []string
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &digests); err != nil {
+		return nil, err
+	}
+	return digests, nil
 }
 
 // ImageExists returns true if the given image is present locally in the configured context.

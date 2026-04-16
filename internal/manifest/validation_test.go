@@ -699,6 +699,35 @@ func TestGetAllStacks(t *testing.T) {
 	}
 }
 
+func TestGetAllStacks_ImagesMerged(t *testing.T) {
+	cfg := Config{
+		Stacks: map[string]Stack{
+			"default/web": {
+				Images: &ImagesConfig{TagPattern: `^\d+\.\d+\.\d+$`},
+			},
+		},
+		DiscoveredStacks: map[string]Stack{
+			"default/web": {Root: "/discovered/web"},
+		},
+	}
+
+	all := cfg.GetAllStacks()
+	web, ok := all["default/web"]
+	if !ok {
+		t.Fatal("expected default/web in result")
+	}
+	if web.Images == nil {
+		t.Fatal("expected Images to be merged from explicit stack, got nil")
+	}
+	if web.Images.TagPattern != `^\d+\.\d+\.\d+$` {
+		t.Errorf("TagPattern: want %q, got %q", `^\d+\.\d+\.\d+$`, web.Images.TagPattern)
+	}
+	// Discovery still wins for core fields.
+	if web.Root != "/discovered/web" {
+		t.Errorf("Root: want /discovered/web, got %q", web.Root)
+	}
+}
+
 func TestGetStacksForDaemon(t *testing.T) {
 	cfg := Config{
 		Stacks: map[string]Stack{
