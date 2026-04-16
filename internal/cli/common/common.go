@@ -5,8 +5,10 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/planner"
@@ -56,14 +58,35 @@ func DisplayDaemonInfo(pr ui.Printer, cfg *manifest.Config) {
 		return
 	}
 
+	labelStyle := lipgloss.NewStyle().Faint(true).Bold(true)
+
+	// Compute label width for alignment.
+	contextLabel := "Context:"
+	if len(cfg.Contexts) > 1 {
+		contextLabel = "Contexts:"
+	}
+	// labelWidth is driven by the longest label in this block.
+	labelWidth := max(len("Identifier:"), len(contextLabel))
+
+	// Sort context names for deterministic output.
+	ctxNames := make([]string, 0, len(cfg.Contexts))
+	for name := range cfg.Contexts {
+		ctxNames = append(ctxNames, name)
+	}
+	sort.Strings(ctxNames)
+	contextsValue := strings.Join(ctxNames, " · ")
+
 	var lines []string
 	lines = append(lines, "")
-	for name := range cfg.Contexts {
-		lines = append(lines, fmt.Sprintf("│ Context: %s", ui.Italic(name)))
-	}
+
 	if cfg.Identifier != "" {
-		lines = append(lines, fmt.Sprintf("│ Identifier: %s", ui.Italic(cfg.Identifier)))
+		label := fmt.Sprintf("%-*s", labelWidth, "Identifier:")
+		lines = append(lines, fmt.Sprintf("│ %s  %s", labelStyle.Render(label), ui.Italic(cfg.Identifier)))
 	}
+
+	label := fmt.Sprintf("%-*s", labelWidth, contextLabel)
+	lines = append(lines, fmt.Sprintf("│ %s  %s", labelStyle.Render(label), ui.Italic(contextsValue)))
+
 	pr.Plain("%s", strings.Join(lines, "\n"))
 }
 
