@@ -160,12 +160,32 @@ func (d *displayLogger) emit(level, msg string, callKVs []any) {
 		lvlStyle = lipgloss.NewStyle()
 	}
 
+	// sanitizeSingleLine normalizes whitespace/control chars that would either
+	// break single-line display or inflate the rendered width past what
+	// ansi.StringWidth reports (tabs expand to tab stops on the terminal but
+	// measure as 0 cells, which silently overflows our truncation target and
+	// causes wrap — that in turn breaks Bubble Tea's cursor-up arithmetic).
+	sanitizeSingleLine := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			switch r {
+			case '\n', '\r':
+				return '↵'
+			case '\t':
+				return ' '
+			}
+			if r < 0x20 { // strip other C0 control chars
+				return ' '
+			}
+			return r
+		}, s)
+	}
+
 	var sb strings.Builder
 	sb.WriteString(ts)
 	sb.WriteByte(' ')
 	sb.WriteString(lvlStyle.Render(level))
 	sb.WriteByte(' ')
-	sb.WriteString(msg)
+	sb.WriteString(sanitizeSingleLine(msg))
 
 	// Walk key=value pairs: skip noise, collapse status+action, render the rest.
 	var pendingStatus string
@@ -174,14 +194,7 @@ func (d *displayLogger) emit(level, msg string, callKVs []any) {
 		if !ok {
 			continue
 		}
-		val := fmt.Sprintf("%v", all[i+1])
-		// Sanitize control chars that would break single-line display.
-		val = strings.Map(func(r rune) rune {
-			if r == '\n' || r == '\r' {
-				return '↵'
-			}
-			return r
-		}, val)
+		val := sanitizeSingleLine(fmt.Sprintf("%v", all[i+1]))
 
 		if displayNoiseKeys[key] {
 			continue
@@ -271,12 +284,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // borderPrefix is the left-margin gutter rendered before each log line.
-const borderPrefix = "  "
+// Matches the "│ " used by the Identifier/Contexts header so the rolling
+// block visually continues that gutter.
+const borderPrefix = "│ "
 
 func (m model) View() string {
 	var b strings.Builder
 	switch m.state {
 	case stateRunning:
+		// Leading blank line separates the rolling block from the
+		// Identifier/Contexts header printed immediately before us.
+		b.WriteByte('\n')
 		for _, l := range m.logLines {
 			// Build the complete line (border + content) first, then truncate
 			// the WHOLE thing to m.width-1. This guarantees the line never
