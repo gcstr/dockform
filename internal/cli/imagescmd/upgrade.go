@@ -72,8 +72,8 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	// Run the check.
 	var results []images.ImageStatus
 	err = common.SpinnerOperation(pr, "Checking images...", func() error {
-		results, err = images.Check(cmd.Context(), inputs, reg, func(ctx context.Context, imageRef string) (string, error) {
-			return localDigests[imageRef], nil
+		results, err = images.Check(cmd.Context(), inputs, reg, func(ctx context.Context, stackKey, imageRef string) (string, error) {
+			return localDigests[stackKey+"|"+imageRef], nil
 		})
 		return err
 	})

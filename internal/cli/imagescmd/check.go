@@ -78,8 +78,8 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 	// Run the check — registry HTTP calls run in parallel, local digests from cache.
 	var results []images.ImageStatus
 	err = common.SpinnerOperation(pr, "Checking images...", func() error {
-		results, err = images.Check(cmd.Context(), inputs, reg, func(ctx context.Context, imageRef string) (string, error) {
-			return localDigests[imageRef], nil
+		results, err = images.Check(cmd.Context(), inputs, reg, func(ctx context.Context, stackKey, imageRef string) (string, error) {
+			return localDigests[stackKey+"|"+imageRef], nil
 		})
 		return err
 	})
@@ -160,16 +160,17 @@ func buildCheckInputs(ctx context.Context, cfg *manifest.Config, factory *docker
 }
 
 // makeLocalDigestFunc creates a LocalDigestFunc that uses docker image inspect
-// to retrieve the local repo digest for an image. This is best-effort: if the
-// image is not pulled or has no repo digests, it returns an empty string (which
-// will cause the image to appear stale).
+// to retrieve the local repo digest for an image on the Docker daemon
+// associated with the image's stack. This is best-effort: if the image is not
+// pulled or has no repo digests, it returns an empty string (which will cause
+// the image to appear stale).
 func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientFactory) images.LocalDigestFunc {
-	// Use the first context's client for local digest lookups.
-	// In a remote-context world this inspects images on the remote host.
-	firstCtx := cfg.GetFirstContext()
-	client := factory.GetClientForContext(firstCtx, cfg)
-
-	return func(ctx context.Context, imageRef string) (string, error) {
+	return func(ctx context.Context, stackKey, imageRef string) (string, error) {
+		ctxName, _, err := manifest.ParseStackKey(stackKey)
+		if err != nil {
+			return "", nil //nolint:nilerr // best-effort
+		}
+		client := factory.GetClientForContext(ctxName, cfg)
 		out, err := client.ImageInspectRepoDigests(ctx, imageRef)
 		if err != nil {
 			// Image not pulled or inspect failed — treat as stale.
@@ -192,19 +193,22 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 	}
 }
 
-// prefetchLocalDigests calls localDigestFn sequentially for every image ref
-// across all inputs and returns a map of imageRef -> digest. This avoids
-// concurrent exec.Command calls to the Docker daemon which are unreliable
-// over SSH contexts.
+// prefetchLocalDigests calls localDigestFn sequentially for every (stack, image)
+// pair across all inputs and returns a map keyed by "stackKey|imageRef".
+// Keying by stack is required because different stacks may target different
+// Docker daemons, so the same image ref can have different local digests
+// (or be missing) depending on the daemon. Running exec.Command concurrently
+// (especially over SSH contexts) is also unreliable, hence sequential.
 func prefetchLocalDigests(ctx context.Context, inputs []images.CheckInput, fn images.LocalDigestFunc) map[string]string {
 	out := make(map[string]string)
 	for _, input := range inputs {
 		for _, imageRef := range input.Services {
-			if _, seen := out[imageRef]; seen {
+			key := input.StackKey + "|" + imageRef
+			if _, seen := out[key]; seen {
 				continue
 			}
-			digest, _ := fn(ctx, imageRef) // best-effort: empty string on failure
-			out[imageRef] = digest
+			digest, _ := fn(ctx, input.StackKey, imageRef) // best-effort: empty string on failure
+			out[key] = digest
 		}
 	}
 	return out
