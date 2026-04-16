@@ -49,7 +49,7 @@ func TestReadDaemonContextLabels(t *testing.T) {
 	}
 }
 
-func TestDisplayDaemonInfoDefaults(t *testing.T) {
+func TestDisplayDaemonInfoSingleContext(t *testing.T) {
 	var out bytes.Buffer
 	pr := ui.StdPrinter{Out: &out}
 	cfg := &manifest.Config{
@@ -60,11 +60,91 @@ func TestDisplayDaemonInfoDefaults(t *testing.T) {
 	}
 	DisplayDaemonInfo(pr, cfg)
 	got := ui.StripANSI(out.String())
-	if !bytes.Contains([]byte(got), []byte("Context: default")) {
-		t.Fatalf("expected default context fallback, got: %q", got)
+	if !strings.Contains(got, "Identifier:") {
+		t.Fatalf("expected 'Identifier:' label, got: %q", got)
 	}
-	if !bytes.Contains([]byte(got), []byte("Identifier: demo")) {
-		t.Fatalf("expected identifier output, got: %q", got)
+	if !strings.Contains(got, "demo") {
+		t.Fatalf("expected identifier value 'demo', got: %q", got)
+	}
+	// Singular label when only one context
+	if !strings.Contains(got, "Context:") {
+		t.Fatalf("expected singular 'Context:' label, got: %q", got)
+	}
+	if strings.Contains(got, "Contexts:") {
+		t.Fatalf("expected singular label but got plural 'Contexts:', got: %q", got)
+	}
+	if !strings.Contains(got, "default") {
+		t.Fatalf("expected context name 'default', got: %q", got)
+	}
+}
+
+func TestDisplayDaemonInfoMultipleContexts(t *testing.T) {
+	var out bytes.Buffer
+	pr := ui.StdPrinter{Out: &out}
+	cfg := &manifest.Config{
+		Identifier: "homeserver",
+		Contexts: map[string]manifest.ContextConfig{
+			"hetzner-one":   {},
+			"hetzner-two":   {},
+			"hetzner-three": {},
+		},
+	}
+	DisplayDaemonInfo(pr, cfg)
+	got := ui.StripANSI(out.String())
+	// Plural label when multiple contexts
+	if !strings.Contains(got, "Contexts:") {
+		t.Fatalf("expected plural 'Contexts:' label, got: %q", got)
+	}
+	// All context names present
+	for _, name := range []string{"hetzner-one", "hetzner-two", "hetzner-three"} {
+		if !strings.Contains(got, name) {
+			t.Fatalf("expected context %q in output, got: %q", name, got)
+		}
+	}
+	// Middle-dot separator present
+	if !strings.Contains(got, "·") {
+		t.Fatalf("expected middle-dot separator between contexts, got: %q", got)
+	}
+	// Identifier first: its line must appear before the contexts line
+	idxID := strings.Index(got, "Identifier:")
+	idxCtx := strings.Index(got, "Contexts:")
+	if idxID < 0 || idxCtx < 0 {
+		t.Fatalf("both labels must be present, got: %q", got)
+	}
+	if idxID > idxCtx {
+		t.Fatalf("Identifier: must appear before Contexts:, got: %q", got)
+	}
+}
+
+func TestDisplayDaemonInfoNoIdentifier(t *testing.T) {
+	var out bytes.Buffer
+	pr := ui.StdPrinter{Out: &out}
+	cfg := &manifest.Config{
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
+		},
+	}
+	DisplayDaemonInfo(pr, cfg)
+	got := ui.StripANSI(out.String())
+	if strings.Contains(got, "Identifier:") {
+		t.Fatalf("expected no Identifier line when identifier is empty, got: %q", got)
+	}
+	if !strings.Contains(got, "Context:") {
+		t.Fatalf("expected 'Context:' label, got: %q", got)
+	}
+}
+
+func TestDisplayDaemonInfoNoContexts(t *testing.T) {
+	var out bytes.Buffer
+	pr := ui.StdPrinter{Out: &out}
+	cfg := &manifest.Config{
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{},
+	}
+	DisplayDaemonInfo(pr, cfg)
+	got := ui.StripANSI(out.String())
+	if !strings.Contains(got, "No contexts configured") {
+		t.Fatalf("expected fallback message, got: %q", got)
 	}
 }
 
