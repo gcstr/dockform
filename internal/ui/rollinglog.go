@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 
 	"github.com/gcstr/dockform/internal/logger"
@@ -160,6 +161,13 @@ func (d *displayLogger) emit(level, msg string, callKVs []any) {
 			continue
 		}
 		val := fmt.Sprintf("%v", all[i+1])
+		// Sanitize control chars that would break single-line display.
+		val = strings.Map(func(r rune) rune {
+			if r == '\n' || r == '\r' {
+				return '↵'
+			}
+			return r
+		}, val)
 
 		if displayNoiseKeys[key] {
 			continue
@@ -177,7 +185,7 @@ func (d *displayLogger) emit(level, msg string, callKVs []any) {
 			continue
 		}
 
-		// Quote values that contain spaces.
+		// Quote values that contain spaces or tabs.
 		if strings.ContainsAny(val, " \t") {
 			val = `"` + val + `"`
 		}
@@ -273,29 +281,12 @@ func (m model) View() string {
 }
 
 // truncOneRowANSI ensures the content fits exactly one physical row, accounting
-// for the left border width (2). ANSI-aware width via lipgloss.Width.
+// for the left border width (2). Uses ansi.Truncate for proper ANSI-sequence
+// handling: escape codes are never split, and any open sequences are closed at
+// the truncation point so subsequent lines are not left with stale style state.
 func truncOneRowANSI(s string, width int) string {
 	if width <= 2 {
 		return ""
 	}
-	limit := width - 2
-	// If already fits, return as-is
-	if lipgloss.Width(s) <= limit {
-		return s
-	}
-	// Truncate by runes conservatively until width fits.
-	// This is simple but effective; lipgloss.Width handles ANSI sequences.
-	r := []rune(s)
-	// Binary search could be used; linear is fine for short lines.
-	for i := range r {
-		candidate := string(r[:i])
-		if lipgloss.Width(candidate) > limit {
-			if i == 0 {
-				return ""
-			}
-			return string(r[:i-1])
-		}
-	}
-	// Fallback
-	return string(r)
+	return ansi.Truncate(s, width-2, "")
 }
