@@ -15,10 +15,12 @@ import (
 	"github.com/gcstr/dockform/internal/logger"
 )
 
-// RunWithRollingLog runs fn while showing a 5-line rolling block fed by the existing logger.
-// The adapter attaches/detaches to the logger automatically when stdout is a TTY.
-// On completion, the rolling block is replaced by the final report in the same view and the
-// area below is cleared. Returns the final report and error.
+// RunWithRollingLog runs fn while streaming structured log lines to the terminal
+// via Bubble Tea's Println mechanism. Each log line prints above the active view
+// and scrolls up naturally — no cursor arithmetic is required, so the display
+// stays stable even when lines are longer than the terminal width.
+//
+// On completion the view is replaced by finalReport. Returns the report and error.
 func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string, error)) (string, error) {
 	// Non-TTY path: bypass UI entirely.
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
@@ -36,18 +38,15 @@ func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string
 	// Channel to signal when user presses Ctrl+C in the UI
 	cancelCh := make(chan struct{})
 
-	// Initialise model with the real terminal width so early renders (before
-	// the first tea.WindowSizeMsg arrives) already use the correct truncation.
-	initialWidth, _, err := term.GetSize(int(os.Stdout.Fd()))
-	if err != nil || initialWidth <= 0 {
-		initialWidth = 80
-	}
-
-	// Build Bubble Tea program (no alt screen)
-	m := model{state: stateRunning, width: initialWidth, cancelCh: cancelCh}
+	// Build Bubble Tea program (no alt screen). The view is kept to a single
+	// blank line so the cursor-up arithmetic is trivially correct.
+	m := model{state: stateRunning, cancelCh: cancelCh}
 	p := tea.NewProgram(m, tea.WithOutput(os.Stdout))
 
-	// Wire up display logger: intercepts structured log events and formats lines for the UI.
+	// Wire up display logger: formats structured log events into display lines
+	// and sends them as appendLog messages. The model converts each appendLog
+	// into a tea.Println Cmd, which streams lines above the view via Bubble Tea's
+	// queued-messages mechanism — no cursor arithmetic required.
 	displayLog := newDisplayLogger(func(line string) { p.Send(appendLog{line: line}) })
 
 	// Fan out: base logger (file/stderr) + display logger (rolling UI)
@@ -132,11 +131,11 @@ var displayNoiseKeys = map[string]bool{
 }
 
 var (
-	displayStyleKey = lipgloss.NewStyle().Faint(true)
+	displayStyleKey    = lipgloss.NewStyle().Faint(true)
 	displayLevelStyles = map[string]lipgloss.Style{
-		"INFO":  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14")),  // bright cyan
-		"WARN":  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11")),  // bright yellow
-		"ERROR": lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9")),   // bright red
+		"INFO":  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14")), // bright cyan
+		"WARN":  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11")), // bright yellow
+		"ERROR": lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9")),  // bright red
 	}
 )
 
@@ -213,6 +212,9 @@ const (
 	stateFinal
 )
 
+// appendLog carries a single formatted log line from the displayLogger.
+// The model converts it to a tea.Println Cmd so it is printed above the
+// view via Bubble Tea's queued-messages mechanism rather than in View().
 type appendLog struct{ line string }
 type done struct{ report string }
 type interrupted struct{}
@@ -220,7 +222,6 @@ type interrupted struct{}
 type model struct {
 	state       state
 	width       int
-	logLines    []string // newest last, max 5
 	finalReport string
 	cancelCh    chan struct{} // Signal channel for Ctrl+C
 }
@@ -246,10 +247,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	case appendLog:
-		m.logLines = append(m.logLines, msg.line)
-		if len(m.logLines) > 5 {
-			m.logLines = m.logLines[len(m.logLines)-5:]
-		}
+		// Convert the log line into a tea.Println Cmd. Bubble Tea runs the Cmd
+		// in a goroutine and routes the resulting printLineMessage through its
+		// safe send path (context-guarded), so this never deadlocks even if the
+		// program exits before the Cmd executes.
+		return m, tea.Println(msg.line)
 	case done:
 		m.finalReport = msg.report
 		m.state = stateFinal
@@ -264,32 +266,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	var b strings.Builder
-	// neutral gray style for rolling log lines
-	styleLog := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	switch m.state {
 	case stateRunning:
-		for _, l := range m.logLines {
-			b.WriteString(styleLog.Render("│ "))
-			// Use m.width-1 rather than m.width: a one-cell safety margin
-			// prevents lines from touching the terminal's last column, which
-			// can trigger "pending autowrap" state and cause Bubble Tea's
-			// cursor-up arithmetic (based on logical line count) to undercount
-			// the physical rows, leaving stale frames above the view.
-			b.WriteString(truncOneRowANSI(l, m.width-1))
-			b.WriteByte('\n')
-		}
-		// spacer line below the rolling block
-		b.WriteByte('\n')
+		// Keep the view to a single blank line. Log lines are streamed via
+		// p.Println (queued messages) which prints above this view without
+		// any cursor-up arithmetic — immune to physical line wrapping.
+		return "\n"
 	case stateFinal:
+		var b strings.Builder
 		if m.finalReport != "" {
 			b.WriteString(m.finalReport)
 			b.WriteByte('\n')
 		}
 		// Clear any lines below
 		b.WriteString("\x1b[0J")
+		return b.String()
 	}
-	return b.String()
+	return "\n"
 }
 
 // truncOneRowANSI ensures the content fits exactly one physical row, accounting

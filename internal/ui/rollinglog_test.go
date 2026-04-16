@@ -172,31 +172,21 @@ func TestModelUpdateAndView(t *testing.T) {
 		t.Fatalf("expected width update, got %d", m.width)
 	}
 
-	if updated, _ := m.Update(appendLog{line: "first"}); updated != nil {
-		m = updated.(model)
+	// Running view is a minimal spacer — log lines stream via p.Println, not the view.
+	view := m.View()
+	if view != "\n" {
+		t.Fatalf("expected running view to be a single newline, got %q", view)
 	}
-	if updated, _ := m.Update(appendLog{line: "second"}); updated != nil {
-		m = updated.(model)
-	}
+
 	if updated, _ := m.Update(done{report: "done"}); updated != nil {
 		m = updated.(model)
 	}
 	if m.state != stateFinal || m.finalReport != "done" {
 		t.Fatalf("expected final state with report, got %+v", m)
 	}
-	view := m.View()
+	view = m.View()
 	if !bytes.Contains([]byte(view), []byte("done")) {
 		t.Fatalf("expected final report in view, got %q", view)
-	}
-
-	m = model{state: stateRunning, width: 6}
-	for i := 0; i < 7; i++ {
-		if updated, _ := m.Update(appendLog{line: "line"}); updated != nil {
-			m = updated.(model)
-		}
-	}
-	if len(m.logLines) != 5 {
-		t.Fatalf("expected logs capped at 5, got %d", len(m.logLines))
 	}
 }
 
@@ -236,9 +226,10 @@ func TestModelInitAndRunningView(t *testing.T) {
 	if cmd := (model{}).Init(); cmd != nil {
 		t.Fatalf("expected nil init cmd")
 	}
-	m := model{state: stateRunning, width: 20, logLines: []string{"line"}}
+	// Running view is a minimal spacer — content arrives via p.Println.
+	m := model{state: stateRunning, width: 20}
 	view := m.View()
-	if !strings.Contains(view, "line") {
-		t.Fatalf("expected running view to include log line")
+	if view != "\n" {
+		t.Fatalf("expected running view to be a single newline, got %q", view)
 	}
 }
