@@ -101,7 +101,7 @@ func (s *Spinner) Start() {
 				s.labelMu.RLock()
 				label := s.label
 				s.labelMu.RUnlock()
-				_, _ = fmt.Fprintf(s.out, "\r %s %s", s.style.Render(frame), label)
+				_, _ = fmt.Fprintf(s.out, "\r\x1b[K %s %s", s.style.Render(frame), label)
 			}
 		}
 	}(s.stopCh, s.doneCh)
