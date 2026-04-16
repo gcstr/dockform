@@ -76,7 +76,7 @@ func checkImage(
 		return status
 	}
 
-	localDigest, err := localDigestFn(ctx, imageStr)
+	localDigest, err := localDigestFn(ctx, stackKey, imageStr)
 	if err != nil {
 		status.Error = err.Error()
 		return status

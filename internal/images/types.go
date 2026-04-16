@@ -20,9 +20,10 @@ type CheckInput struct {
 	Services   map[string]string // service name -> image reference (from ComposeConfigFull)
 }
 
-// LocalDigestFunc returns the local digest for an image reference.
+// LocalDigestFunc returns the local digest for an image reference on the
+// Docker daemon associated with the given stack.
 // This is injected to avoid coupling to the docker CLI directly.
-type LocalDigestFunc func(ctx context.Context, imageRef string) (string, error)
+type LocalDigestFunc func(ctx context.Context, stackKey, imageRef string) (string, error)
 
 // FileChange represents a tag rewrite in a compose file.
 type FileChange struct {
