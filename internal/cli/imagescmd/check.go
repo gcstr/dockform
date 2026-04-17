@@ -337,8 +337,8 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 	dimStyle := lipgloss.NewStyle().Faint(true)
 	headerStyle := lipgloss.NewStyle().Faint(true).Bold(true)
 
-	renderTable := func(rows []images.ImageStatus) {
-		// Compute column widths dynamically.
+	// computeBaseWidths computes widths for STACK, IMAGE, TAG given rows.
+	computeBaseWidths := func(rows []images.ImageStatus) (int, int, int) {
 		wStack, wImage, wTag := len("STACK"), len("IMAGE"), len("TAG")
 		for _, r := range rows {
 			stack, image, tag := r.Stack, imageNameWithoutTag(r.Image), r.CurrentTag
@@ -352,7 +352,75 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 				wTag = len(tag)
 			}
 		}
-		// Column header.
+		return wStack, wImage, wTag
+	}
+
+	// upgradeCell returns the raw text (without styling) for the UPGRADE column.
+	upgradeCellRaw := func(r images.ImageStatus) string {
+		if len(r.NewerTags) > 0 {
+			return r.NewerTags[0]
+		}
+		if !r.HasTagPattern {
+			return "unknown"
+		}
+		return "-"
+	}
+
+	// upgradeCellStyled returns the styled UPGRADE cell for rendering.
+	upgradeCellStyled := func(r images.ImageStatus, width int) string {
+		raw := upgradeCellRaw(r)
+		padded := fmt.Sprintf("%-*s", width, raw)
+		if len(r.NewerTags) > 0 {
+			return ui.YellowText(padded)
+		}
+		if !r.HasTagPattern {
+			return dimStyle.Render(padded)
+		}
+		return padded
+	}
+
+	renderAttentionTable := func(rows []images.ImageStatus) {
+		wStack, wImage, wTag := computeBaseWidths(rows)
+		wUpgrade := len("UPGRADE")
+		for _, r := range rows {
+			if r.Error != "" {
+				continue
+			}
+			if l := len(upgradeCellRaw(r)); l > wUpgrade {
+				wUpgrade = l
+			}
+		}
+		// Header.
+		pr.Plain("  %s  %s  %s  %s  %s",
+			headerStyle.Render(fmt.Sprintf("%-*s", wStack, "STACK")),
+			headerStyle.Render(fmt.Sprintf("%-*s", wImage, "IMAGE")),
+			headerStyle.Render(fmt.Sprintf("%-*s", wTag, "TAG")),
+			headerStyle.Render(fmt.Sprintf("%-*s", wUpgrade, "UPGRADE")),
+			headerStyle.Render("DIGEST"),
+		)
+		for _, r := range rows {
+			stack := fmt.Sprintf("%-*s", wStack, r.Stack)
+			image := fmt.Sprintf("%-*s", wImage, imageNameWithoutTag(r.Image))
+			tag := fmt.Sprintf("%-*s", wTag, r.CurrentTag)
+
+			if r.Error != "" {
+				pr.Plain("  %s  %s  %s  %s", stack, image, tag, ui.YellowText("! "+r.Error))
+				continue
+			}
+
+			upgrade := upgradeCellStyled(r, wUpgrade)
+			var digest string
+			if r.DigestStale {
+				digest = ui.YellowText("changed")
+			} else {
+				digest = "-"
+			}
+			pr.Plain("  %s  %s  %s  %s  %s", stack, image, tag, upgrade, digest)
+		}
+	}
+
+	renderOkTable := func(rows []images.ImageStatus) {
+		wStack, wImage, wTag := computeBaseWidths(rows)
 		pr.Plain("  %s  %s  %s  %s",
 			headerStyle.Render(fmt.Sprintf("%-*s", wStack, "STACK")),
 			headerStyle.Render(fmt.Sprintf("%-*s", wImage, "IMAGE")),
@@ -363,14 +431,17 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 			stack := fmt.Sprintf("%-*s", wStack, r.Stack)
 			image := fmt.Sprintf("%-*s", wImage, imageNameWithoutTag(r.Image))
 			tag := fmt.Sprintf("%-*s", wTag, r.CurrentTag)
-			status := statusText(r)
+			status := ui.GreenText("up to date")
+			if !r.HasTagPattern {
+				status += "  " + dimStyle.Render("no tag_pattern")
+			}
 			pr.Plain("  %s  %s  %s  %s", stack, image, tag, status)
 		}
 	}
 
 	if len(attention) > 0 {
 		pr.Plain("%s  %d image(s) need attention\n", ui.YellowText("⚠"), len(attention))
-		renderTable(attention)
+		renderAttentionTable(attention)
 	}
 
 	if len(ok) > 0 {
@@ -379,7 +450,26 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 		}
 		if showAll {
 			pr.Plain("%s  %d image(s) up to date\n", ui.GreenText("✓"), len(ok))
-			renderTable(ok)
+			renderOkTable(ok)
+
+			hasMissingPattern := false
+			for _, r := range ok {
+				if !r.HasTagPattern {
+					hasMissingPattern = true
+					break
+				}
+			}
+			if hasMissingPattern {
+				icon := lipgloss.NewStyle().Foreground(lipgloss.Color("69")).Render("ℹ")
+				badge := dimStyle.Render(`"no tag_pattern"`)
+				configPath := lipgloss.NewStyle().Italic(true).
+					Foreground(lipgloss.AdaptiveColor{Light: "#3478F6", Dark: "#4A9EFF"}).
+					Render("stacks.<name>.images.tag_pattern")
+				prefix := dimStyle.Render("Rows marked ")
+				middle := dimStyle.Render(" are only checked for digest drift. Set ")
+				suffix := dimStyle.Render(" to track newer tags.")
+				pr.Plain("\n%s  %s%s%s%s%s", icon, prefix, badge, middle, configPath, suffix)
+			}
 		} else {
 			pr.Plain("%s  %d image(s) up to date  %s",
 				ui.GreenText("✓"), len(ok), dimStyle.Render("(--all to show)"))
@@ -398,16 +488,3 @@ func imageNameWithoutTag(image string) string {
 	return image
 }
 
-// statusText returns the human-readable status for an image result.
-func statusText(r images.ImageStatus) string {
-	if r.Error != "" {
-		return ui.YellowText("! " + r.Error)
-	}
-	if len(r.NewerTags) > 0 {
-		return ui.YellowText("newer: " + strings.Join(r.NewerTags, ", "))
-	}
-	if r.DigestStale {
-		return ui.YellowText("updated upstream")
-	}
-	return ui.GreenText("up to date")
-}

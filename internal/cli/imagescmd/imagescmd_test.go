@@ -77,11 +77,12 @@ func TestRenderTerminal_NewerTagsAvailable(t *testing.T) {
 	renderTerminal(pr, results, false)
 
 	got := stripANSI(buf.String())
-	if !strings.Contains(got, "newer:") {
-		t.Errorf("expected 'newer:' in output, got: %q", got)
+	if !strings.Contains(got, "UPGRADE") {
+		t.Errorf("expected 'UPGRADE' column in output, got: %q", got)
 	}
-	if !strings.Contains(got, "1.26") || !strings.Contains(got, "1.27") {
-		t.Errorf("expected newer tags in output, got: %q", got)
+	// Newest tag (first in NewerTags) should appear in UPGRADE column.
+	if !strings.Contains(got, "1.26") {
+		t.Errorf("expected newest tag '1.26' in output, got: %q", got)
 	}
 }
 
@@ -102,8 +103,11 @@ func TestRenderTerminal_DigestStaleOnly(t *testing.T) {
 	renderTerminal(pr, results, false)
 
 	got := stripANSI(buf.String())
-	if !strings.Contains(got, "updated upstream") {
-		t.Errorf("expected 'updated upstream' for digest-stale image, got: %q", got)
+	if !strings.Contains(got, "changed") {
+		t.Errorf("expected 'changed' in DIGEST column for digest-stale image, got: %q", got)
+	}
+	if !strings.Contains(got, "DIGEST") {
+		t.Errorf("expected 'DIGEST' column header, got: %q", got)
 	}
 }
 

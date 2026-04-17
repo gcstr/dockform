@@ -57,9 +57,10 @@ func checkImage(
 	localDigestFn LocalDigestFunc,
 ) ImageStatus {
 	status := ImageStatus{
-		Stack:   stackKey,
-		Service: svcName,
-		Image:   imageStr,
+		Stack:         stackKey,
+		Service:       svcName,
+		Image:         imageStr,
+		HasTagPattern: tagPattern != "",
 	}
 
 	ref, err := registry.ParseImageRef(imageStr)
