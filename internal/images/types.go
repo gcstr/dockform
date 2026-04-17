@@ -4,13 +4,14 @@ import "context"
 
 // ImageStatus represents the check result for a single image.
 type ImageStatus struct {
-	Stack       string   // Stack key (e.g., "hetzner/traefik")
-	Service     string   // Service name within the compose file
-	Image       string   // Full image reference as written in compose
-	CurrentTag  string   // Current tag
-	DigestStale bool     // True if remote digest differs from local
-	NewerTags   []string // Newer semver tags (empty if no tag_pattern or no newer tags)
-	Error       string   // Non-empty if check failed for this image
+	Stack         string   // Stack key (e.g., "hetzner/traefik")
+	Service       string   // Service name within the compose file
+	Image         string   // Full image reference as written in compose
+	CurrentTag    string   // Current tag
+	DigestStale   bool     // True if remote digest differs from local
+	NewerTags     []string // Newer semver tags (empty if no tag_pattern or no newer tags)
+	HasTagPattern bool     // True if a tag_pattern is configured for the stack
+	Error         string   // Non-empty if check failed for this image
 }
 
 // CheckInput bundles everything needed to check images for a stack.
@@ -21,9 +22,12 @@ type CheckInput struct {
 }
 
 // LocalDigestFunc returns the local digest for an image reference on the
-// Docker daemon associated with the given stack.
+// Docker daemon associated with the given stack and service.
+// Implementations should prefer the digest of the running container (so that
+// a pulled-but-not-recreated container still appears stale), falling back to
+// the stored image digest when no container is running.
 // This is injected to avoid coupling to the docker CLI directly.
-type LocalDigestFunc func(ctx context.Context, stackKey, imageRef string) (string, error)
+type LocalDigestFunc func(ctx context.Context, stackKey, service, imageRef string) (string, error)
 
 // FileChange represents a tag rewrite in a compose file.
 type FileChange struct {

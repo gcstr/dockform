@@ -39,6 +39,17 @@ func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profil
 	return c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
 }
 
+// ComposePull runs `docker compose pull [services...]` using the given compose
+// configuration. When services is empty, compose pulls images for every
+// service in the project. The returned string is the raw stdout of the
+// command (typically empty on success for modern compose versions).
+func (c *Client) ComposePull(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, services []string, inlineEnv []string) (string, error) {
+	args := c.composeBaseArgs(files, profiles, envFiles, projectName)
+	args = append(args, "pull")
+	args = append(args, services...)
+	return c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
+}
+
 // ComposeConfigServices returns the list of service names that would be part of the project.
 func (c *Client) ComposeConfigServices(ctx context.Context, workingDir string, files, profiles, envFiles []string, inlineEnv []string) ([]string, error) {
 	args := c.composeBaseArgs(files, profiles, envFiles, "")
