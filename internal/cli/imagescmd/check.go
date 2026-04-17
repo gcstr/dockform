@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -71,15 +72,17 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// Pre-fetch local digests sequentially before parallel registry checks.
-	// Running exec.Command concurrently (especially over SSH contexts) is unreliable.
-	localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory))
-
-	// Run the check — registry HTTP calls run in parallel, local digests from cache.
+	// Run the check inside the spinner so the user sees feedback immediately.
+	// Local digest pre-fetching (sequential SSH calls) and remote registry checks
+	// (parallel HTTPS calls) both happen here.
 	var results []images.ImageStatus
 	err = common.SpinnerOperation(pr, "Checking images...", func() error {
-		results, err = images.Check(cmd.Context(), inputs, reg, func(ctx context.Context, stackKey, imageRef string) (string, error) {
-			return localDigests[stackKey+"|"+imageRef], nil
+		// Pre-fetch local digests sequentially — exec.Command over SSH contexts is
+		// unreliable when concurrent, so this must stay sequential.
+		localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory))
+
+		results, err = images.Check(cmd.Context(), inputs, reg, func(_ context.Context, stackKey, service, _ string) (string, error) {
+			return localDigests[stackKey+"|"+service], nil
 		})
 		return err
 	})
@@ -159,55 +162,121 @@ func buildCheckInputs(ctx context.Context, cfg *manifest.Config, factory *docker
 	return inputs, nil
 }
 
-// makeLocalDigestFunc creates a LocalDigestFunc that uses docker image inspect
-// to retrieve the local repo digest for an image on the Docker daemon
-// associated with the image's stack. This is best-effort: if the image is not
-// pulled or has no repo digests, it returns an empty string (which will cause
-// the image to appear stale).
+// makeLocalDigestFunc creates a LocalDigestFunc that returns the repo digest of
+// the image currently running inside the container for a given service, falling
+// back to the stored image digest when no container is found.
+//
+// Comparing the container's digest (rather than the stored image's digest)
+// ensures that a service whose image has been pulled but not yet recreated
+// still appears stale — the container is still running the old image.
+//
+// Performance: two calls are issued per Docker context (daemon), regardless of
+// how many services or stacks share that context:
+//   1. docker ps   — maps every running compose container to its image ID
+//   2. docker image inspect (batched) — maps each image ID to its repo digest
+//
+// Everything is cached in the closure; calls must be sequential (see
+// prefetchLocalDigests). Failures are best-effort: an empty digest makes the
+// image appear stale, which is safe.
 func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientFactory) images.LocalDigestFunc {
-	return func(ctx context.Context, stackKey, imageRef string) (string, error) {
+	type ctxCache struct {
+		containerImageID map[string]string // "project|service" → full image ID
+		imageDigest      map[string]string // full image ID → repo digest (sha256:…)
+	}
+	cache := make(map[string]*ctxCache) // contextName → populated on first use
+
+	return func(ctx context.Context, stackKey, service, imageRef string) (string, error) {
 		ctxName, _, err := manifest.ParseStackKey(stackKey)
 		if err != nil {
 			return "", nil //nolint:nilerr // best-effort
 		}
 		client := factory.GetClientForContext(ctxName, cfg)
+
+		// Populate cache for this context on first access.
+		cc, ok := cache[ctxName]
+		if !ok {
+			cc = &ctxCache{
+				containerImageID: make(map[string]string),
+				imageDigest:      make(map[string]string),
+			}
+
+			// One docker ps call for all compose containers on this daemon.
+			containerMap, _ := client.ComposeContainerImageMap(ctx) //nolint:nilerr // best-effort
+			if containerMap != nil {
+				cc.containerImageID = containerMap
+
+				// Collect unique image IDs, then batch-fetch their repo digests.
+				seen := make(map[string]struct{}, len(containerMap))
+				imageIDs := make([]string, 0, len(containerMap))
+				for _, id := range containerMap {
+					if id == "" {
+						continue
+					}
+					if _, exists := seen[id]; !exists {
+						seen[id] = struct{}{}
+						imageIDs = append(imageIDs, id)
+					}
+				}
+				if len(imageIDs) > 0 {
+					digestMap, _ := client.ImageRepoDigestMap(ctx, imageIDs) //nolint:nilerr // best-effort
+					if digestMap != nil {
+						cc.imageDigest = digestMap
+					}
+				}
+			}
+			cache[ctxName] = cc
+		}
+
+		// Look up the running container's digest for this (stack, service).
+		allStacks := cfg.GetAllStacks()
+		stack := allStacks[stackKey]
+		proj := effectiveProjectName(stack)
+
+		if imageID := cc.containerImageID[proj+"|"+service]; imageID != "" {
+			if digest := cc.imageDigest[imageID]; digest != "" {
+				return digest, nil
+			}
+		}
+
+		// Fallback: stored image digest (for services with no running container).
 		out, err := client.ImageInspectRepoDigests(ctx, imageRef)
-		if err != nil {
-			// Image not pulled or inspect failed — treat as stale.
+		if err != nil || len(out) == 0 {
 			return "", nil //nolint:nilerr // best-effort
 		}
-
-		if len(out) == 0 {
-			return "", nil
-		}
-
-		// Return the first repo digest. The format is "registry/name@sha256:abc...".
-		// We return just the digest portion for comparison with the remote digest.
 		for _, rd := range out {
 			if idx := strings.LastIndex(rd, "@"); idx >= 0 {
 				return rd[idx+1:], nil
 			}
 		}
-
 		return "", nil
 	}
 }
 
-// prefetchLocalDigests calls localDigestFn sequentially for every (stack, image)
-// pair across all inputs and returns a map keyed by "stackKey|imageRef".
-// Keying by stack is required because different stacks may target different
-// Docker daemons, so the same image ref can have different local digests
-// (or be missing) depending on the daemon. Running exec.Command concurrently
-// (especially over SSH contexts) is also unreliable, hence sequential.
+// effectiveProjectName returns the Docker Compose project name for a stack.
+// When no explicit override is set, Compose defaults to the lowercase basename
+// of the working directory.
+func effectiveProjectName(stack manifest.Stack) string {
+	if stack.Project != nil && stack.Project.Name != "" {
+		return strings.ToLower(stack.Project.Name)
+	}
+	return strings.ToLower(filepath.Base(stack.RootAbs))
+}
+
+// prefetchLocalDigests calls localDigestFn sequentially for every (stack, service)
+// pair across all inputs and returns a map keyed by "stackKey|service".
+// Keyed by service (not image ref) because different stacks may use different
+// Docker daemons, and the local digest now reflects the running container rather
+// than the stored image. Running exec.Command concurrently (especially over SSH
+// contexts) is unreliable, hence sequential.
 func prefetchLocalDigests(ctx context.Context, inputs []images.CheckInput, fn images.LocalDigestFunc) map[string]string {
 	out := make(map[string]string)
 	for _, input := range inputs {
-		for _, imageRef := range input.Services {
-			key := input.StackKey + "|" + imageRef
+		for svcName, imageRef := range input.Services {
+			key := input.StackKey + "|" + svcName
 			if _, seen := out[key]; seen {
 				continue
 			}
-			digest, _ := fn(ctx, input.StackKey, imageRef) // best-effort: empty string on failure
+			digest, _ := fn(ctx, input.StackKey, svcName, imageRef) // best-effort: empty string on failure
 			out[key] = digest
 		}
 	}
@@ -252,6 +321,8 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 		pr.Plain("\nNo images found.")
 		return
 	}
+
+	pr.Plain("")
 
 	// Split into attention-needed and ok.
 	var attention, ok []images.ImageStatus

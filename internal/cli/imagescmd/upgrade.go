@@ -66,14 +66,12 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// Pre-fetch local digests sequentially before parallel registry checks.
-	localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory))
-
-	// Run the check.
+	// Run the check inside the spinner so the user sees feedback immediately.
 	var results []images.ImageStatus
 	err = common.SpinnerOperation(pr, "Checking images...", func() error {
-		results, err = images.Check(cmd.Context(), inputs, reg, func(ctx context.Context, stackKey, imageRef string) (string, error) {
-			return localDigests[stackKey+"|"+imageRef], nil
+		localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory))
+		results, err = images.Check(cmd.Context(), inputs, reg, func(_ context.Context, stackKey, service, _ string) (string, error) {
+			return localDigests[stackKey+"|"+service], nil
 		})
 		return err
 	})

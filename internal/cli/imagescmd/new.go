@@ -10,5 +10,6 @@ func New() *cobra.Command {
 	}
 	cmd.AddCommand(newCheckCmd())
 	cmd.AddCommand(newUpgradeCmd())
+	cmd.AddCommand(newPullCmd())
 	return cmd
 }

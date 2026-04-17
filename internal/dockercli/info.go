@@ -69,6 +69,72 @@ func (c *Client) ImageInspectRepoDigests(ctx context.Context, imageRef string) (
 	return digests, nil
 }
 
+// ComposeContainerImageMap returns a map of "project|service" → full image ID
+// (sha256:…) for every running compose container on the daemon.
+// A single docker ps call is used so cost is constant regardless of container count.
+// Best-effort: returns nil on failure.
+func (c *Client) ComposeContainerImageMap(ctx context.Context) (map[string]string, error) {
+	out, err := c.exec.Run(ctx,
+		"ps",
+		"--no-trunc",
+		"--filter", "label=com.docker.compose.service",
+		"--format", `{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.ImageID}}`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) != 3 || parts[0] == "" || parts[1] == "" {
+			continue
+		}
+		result[parts[0]+"|"+parts[1]] = parts[2]
+	}
+	return result, nil
+}
+
+// ImageRepoDigestMap returns a map of image ID → repo digest (sha256:…) for
+// each of the given image IDs. A single docker image inspect call is issued
+// for all IDs. Images not found locally are silently omitted.
+func (c *Client) ImageRepoDigestMap(ctx context.Context, imageIDs []string) (map[string]string, error) {
+	if len(imageIDs) == 0 {
+		return make(map[string]string), nil
+	}
+	args := append([]string{"image", "inspect", "--format", `{{.Id}}|{{json .RepoDigests}}`}, imageIDs...)
+	out, err := c.exec.Run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]string, len(imageIDs))
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		sep := strings.Index(line, "|")
+		if sep < 0 {
+			continue
+		}
+		id := line[:sep]
+		var digests []string
+		if jsonErr := json.Unmarshal([]byte(line[sep+1:]), &digests); jsonErr != nil {
+			continue
+		}
+		for _, rd := range digests {
+			if idx := strings.LastIndex(rd, "@"); idx >= 0 {
+				result[id] = rd[idx+1:]
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
 // ImageExists returns true if the given image is present locally in the configured context.
 func (c *Client) ImageExists(ctx context.Context, imageRef string) (bool, error) {
 	if strings.TrimSpace(imageRef) == "" {

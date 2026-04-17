@@ -21,9 +21,12 @@ type CheckInput struct {
 }
 
 // LocalDigestFunc returns the local digest for an image reference on the
-// Docker daemon associated with the given stack.
+// Docker daemon associated with the given stack and service.
+// Implementations should prefer the digest of the running container (so that
+// a pulled-but-not-recreated container still appears stale), falling back to
+// the stored image digest when no container is running.
 // This is injected to avoid coupling to the docker CLI directly.
-type LocalDigestFunc func(ctx context.Context, stackKey, imageRef string) (string, error)
+type LocalDigestFunc func(ctx context.Context, stackKey, service, imageRef string) (string, error)
 
 // FileChange represents a tag rewrite in a compose file.
 type FileChange struct {

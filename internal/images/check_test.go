@@ -54,9 +54,9 @@ func (m *mockRegistry) setDigest(fullName, tag, digest string) {
 	m.digests[fullName][tag] = digest
 }
 
-// mockLocalDigest returns a LocalDigestFunc backed by a simple map.
+// mockLocalDigest returns a LocalDigestFunc backed by a simple map keyed by imageRef.
 func mockLocalDigest(digests map[string]string) LocalDigestFunc {
-	return func(_ context.Context, _ string, imageRef string) (string, error) {
+	return func(_ context.Context, _, _ string, imageRef string) (string, error) {
 		if d, ok := digests[imageRef]; ok {
 			return d, nil
 		}
@@ -385,7 +385,7 @@ func TestCheck_LocalDigestError(t *testing.T) {
 	reg := newMockRegistry()
 	reg.setDigest("library/nginx", "1.25", "sha256:remote")
 
-	localFn := func(_ context.Context, _ string, _ string) (string, error) {
+	localFn := func(_ context.Context, _, _, _ string) (string, error) {
 		return "", fmt.Errorf("image not pulled locally")
 	}
 
