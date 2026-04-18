@@ -49,7 +49,7 @@ jobs:
           ref: main
           path: website
 
-      - name: Replace CLI docs and update nav version
+      - name: Replace CLI docs
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -61,16 +61,13 @@ jobs:
           mkdir -p website/docs/cli
           cp -R docs/cli/. website/docs/cli/
 
-          # Update docs site version in VitePress config
-          python3 -c "import os, pathlib, re; tag=os.environ['TAG']; path=pathlib.Path('website/docs/.vitepress/config.mts'); data=path.read_text(); pattern=r\"(text:\\s*')[^']+(?=',[^{}]*link:\\s*'https://github.com/gcstr/dockform/releases/')\"; patched=re.sub(pattern, lambda m: m.group(1)+tag, data, count=1); path.write_text(patched)"
-
           # Commit and push to main
           cd website
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if [ -n "$(git status --porcelain)" ]; then
-            git add docs/cli docs/.vitepress/config.mts
-            git commit -m "docs: update CLI docs and version for $TAG"
+            git add docs/cli
+            git commit -m "docs: update CLI docs for $TAG"
             git push origin main
           else
             echo "No documentation changes to publish"
