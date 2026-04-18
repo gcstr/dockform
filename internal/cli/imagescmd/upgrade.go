@@ -17,9 +17,16 @@ import (
 
 func newUpgradeCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "upgrade",
+		Use:   "upgrade [service...]",
 		Short: "Upgrade image tags in compose files to the newest available versions",
-		RunE:  runUpgrade,
+		Long: `Upgrade image tags in compose files to the newest available versions.
+
+With no positional arguments, every service in scope is considered. Pass
+service names to narrow the upgrade; combine with --stack to scope those names
+to a single stack. A typo or unmatched name fails with an error listing the
+services available in scope.`,
+		Args: cobra.ArbitraryArgs,
+		RunE: runUpgrade,
 	}
 
 	cmd.Flags().Bool("dry-run", false, "Preview changes without writing files")
@@ -29,7 +36,7 @@ func newUpgradeCmd() *cobra.Command {
 	return cmd
 }
 
-func runUpgrade(cmd *cobra.Command, _ []string) error {
+func runUpgrade(cmd *cobra.Command, args []string) error {
 	pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 
 	// Load configuration with warnings.
@@ -62,8 +69,13 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(inputs) == 0 {
-		pr.Plain("\nNo stacks with images found.")
+		pr.Plain("No stacks with images found.")
 		return nil
+	}
+
+	inputs, err = filterInputsByServices(inputs, args)
+	if err != nil {
+		return err
 	}
 
 	// Run the check inside the spinner so the user sees feedback immediately.
@@ -118,7 +130,7 @@ func buildStackFiles(cfg *manifest.Config) map[string][]string {
 
 func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes []images.FileChange, stackFiles map[string][]string, dryRun bool) {
 	if len(results) == 0 {
-		pr.Plain("\nNo images found.")
+		pr.Plain("No images found.")
 		return
 	}
 
@@ -206,5 +218,16 @@ func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes 
 
 			pr.Plain("  %-40s %s already latest", imageRef, ui.GreenText("✓"))
 		}
+	}
+
+	// Footer: remind the user to apply the tag changes.
+	if len(changes) > 0 && !dryRun {
+		dim := lipgloss.NewStyle().Faint(true)
+		cmdStyle := lipgloss.NewStyle().Italic(true).
+			Foreground(lipgloss.AdaptiveColor{Light: "#3478F6", Dark: "#4A9EFF"})
+		pr.Plain("\n%s%s%s",
+			dim.Render("Run "),
+			cmdStyle.Render("dockform apply"),
+			dim.Render(" to publish the changes."))
 	}
 }

@@ -26,9 +26,16 @@ const tagPatternLabel = "dockform.tag_pattern"
 
 func newCheckCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "check",
+		Use:   "check [service...]",
 		Short: "Check image freshness across compose stacks",
-		RunE:  runCheck,
+		Long: `Check image freshness across compose stacks.
+
+With no positional arguments, every service in scope is checked. Pass service
+names to narrow the check; combine with --stack to scope those names to a
+single stack. A typo or unmatched name fails with an error listing the services
+available in scope.`,
+		Args: cobra.ArbitraryArgs,
+		RunE: runCheck,
 	}
 
 	cmd.Flags().Bool("json", false, "Output results as JSON")
@@ -40,7 +47,7 @@ func newCheckCmd() *cobra.Command {
 	return cmd
 }
 
-func runCheck(cmd *cobra.Command, _ []string) error {
+func runCheck(cmd *cobra.Command, args []string) error {
 	pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 
 	// Load configuration with warnings.
@@ -73,8 +80,13 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(inputs) == 0 {
-		pr.Plain("\nNo stacks with images found.")
+		pr.Plain("No stacks with images found.")
 		return nil
+	}
+
+	inputs, err = filterInputsByServices(inputs, args)
+	if err != nil {
+		return err
 	}
 
 	// Run the check inside the spinner so the user sees feedback immediately.
@@ -321,11 +333,9 @@ func renderJSON(cmd *cobra.Command, results []images.ImageStatus) error {
 
 func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 	if len(results) == 0 {
-		pr.Plain("\nNo images found.")
+		pr.Plain("No images found.")
 		return
 	}
-
-	pr.Plain("")
 
 	// Split into attention-needed and ok.
 	var attention, ok []images.ImageStatus
@@ -454,29 +464,33 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 		if showAll {
 			pr.Plain("%s  %d image(s) up to date\n", ui.GreenText("✓"), len(ok))
 			renderOkTable(ok)
-
-			hasMissingPattern := false
-			for _, r := range ok {
-				if !r.HasTagPattern {
-					hasMissingPattern = true
-					break
-				}
-			}
-			if hasMissingPattern {
-				icon := lipgloss.NewStyle().Foreground(lipgloss.Color("69")).Render("ℹ")
-				badge := dimStyle.Render(`"no tag_pattern"`)
-				labelName := lipgloss.NewStyle().Italic(true).
-					Foreground(lipgloss.AdaptiveColor{Light: "#3478F6", Dark: "#4A9EFF"}).
-					Render(tagPatternLabel)
-				prefix := dimStyle.Render("Rows marked ")
-				middle := dimStyle.Render(" are only checked for digest drift. Add a ")
-				suffix := dimStyle.Render(" label to the service to track newer tags.")
-				pr.Plain("\n%s  %s%s%s%s%s", icon, prefix, badge, middle, labelName, suffix)
-			}
 		} else {
 			pr.Plain("%s  %d image(s) up to date  %s",
 				ui.GreenText("✓"), len(ok), dimStyle.Render("(--all to show)"))
 		}
+	}
+
+	// Footer: explain the "no tag_pattern" badge whenever any image in scope
+	// is missing a tag_pattern — across both attention and ok tables.
+	hasMissingPattern := false
+	for _, r := range results {
+		if r.Error == "" && !r.HasTagPattern {
+			hasMissingPattern = true
+			break
+		}
+	}
+	if hasMissingPattern {
+		icon := lipgloss.NewStyle().Foreground(lipgloss.Color("69")).Render("ℹ")
+		badge := dimStyle.Render(`"no tag_pattern"`)
+		labelName := lipgloss.NewStyle().Italic(true).
+			Foreground(lipgloss.AdaptiveColor{Light: "#3478F6", Dark: "#4A9EFF"}).
+			Render(tagPatternLabel)
+		line1Prefix := dimStyle.Render("Rows marked ")
+		line1Suffix := dimStyle.Render(" are only checked for digest drift.")
+		line2Prefix := dimStyle.Render("   Add a ")
+		line2Suffix := dimStyle.Render(" label to the service to track newer tags.")
+		pr.Plain("\n%s  %s%s%s", icon, line1Prefix, badge, line1Suffix)
+		pr.Plain("%s%s%s", line2Prefix, labelName, line2Suffix)
 	}
 }
 
