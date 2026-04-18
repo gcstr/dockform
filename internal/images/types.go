@@ -10,15 +10,22 @@ type ImageStatus struct {
 	CurrentTag    string   // Current tag
 	DigestStale   bool     // True if remote digest differs from local
 	NewerTags     []string // Newer semver tags (empty if no tag_pattern or no newer tags)
-	HasTagPattern bool     // True if a tag_pattern is configured for the stack
+	HasTagPattern bool     // True if a dockform.tag_pattern label is set on this service
 	Error         string   // Non-empty if check failed for this image
 }
 
 // CheckInput bundles everything needed to check images for a stack.
 type CheckInput struct {
-	StackKey   string            // Stack key (e.g., "hetzner/traefik")
-	TagPattern string            // From stack.Images.TagPattern, empty means digest-only
-	Services   map[string]string // service name -> image reference (from ComposeConfigFull)
+	StackKey string                 // Stack key (e.g., "hetzner/traefik")
+	Services map[string]ServiceSpec // service name -> image + per-service tag pattern
+}
+
+// ServiceSpec holds the image reference and optional tag pattern for a single
+// service within a stack. The tag pattern is read from the service's
+// `dockform.tag_pattern` compose label; empty means digest-only.
+type ServiceSpec struct {
+	Image      string
+	TagPattern string
 }
 
 // LocalDigestFunc returns the local digest for an image reference on the

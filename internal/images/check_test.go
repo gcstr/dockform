@@ -75,7 +75,7 @@ func TestCheck_DigestMatch(t *testing.T) {
 	inputs := []CheckInput{
 		{
 			StackKey: "ctx/web",
-			Services: map[string]string{"web": "nginx:1.25"},
+			Services: map[string]ServiceSpec{"web": {Image: "nginx:1.25"}},
 		},
 	}
 
@@ -110,7 +110,7 @@ func TestCheck_DigestMismatch(t *testing.T) {
 	inputs := []CheckInput{
 		{
 			StackKey: "ctx/web",
-			Services: map[string]string{"web": "nginx:1.25"},
+			Services: map[string]ServiceSpec{"web": {Image: "nginx:1.25"}},
 		},
 	}
 
@@ -136,9 +136,8 @@ func TestCheck_TagPatternNewerVersions(t *testing.T) {
 
 	inputs := []CheckInput{
 		{
-			StackKey:   "ctx/web",
-			TagPattern: `^\d+\.\d+\.\d+$`,
-			Services:   map[string]string{"web": "nginx:1.25.0"},
+			StackKey: "ctx/web",
+			Services: map[string]ServiceSpec{"web": {Image: "nginx:1.25.0", TagPattern: `^\d+\.\d+\.\d+$`}},
 		},
 	}
 
@@ -174,9 +173,8 @@ func TestCheck_TagPatternNoNewerVersions(t *testing.T) {
 
 	inputs := []CheckInput{
 		{
-			StackKey:   "ctx/web",
-			TagPattern: `^\d+\.\d+\.\d+$`,
-			Services:   map[string]string{"web": "nginx:2.0.0"},
+			StackKey: "ctx/web",
+			Services: map[string]ServiceSpec{"web": {Image: "nginx:2.0.0", TagPattern: `^\d+\.\d+\.\d+$`}},
 		},
 	}
 
@@ -205,9 +203,8 @@ func TestCheck_CurrentTagNotSemver(t *testing.T) {
 
 	inputs := []CheckInput{
 		{
-			StackKey:   "ctx/web",
-			TagPattern: `^\d+\.\d+\.\d+$`,
-			Services:   map[string]string{"web": "nginx:latest"},
+			StackKey: "ctx/web",
+			Services: map[string]ServiceSpec{"web": {Image: "nginx:latest", TagPattern: `^\d+\.\d+\.\d+$`}},
 		},
 	}
 
@@ -244,9 +241,9 @@ func TestCheck_TagPatternFilters(t *testing.T) {
 
 	inputs := []CheckInput{
 		{
-			StackKey:   "ctx/web",
-			TagPattern: `^\d+\.\d+\.\d+$`, // Strict semver only, no suffixes
-			Services:   map[string]string{"web": "nginx:1.25.0"},
+			StackKey: "ctx/web",
+			// Strict semver only, no suffixes
+			Services: map[string]ServiceSpec{"web": {Image: "nginx:1.25.0", TagPattern: `^\d+\.\d+\.\d+$`}},
 		},
 	}
 
@@ -271,6 +268,79 @@ func TestCheck_TagPatternFilters(t *testing.T) {
 	}
 }
 
+// TestCheck_PerServicePatternsSameStack verifies that two services in the same
+// stack can have independent tag patterns (or no pattern at all). This is the
+// core capability unlocked by moving tag_pattern from stack-level config to
+// per-service `dockform.tag_pattern` labels.
+func TestCheck_PerServicePatternsSameStack(t *testing.T) {
+	reg := newMockRegistry()
+	// App: semver tags available, newer version exists.
+	reg.setDigest("library/app", "1.0.0", "sha256:app-remote")
+	reg.tags["library/app"] = []string{"1.0.0", "1.0.1", "1.1.0"}
+	// Backup: v-prefixed tags, newer version exists.
+	reg.setDigest("library/backup", "v2.0.0", "sha256:backup-remote")
+	reg.tags["library/backup"] = []string{"v2.0.0", "v2.1.0"}
+	// DB: no pattern; digest still checked and matches.
+	reg.setDigest("library/db", "16-alpine", "sha256:db-remote")
+
+	localFn := mockLocalDigest(map[string]string{
+		"app:1.0.0":     "sha256:app-remote",
+		"backup:v2.0.0": "sha256:backup-remote",
+		"db:16-alpine":  "sha256:db-remote",
+	})
+
+	inputs := []CheckInput{
+		{
+			StackKey: "default/stack",
+			Services: map[string]ServiceSpec{
+				"app":    {Image: "app:1.0.0", TagPattern: `^\d+\.\d+\.\d+$`},
+				"backup": {Image: "backup:v2.0.0", TagPattern: `^v\d+\.\d+\.\d+$`},
+				"db":     {Image: "db:16-alpine"}, // no pattern
+			},
+		},
+	}
+
+	results, err := Check(context.Background(), inputs, reg, localFn)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+
+	byService := make(map[string]ImageStatus, len(results))
+	for _, r := range results {
+		byService[r.Service] = r
+	}
+
+	app := byService["app"]
+	if !app.HasTagPattern {
+		t.Error("app: expected HasTagPattern=true")
+	}
+	if len(app.NewerTags) == 0 || app.NewerTags[0] != "1.1.0" {
+		t.Errorf("app: expected newer tag 1.1.0, got %v", app.NewerTags)
+	}
+
+	backup := byService["backup"]
+	if !backup.HasTagPattern {
+		t.Error("backup: expected HasTagPattern=true")
+	}
+	if len(backup.NewerTags) == 0 || backup.NewerTags[0] != "v2.1.0" {
+		t.Errorf("backup: expected newer tag v2.1.0, got %v", backup.NewerTags)
+	}
+
+	db := byService["db"]
+	if db.HasTagPattern {
+		t.Error("db: expected HasTagPattern=false when no pattern configured")
+	}
+	if len(db.NewerTags) != 0 {
+		t.Errorf("db: expected no newer tags without pattern, got %v", db.NewerTags)
+	}
+	if db.DigestStale {
+		t.Error("db: expected DigestStale=false (digest matches)")
+	}
+}
+
 func TestCheck_ImageParseError(t *testing.T) {
 	reg := newMockRegistry()
 	localFn := mockLocalDigest(map[string]string{})
@@ -278,7 +348,7 @@ func TestCheck_ImageParseError(t *testing.T) {
 	inputs := []CheckInput{
 		{
 			StackKey: "ctx/web",
-			Services: map[string]string{"bad": ""},
+			Services: map[string]ServiceSpec{"bad": {Image: ""}},
 		},
 	}
 
@@ -304,9 +374,9 @@ func TestCheck_RegistryError(t *testing.T) {
 	inputs := []CheckInput{
 		{
 			StackKey: "ctx/web",
-			Services: map[string]string{
-				"web":   "nginx:1.25",
-				"proxy": "nginx:1.25",
+			Services: map[string]ServiceSpec{
+				"web":   {Image: "nginx:1.25"},
+				"proxy": {Image: "nginx:1.25"},
 			},
 		},
 	}
@@ -337,13 +407,12 @@ func TestCheck_MultipleStacksMixedResults(t *testing.T) {
 
 	inputs := []CheckInput{
 		{
-			StackKey:   "ctx1/web",
-			TagPattern: `^\d+\.\d+\.\d+$`,
-			Services:   map[string]string{"web": "nginx:1.25.0"},
+			StackKey: "ctx1/web",
+			Services: map[string]ServiceSpec{"web": {Image: "nginx:1.25.0", TagPattern: `^\d+\.\d+\.\d+$`}},
 		},
 		{
 			StackKey: "ctx2/cache",
-			Services: map[string]string{"cache": "redis:7.0"},
+			Services: map[string]ServiceSpec{"cache": {Image: "redis:7.0"}},
 		},
 	}
 
@@ -392,7 +461,7 @@ func TestCheck_LocalDigestError(t *testing.T) {
 	inputs := []CheckInput{
 		{
 			StackKey: "ctx/web",
-			Services: map[string]string{"web": "nginx:1.25"},
+			Services: map[string]ServiceSpec{"web": {Image: "nginx:1.25"}},
 		},
 	}
 
@@ -421,9 +490,8 @@ func TestCheck_ListTagsError(t *testing.T) {
 
 	inputs := []CheckInput{
 		{
-			StackKey:   "ctx/web",
-			TagPattern: `^\d+\.\d+\.\d+$`,
-			Services:   map[string]string{"web": "nginx:1.25.0"},
+			StackKey: "ctx/web",
+			Services: map[string]ServiceSpec{"web": {Image: "nginx:1.25.0", TagPattern: `^\d+\.\d+\.\d+$`}},
 		},
 	}
 

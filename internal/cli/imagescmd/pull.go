@@ -16,12 +16,18 @@ import (
 
 func newPullCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "pull",
+		Use:   "pull [service...]",
 		Short: "Pull images whose remote digest has changed (same tag, new content)",
 		Long: `Pull images where the remote digest differs from the local copy.
 
 This updates images on the remote Docker daemon without modifying compose files.
-Use --recreate to also restart affected containers so they run the new image.`,
+Use --recreate to also restart affected containers so they run the new image.
+
+With no positional arguments, every service in scope is considered. Pass
+service names to narrow the pull; combine with --stack to scope those names to
+a single stack. A typo or unmatched name fails with an error listing the
+services available in scope.`,
+		Args: cobra.ArbitraryArgs,
 		RunE: runPull,
 	}
 
@@ -33,7 +39,7 @@ Use --recreate to also restart affected containers so they run the new image.`,
 	return cmd
 }
 
-func runPull(cmd *cobra.Command, _ []string) error {
+func runPull(cmd *cobra.Command, args []string) error {
 	pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 
 	cfg, err := common.LoadConfigWithWarnings(cmd, pr)
@@ -60,8 +66,13 @@ func runPull(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(inputs) == 0 {
-		pr.Plain("\nNo stacks with images found.")
+		pr.Plain("No stacks with images found.")
 		return nil
+	}
+
+	inputs, err = filterInputsByServices(inputs, args)
+	if err != nil {
+		return err
 	}
 
 	var results []images.ImageStatus
@@ -85,7 +96,7 @@ func runPull(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(stale) == 0 {
-		pr.Plain("\n%s  All images are current — no digest drift detected.", ui.GreenText("✓"))
+		pr.Plain("%s  All images are current — no digest drift detected.", ui.GreenText("✓"))
 		return nil
 	}
 
@@ -174,7 +185,7 @@ func executePull(ctx context.Context, stale []images.ImageStatus, allStacks map[
 }
 
 func renderPullDryRun(pr ui.Printer, stale []images.ImageStatus, recreate bool) {
-	pr.Plain("\n%s  %d image(s) with digest drift (dry run)\n", ui.YellowText("⚠"), len(stale))
+	pr.Plain("%s  %d image(s) with digest drift (dry run)\n", ui.YellowText("⚠"), len(stale))
 
 	boldStyle := lipgloss.NewStyle().Bold(true)
 	lastStack := ""
@@ -198,8 +209,6 @@ func renderPullDryRun(pr ui.Printer, stale []images.ImageStatus, recreate bool) 
 }
 
 func renderPullTerminal(pr ui.Printer, stale []images.ImageStatus, recreate bool) {
-	pr.Plain("")
-
 	boldStyle := lipgloss.NewStyle().Bold(true)
 	lastStack := ""
 

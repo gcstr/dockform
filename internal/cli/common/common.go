@@ -87,6 +87,10 @@ func DisplayDaemonInfo(pr ui.Printer, cfg *manifest.Config) {
 	label := fmt.Sprintf("%-*s", labelWidth, contextLabel)
 	lines = append(lines, fmt.Sprintf("│ %s  %s", labelStyle.Render(label), ui.Italic(contextsValue)))
 
+	// Trailing blank line so callers don't have to manage spacing between the
+	// daemon block and whatever follows (table, error, message).
+	lines = append(lines, "")
+
 	pr.Plain("%s", strings.Join(lines, "\n"))
 }
 

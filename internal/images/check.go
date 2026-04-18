@@ -42,7 +42,8 @@ func Check(ctx context.Context, inputs []CheckInput, reg registry.Registry, loca
 	for i, j := range jobs {
 		go func(idx int, j job) {
 			defer wg.Done()
-			results[idx] = checkImage(ctx, j.input.StackKey, j.svcName, j.input.Services[j.svcName], j.input.TagPattern, reg, localDigestFn)
+			spec := j.input.Services[j.svcName]
+			results[idx] = checkImage(ctx, j.input.StackKey, j.svcName, spec.Image, spec.TagPattern, reg, localDigestFn)
 		}(i, j)
 	}
 	wg.Wait()
