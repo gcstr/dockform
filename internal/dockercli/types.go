@@ -22,6 +22,7 @@ type ComposeService struct {
 	Ports         []ComposePort          `json:"ports" yaml:"ports"`
 	Networks      ComposeServiceNetworks `json:"networks" yaml:"networks"`
 	Volumes       []ComposeServiceVolume `json:"volumes" yaml:"volumes"`
+	Labels        map[string]string      `json:"labels" yaml:"labels"`
 }
 
 type ComposeServiceVolume struct {

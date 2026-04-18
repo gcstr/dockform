@@ -19,6 +19,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// tagPatternLabel is the Docker Compose service label that configures tag
+// matching for `dockform images check` / `upgrade`. When absent, the service
+// is only checked for digest drift.
+const tagPatternLabel = "dockform.tag_pattern"
+
 func newCheckCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "check",
@@ -136,10 +141,14 @@ func buildCheckInputs(ctx context.Context, cfg *manifest.Config, factory *docker
 			continue
 		}
 
-		services := make(map[string]string, len(doc.Services))
+		services := make(map[string]images.ServiceSpec, len(doc.Services))
 		for svcName, svc := range doc.Services {
-			if svc.Image != "" {
-				services[svcName] = svc.Image
+			if svc.Image == "" {
+				continue
+			}
+			services[svcName] = images.ServiceSpec{
+				Image:      svc.Image,
+				TagPattern: svc.Labels[tagPatternLabel],
 			}
 		}
 
@@ -147,16 +156,10 @@ func buildCheckInputs(ctx context.Context, cfg *manifest.Config, factory *docker
 			continue
 		}
 
-		input := images.CheckInput{
+		inputs = append(inputs, images.CheckInput{
 			StackKey: stackKey,
 			Services: services,
-		}
-
-		if stack.Images != nil {
-			input.TagPattern = stack.Images.TagPattern
-		}
-
-		inputs = append(inputs, input)
+		})
 	}
 
 	return inputs, nil
@@ -271,12 +274,12 @@ func effectiveProjectName(stack manifest.Stack) string {
 func prefetchLocalDigests(ctx context.Context, inputs []images.CheckInput, fn images.LocalDigestFunc) map[string]string {
 	out := make(map[string]string)
 	for _, input := range inputs {
-		for svcName, imageRef := range input.Services {
+		for svcName, spec := range input.Services {
 			key := input.StackKey + "|" + svcName
 			if _, seen := out[key]; seen {
 				continue
 			}
-			digest, _ := fn(ctx, input.StackKey, svcName, imageRef) // best-effort: empty string on failure
+			digest, _ := fn(ctx, input.StackKey, svcName, spec.Image) // best-effort: empty string on failure
 			out[key] = digest
 		}
 	}
@@ -462,13 +465,13 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 			if hasMissingPattern {
 				icon := lipgloss.NewStyle().Foreground(lipgloss.Color("69")).Render("ℹ")
 				badge := dimStyle.Render(`"no tag_pattern"`)
-				configPath := lipgloss.NewStyle().Italic(true).
+				labelName := lipgloss.NewStyle().Italic(true).
 					Foreground(lipgloss.AdaptiveColor{Light: "#3478F6", Dark: "#4A9EFF"}).
-					Render("stacks.<name>.images.tag_pattern")
+					Render(tagPatternLabel)
 				prefix := dimStyle.Render("Rows marked ")
-				middle := dimStyle.Render(" are only checked for digest drift. Set ")
-				suffix := dimStyle.Render(" to track newer tags.")
-				pr.Plain("\n%s  %s%s%s%s%s", icon, prefix, badge, middle, configPath, suffix)
+				middle := dimStyle.Render(" are only checked for digest drift. Add a ")
+				suffix := dimStyle.Render(" label to the service to track newer tags.")
+				pr.Plain("\n%s  %s%s%s%s%s", icon, prefix, badge, middle, labelName, suffix)
 			}
 		} else {
 			pr.Plain("%s  %d image(s) up to date  %s",
