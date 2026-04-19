@@ -234,8 +234,8 @@ func TestTruncOneRowANSI(t *testing.T) {
 }
 
 func TestModelInitAndRunningView(t *testing.T) {
-	if cmd := (model{}).Init(); cmd != nil {
-		t.Fatalf("expected nil init cmd")
+	if cmd := (model{}).Init(); cmd == nil {
+		t.Fatalf("expected non-nil init cmd (status tick)")
 	}
 	m := model{state: stateRunning, width: 80, logLines: []string{"line"}}
 	view := m.View()
