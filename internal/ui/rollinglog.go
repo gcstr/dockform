@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,6 +15,26 @@ import (
 
 	"github.com/gcstr/dockform/internal/logger"
 )
+
+// activeProgram tracks the Bubble Tea program currently owning stdout while
+// RunWithRollingLog is active. Spinner.SetLabel reads this to forward label
+// updates into the rolling log view instead of animating on stdout directly.
+var (
+	activeMu      sync.RWMutex
+	activeProgram *tea.Program
+)
+
+func getActiveProgram() *tea.Program {
+	activeMu.RLock()
+	defer activeMu.RUnlock()
+	return activeProgram
+}
+
+func setActiveProgram(p *tea.Program) {
+	activeMu.Lock()
+	activeProgram = p
+	activeMu.Unlock()
+}
 
 // maxLogLines is the number of rolling log lines displayed in the UI.
 const maxLogLines = 5
@@ -52,6 +73,11 @@ func RunWithRollingLog(ctx context.Context, fn func(ctx context.Context) (string
 	// Build Bubble Tea program (no alt screen)
 	m := model{state: stateRunning, width: initialWidth, cancelCh: cancelCh}
 	p := tea.NewProgram(m, tea.WithOutput(os.Stdout))
+
+	// Expose the program so Spinner.SetLabel can forward status updates to
+	// the rolling UI instead of fighting for stdout.
+	setActiveProgram(p)
+	defer setActiveProgram(nil)
 
 	// Wire up display logger: intercepts structured log events and formats
 	// lines for the UI via appendLog messages.
@@ -137,6 +163,8 @@ var displayNoiseKeys = map[string]bool{
 	"run_id":  true,
 	"command": true,
 }
+
+var statusSpinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("69"))
 
 var (
 	displayStyleKey    = lipgloss.NewStyle().Faint(true)
@@ -236,6 +264,18 @@ const (
 type appendLog struct{ line string }
 type done struct{ report string }
 type interrupted struct{}
+type statusUpdate struct{ label string }
+type statusTick struct{}
+
+// statusSpinnerFrames mirrors ui.Spinner so the TUI and the standalone
+// spinner use the same animation.
+var statusSpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+const statusTickDelay = 100 * time.Millisecond
+
+func statusTickCmd() tea.Cmd {
+	return tea.Tick(statusTickDelay, func(time.Time) tea.Msg { return statusTick{} })
+}
 
 type model struct {
 	state       state
@@ -243,9 +283,11 @@ type model struct {
 	logLines    []string // newest last, max maxLogLines
 	finalReport string
 	cancelCh    chan struct{} // Signal channel for Ctrl+C
+	statusLabel string        // current progress label (e.g., "Applying -> creating volume foo")
+	statusFrame int           // spinner animation frame
 }
 
-func (m model) Init() tea.Cmd { return nil }
+func (m model) Init() tea.Cmd { return statusTickCmd() }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -270,6 +312,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.logLines) > maxLogLines {
 			m.logLines = m.logLines[len(m.logLines)-maxLogLines:]
 		}
+	case statusUpdate:
+		m.statusLabel = msg.label
+	case statusTick:
+		if m.state == stateRunning {
+			m.statusFrame++
+			return m, statusTickCmd()
+		}
 	case done:
 		m.finalReport = msg.report
 		m.state = stateFinal
@@ -292,9 +341,19 @@ func (m model) View() string {
 	var b strings.Builder
 	switch m.state {
 	case stateRunning:
-		// Leading blank line separates the rolling block from the
-		// Identifier/Contexts header printed immediately before us.
-		b.WriteByte('\n')
+		// Status line: animated frame + current label (e.g., "Applying -> creating volume foo").
+		// DisplayDaemonInfo prints a trailing blank line, so we don't add our own leading spacer.
+		// Sits above the rolling log so the current phase is always visible.
+		if m.statusLabel != "" {
+			frame := statusSpinnerFrames[m.statusFrame%len(statusSpinnerFrames)]
+			statusLine := borderPrefix + statusSpinnerStyle.Render(frame) + " " + m.statusLabel
+			if m.width > 1 {
+				statusLine = ansi.Truncate(statusLine, m.width-1, "")
+			}
+			b.WriteString(statusLine)
+			b.WriteByte('\n')
+			b.WriteByte('\n')
+		}
 		for _, l := range m.logLines {
 			// Build the complete line (border + content) first, then truncate
 			// the WHOLE thing to m.width-1. This guarantees the line never

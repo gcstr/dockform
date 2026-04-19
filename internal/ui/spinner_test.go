@@ -22,14 +22,8 @@ func TestSpinnerStartStopEnabled(t *testing.T) {
 	sp.Stop()
 
 	out := buf.String()
-	if !strings.Contains(out, "\n") {
-		t.Fatalf("expected spinner to add spacer newline, got %q", out)
-	}
 	if !strings.Contains(out, "working") {
 		t.Fatalf("expected spinner label in output, got %q", out)
-	}
-	if sp.spacerAdded {
-		t.Fatalf("expected spacer flag to reset on Stop")
 	}
 }
 

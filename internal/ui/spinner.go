@@ -22,9 +22,6 @@ type Spinner struct {
 	delay   time.Duration
 	enabled bool
 
-	// spacer ensures a blank line above the spinner while running
-	spacerAdded bool
-
 	stopCh chan struct{}
 	doneCh chan struct{}
 	mu     sync.Mutex
@@ -70,13 +67,20 @@ func NewSpinner(out io.Writer, label string) *Spinner {
 func (s *Spinner) Start() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.enabled || s.stopCh == nil || s.doneCh == nil {
+	// When the rolling TUI owns stdout, forward the initial label to the
+	// Bubble Tea program so it can render a status line inside the rolling
+	// block. The stdout animation stays disabled.
+	if !s.enabled {
+		if p := getActiveProgram(); p != nil {
+			s.labelMu.RLock()
+			label := s.label
+			s.labelMu.RUnlock()
+			p.Send(statusUpdate{label: label})
+		}
 		return
 	}
-	// Insert a visual spacer line before spinner so it doesn't hug previous output
-	if !s.spacerAdded {
-		_, _ = fmt.Fprint(s.out, "\n")
-		s.spacerAdded = true
+	if s.stopCh == nil || s.doneCh == nil {
+		return
 	}
 	// If already running, do nothing
 	select {
@@ -120,13 +124,25 @@ func (s *Spinner) SetLabel(label string) {
 	s.labelMu.Lock()
 	s.label = label
 	s.labelMu.Unlock()
+	// Forward label updates to the rolling TUI when it's the active owner
+	// of stdout, so the status line above the rolling log stays current.
+	if p := getActiveProgram(); p != nil {
+		p.Send(statusUpdate{label: label})
+	}
 }
 
 // Stop stops the spinner and clears the line.
 func (s *Spinner) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.enabled || s.stopCh == nil || s.doneCh == nil {
+	// Clear the status line in the rolling TUI if it's active.
+	if !s.enabled {
+		if p := getActiveProgram(); p != nil {
+			p.Send(statusUpdate{label: ""})
+		}
+		return
+	}
+	if s.stopCh == nil || s.doneCh == nil {
 		return
 	}
 	// Signal stop
@@ -136,11 +152,5 @@ func (s *Spinner) Stop() {
 	default:
 		close(s.stopCh)
 		<-s.doneCh
-	}
-	// After the spinner line is cleared by the goroutine, also remove the spacer line
-	if s.spacerAdded {
-		// Move cursor up one line and clear it
-		_, _ = fmt.Fprint(s.out, "\x1b[1A\x1b[2K")
-		s.spacerAdded = false
 	}
 }
