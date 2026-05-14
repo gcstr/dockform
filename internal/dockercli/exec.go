@@ -27,12 +27,25 @@ type Exec interface {
 	RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error)
 }
 
+// MaxConcurrentSSH is the maximum number of concurrent docker CLI invocations
+// allowed against a single remote (SSH-based) Docker context. SSH daemons have
+// a MaxStartups threshold (default 10:30:100) that randomly drops connections
+// when too many arrive at once. Keeping this well below 10 avoids transient
+// "Connection reset by peer" failures during parallel plan building.
+const MaxConcurrentSSH = 4
+
+const (
+	sshMaxRetries     = 3
+	sshRetryBaseDelay = 500 * time.Millisecond
+)
+
 // SystemExec is a real implementation that shells out to the docker CLI.
 type SystemExec struct {
 	ContextName    string
 	HostOverride   string // When set, uses DOCKER_HOST instead of DOCKER_CONTEXT
 	DefaultTimeout time.Duration
 	Logger         LoggerHook
+	sem            chan struct{} // limits concurrent commands; nil means unlimited
 }
 
 // Options controls execution behavior per call.
@@ -70,9 +83,16 @@ func (s *SystemExec) WithDefaultTimeout(d time.Duration) *SystemExec { s.Default
 // WithLogger sets a logger hook to observe command execution.
 func (s *SystemExec) WithLogger(h LoggerHook) *SystemExec { s.Logger = h; return s }
 
+func isSSHConnectionError(stderr string) bool {
+	return strings.Contains(stderr, "kex_exchange_identification") ||
+		strings.Contains(stderr, "Connection reset by peer") ||
+		strings.Contains(stderr, "Connection closed by") ||
+		strings.Contains(stderr, "ssh_exchange_identification") ||
+		strings.Contains(stderr, "banner exchange")
+}
+
 func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error) {
 	l := logger.FromContext(ctx).With("component", "dockercli")
-	// Honor per-call timeout, falling back to default if set
 	if opts.Timeout <= 0 && s.DefaultTimeout > 0 {
 		opts.Timeout = s.DefaultTimeout
 	}
@@ -82,13 +102,20 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 		defer cancel()
 	}
 
+	if s.sem != nil {
+		select {
+		case s.sem <- struct{}{}:
+			defer func() { <-s.sem }()
+		case <-ctx.Done():
+			return Result{}, ctx.Err()
+		}
+	}
+
 	if s.Logger != nil {
 		s.Logger(ExecEvent{Phase: "start", Args: args, Dir: opts.Dir})
 	}
 	st := logger.StartStep(l, "docker_exec", strings.Join(args, " "), "resource_kind", "process")
 
-	start := time.Now()
-	cmd := exec.CommandContext(ctx, "docker", args...)
 	baseEnv := os.Environ()
 	if s.HostOverride != "" {
 		baseEnv = append(baseEnv, fmt.Sprintf("DOCKER_HOST=%s", s.HostOverride))
@@ -98,45 +125,72 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 	if len(opts.Env) > 0 {
 		baseEnv = append(baseEnv, opts.Env...)
 	}
-	cmd.Env = baseEnv
-	if opts.Dir != "" {
-		cmd.Dir = opts.Dir
-	}
-	if opts.Stdin != nil {
-		cmd.Stdin = opts.Stdin
-	}
-	var stdout, stderr bytes.Buffer
-	// Allow caller-provided Stdout when opts.Stdout is set via RunWithStdout
-	if sw, ok := ctx.Value(stdOutWriterKey{}).(io.Writer); ok && sw != nil {
-		cmd.Stdout = sw
-	} else {
-		cmd.Stdout = &stdout
-	}
-	cmd.Stderr = &stderr
-	runErr := cmd.Run()
-	dur := time.Since(start)
 
-	exitCode := 0
-	if cmd.ProcessState != nil {
-		exitCode = cmd.ProcessState.ExitCode()
+	_, streamingStdout := ctx.Value(stdOutWriterKey{}).(io.Writer)
+	canRetry := s.sem != nil && opts.Stdin == nil && !streamingStdout
+	maxAttempts := 1
+	if canRetry {
+		maxAttempts = sshMaxRetries + 1
 	}
 
-	// If stdout was streamed to a writer, avoid materializing it in Result
-	outStr := ""
-	if _, ok := ctx.Value(stdOutWriterKey{}).(io.Writer); !ok {
-		outStr = stdout.String()
+	start := time.Now()
+	var res Result
+	var runErr error
+
+	for attempt := range maxAttempts {
+		if attempt > 0 {
+			delay := sshRetryBaseDelay * time.Duration(1<<uint(attempt-1))
+			l.Debug("ssh_retry", "attempt", attempt+1, "delay", delay.String(), "args", strings.Join(args, " "))
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return res, ctx.Err()
+			}
+		}
+
+		cmd := exec.CommandContext(ctx, "docker", args...)
+		cmd.Env = baseEnv
+		if opts.Dir != "" {
+			cmd.Dir = opts.Dir
+		}
+		if opts.Stdin != nil {
+			cmd.Stdin = opts.Stdin
+		}
+
+		var stdout, stderr bytes.Buffer
+		if sw, ok := ctx.Value(stdOutWriterKey{}).(io.Writer); ok && sw != nil {
+			cmd.Stdout = sw
+		} else {
+			cmd.Stdout = &stdout
+		}
+		cmd.Stderr = &stderr
+
+		runErr = cmd.Run()
+
+		exitCode := 0
+		if cmd.ProcessState != nil {
+			exitCode = cmd.ProcessState.ExitCode()
+		}
+		outStr := ""
+		if !streamingStdout {
+			outStr = stdout.String()
+		}
+		res = Result{Stdout: outStr, Stderr: stderr.String(), ExitCode: exitCode, Duration: time.Since(start)}
+
+		if runErr == nil || !isSSHConnectionError(res.Stderr) {
+			break
+		}
 	}
-	res := Result{Stdout: outStr, Stderr: stderr.String(), ExitCode: exitCode, Duration: dur}
 
 	if s.Logger != nil {
-		s.Logger(ExecEvent{Phase: "finish", Args: args, Dir: opts.Dir, Duration: dur, ExitCode: exitCode, Err: runErr})
+		s.Logger(ExecEvent{Phase: "finish", Args: args, Dir: opts.Dir, Duration: res.Duration, ExitCode: res.ExitCode, Err: runErr})
 	}
 
 	if runErr != nil {
-		_ = st.Fail(runErr, "exit_code", exitCode)
+		_ = st.Fail(runErr, "exit_code", res.ExitCode)
 		return res, apperr.Wrap("dockercli.Exec", apperr.External, runErr, "%s", res.Stderr)
 	}
-	st.OK(exitCode == 0, "exit_code", exitCode)
+	st.OK(res.ExitCode == 0, "exit_code", res.ExitCode)
 	return res, nil
 }
 

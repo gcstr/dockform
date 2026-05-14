@@ -37,7 +37,7 @@ type Client struct {
 
 func New(contextName string) *Client {
 	return &Client{
-		exec:         SystemExec{ContextName: contextName},
+		exec:         newSystemExec(contextName, ""),
 		contextName:  contextName,
 		composeCache: NewLRUCache[string, ComposeConfigDoc](ComposeCacheMaxSize),
 	}
@@ -47,11 +47,28 @@ func New(contextName string) *Client {
 // When host is non-empty, DOCKER_HOST is set instead of DOCKER_CONTEXT for all CLI invocations.
 func NewWithHost(contextName, host string) *Client {
 	return &Client{
-		exec:         SystemExec{ContextName: contextName, HostOverride: host},
+		exec:         newSystemExec(contextName, host),
 		contextName:  contextName,
 		hostOverride: host,
 		composeCache: NewLRUCache[string, ComposeConfigDoc](ComposeCacheMaxSize),
 	}
+}
+
+// newSystemExec creates a SystemExec, enabling the SSH concurrency semaphore for
+// remote contexts (non-empty context name that isn't "default", or SSH host override).
+func newSystemExec(contextName, hostOverride string) SystemExec {
+	s := SystemExec{ContextName: contextName, HostOverride: hostOverride}
+	if isRemoteContext(contextName, hostOverride) {
+		s.sem = make(chan struct{}, MaxConcurrentSSH)
+	}
+	return s
+}
+
+func isRemoteContext(contextName, hostOverride string) bool {
+	if strings.HasPrefix(hostOverride, "ssh://") {
+		return true
+	}
+	return contextName != "" && contextName != "default"
 }
 
 // WithIdentifier sets an optional label identifier to scope discovery.
