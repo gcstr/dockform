@@ -10,119 +10,102 @@ import (
 )
 
 // buildFilesetResourcesForContext processes fileset diffs for a context and adds them to the plan.
+// Local indexes are built concurrently (CPU-only), but remote index reads run sequentially to
+// avoid overwhelming SSH-based Docker contexts with too many concurrent connections.
 func (p *Planner) buildFilesetResourcesForContext(ctx context.Context, filesetSpecs map[string]manifest.FilesetSpec, existingVolumes map[string]struct{}, client DockerClient, plan *ResourcePlan, execCtx *ContextExecutionContext) error {
 	filesetNames := sortedKeys(filesetSpecs)
 	if len(filesetNames) == 0 {
 		return nil
 	}
 
-	type filesetResult struct {
-		name      string
-		resources []Resource
-		execData  *FilesetExecutionData
-		err       error
+	// Phase 1: build all local indexes concurrently (filesystem-only, no SSH).
+	type localResult struct {
+		name  string
+		index filesets.Index
+		err   error
 	}
-
-	resultsChan := make(chan filesetResult, len(filesetNames))
+	localCh := make(chan localResult, len(filesetNames))
 	var wg sync.WaitGroup
-
-	// Process each fileset concurrently
 	for _, name := range filesetNames {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
 			a := filesetSpecs[name]
-			var resources []Resource
-
-			// Build local index
-			local, err := filesets.BuildLocalIndex(a.SourceAbs, a.TargetPath, a.Exclude)
-			if err != nil {
-				resources = append(resources,
-					NewResource(ResourceFile, "", ActionUpdate, "unable to index local files"))
-				resultsChan <- filesetResult{
-					name:      name,
-					resources: resources,
-					execData:  nil,
-					err:       apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.Internal, err, "build local fileset index for %s", name),
-				}
-				return
-			}
-
-			// Read remote index only if the target volume exists
-			raw := ""
-			if _, volumeExists := existingVolumes[a.TargetVolume]; volumeExists {
-				raw, err = client.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
-				if err != nil {
-					resultsChan <- filesetResult{
-						name:      name,
-						resources: []Resource{NewResource(ResourceFile, "", ActionUpdate, "unable to read remote index")},
-						execData:  nil,
-						err:       apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.External, err, "read remote index for %s", name),
-					}
-					return
-				}
-			}
-			remote, err := filesets.ParseIndexJSON(raw)
-			if err != nil {
-				resultsChan <- filesetResult{
-					name:      name,
-					resources: []Resource{NewResource(ResourceFile, "", ActionUpdate, "unable to parse remote index")},
-					execData:  nil,
-					err:       apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.External, err, "parse remote index for %s", name),
-				}
-				return
-			}
-			diff := filesets.DiffIndexes(local, remote)
-
-			// Store execution data for reuse during apply
-			execData := &FilesetExecutionData{
-				LocalIndex:  local,
-				RemoteIndex: remote,
-				Diff:        diff,
-			}
-
-			if local.TreeHash == remote.TreeHash {
-				resources = append(resources,
-					NewResource(ResourceFile, "", ActionNoop, "no file changes"))
-			} else {
-				for _, f := range diff.ToCreate {
-					resources = append(resources,
-						NewResource(ResourceFile, f.Path, ActionCreate, ""))
-				}
-				for _, f := range diff.ToUpdate {
-					resources = append(resources,
-						NewResource(ResourceFile, f.Path, ActionUpdate, ""))
-				}
-				for _, pth := range diff.ToDelete {
-					resources = append(resources,
-						NewResource(ResourceFile, pth, ActionDelete, ""))
-				}
-				if len(diff.ToCreate) == 0 && len(diff.ToUpdate) == 0 && len(diff.ToDelete) == 0 {
-					resources = append(resources,
-						NewResource(ResourceFile, "", ActionUpdate, "changes detected (details unavailable)"))
-				}
-			}
-
-			resultsChan <- filesetResult{name: name, resources: resources, execData: execData}
+			idx, err := filesets.BuildLocalIndex(a.SourceAbs, a.TargetPath, a.Exclude)
+			localCh <- localResult{name: name, index: idx, err: err}
 		}(name)
 	}
+	wg.Wait()
+	close(localCh)
 
-	// Wait for all filesets to complete
-	go func() {
-		wg.Wait()
-		close(resultsChan)
-	}()
-
-	// Collect results and add to plan and execution context
+	localIndexes := make(map[string]filesets.Index, len(filesetNames))
 	var errs []error
-	for result := range resultsChan {
-		plan.Filesets[result.name] = result.resources
-		if result.execData != nil {
-			execCtx.Filesets[result.name] = result.execData
+	for res := range localCh {
+		if res.err != nil {
+			plan.Filesets[res.name] = []Resource{
+				NewResource(ResourceFile, "", ActionUpdate, "unable to index local files"),
+			}
+			errs = append(errs, apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.Internal, res.err, "build local fileset index for %s", res.name))
+			continue
 		}
-		if result.err != nil {
-			errs = append(errs, result.err)
+		localIndexes[res.name] = res.index
+	}
+
+	// Phase 2: read remote indexes sequentially to avoid SSH connection floods.
+	for _, name := range filesetNames {
+		local, ok := localIndexes[name]
+		if !ok {
+			continue // local index failed above
 		}
+		a := filesetSpecs[name]
+
+		raw := ""
+		if _, volumeExists := existingVolumes[a.TargetVolume]; volumeExists {
+			var err error
+			raw, err = client.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
+			if err != nil {
+				plan.Filesets[name] = []Resource{NewResource(ResourceFile, "", ActionUpdate, "unable to read remote index")}
+				errs = append(errs, apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.External, err, "read remote index for %s", name))
+				continue
+			}
+		}
+		remote, err := filesets.ParseIndexJSON(raw)
+		if err != nil {
+			plan.Filesets[name] = []Resource{NewResource(ResourceFile, "", ActionUpdate, "unable to parse remote index")}
+			errs = append(errs, apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.External, err, "parse remote index for %s", name))
+			continue
+		}
+
+		diff := filesets.DiffIndexes(local, remote)
+		execCtx.Filesets[name] = &FilesetExecutionData{
+			LocalIndex:  local,
+			RemoteIndex: remote,
+			Diff:        diff,
+		}
+
+		var resources []Resource
+		if local.TreeHash == remote.TreeHash {
+			resources = append(resources,
+				NewResource(ResourceFile, "", ActionNoop, "no file changes"))
+		} else {
+			for _, f := range diff.ToCreate {
+				resources = append(resources,
+					NewResource(ResourceFile, f.Path, ActionCreate, ""))
+			}
+			for _, f := range diff.ToUpdate {
+				resources = append(resources,
+					NewResource(ResourceFile, f.Path, ActionUpdate, ""))
+			}
+			for _, pth := range diff.ToDelete {
+				resources = append(resources,
+					NewResource(ResourceFile, pth, ActionDelete, ""))
+			}
+			if len(diff.ToCreate) == 0 && len(diff.ToUpdate) == 0 && len(diff.ToDelete) == 0 {
+				resources = append(resources,
+					NewResource(ResourceFile, "", ActionUpdate, "changes detected (details unavailable)"))
+			}
+		}
+		plan.Filesets[name] = resources
 	}
 
 	return apperr.Aggregate("planner.buildFilesetResourcesForContext", apperr.External, "one or more fileset analyses failed", errs...)
