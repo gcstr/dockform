@@ -32,11 +32,11 @@ type Exec interface {
 // a MaxStartups threshold (default 10:30:100) that randomly drops connections
 // when too many arrive at once. Keeping this well below 10 avoids transient
 // "Connection reset by peer" failures during parallel plan building.
-const MaxConcurrentSSH = 4
+const MaxConcurrentSSH = 2
 
 const (
-	sshMaxRetries     = 3
-	sshRetryBaseDelay = 500 * time.Millisecond
+	sshMaxRetries     = 4
+	sshRetryBaseDelay = 1 * time.Second
 )
 
 // SystemExec is a real implementation that shells out to the docker CLI.
@@ -75,6 +75,7 @@ type ExecEvent struct {
 	Duration time.Duration
 	ExitCode int
 	Err      error
+	Stderr   string
 }
 
 // WithDefaultTimeout sets a default timeout for all runs when Options.Timeout is not provided.
@@ -183,11 +184,11 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 	}
 
 	if s.Logger != nil {
-		s.Logger(ExecEvent{Phase: "finish", Args: args, Dir: opts.Dir, Duration: res.Duration, ExitCode: res.ExitCode, Err: runErr})
+		s.Logger(ExecEvent{Phase: "finish", Args: args, Dir: opts.Dir, Duration: res.Duration, ExitCode: res.ExitCode, Err: runErr, Stderr: res.Stderr})
 	}
 
 	if runErr != nil {
-		_ = st.Fail(runErr, "exit_code", res.ExitCode)
+		_ = st.Fail(runErr, "exit_code", res.ExitCode, "stderr", res.Stderr)
 		return res, apperr.Wrap("dockercli.Exec", apperr.External, runErr, "%s", res.Stderr)
 	}
 	st.OK(res.ExitCode == 0, "exit_code", res.ExitCode)
