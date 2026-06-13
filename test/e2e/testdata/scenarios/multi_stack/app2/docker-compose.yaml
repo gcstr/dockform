@@ -1,0 +1,20 @@
+services:
+  hello2:
+    image: alpine
+    command: ["sh", "-c", "sleep 5m"]
+    labels:
+      io.dockform.identifier: ${DOCKFORM_RUN_ID}
+    volumes:
+      - data:/data
+    networks:
+      - net
+
+volumes:
+  data:
+    external: true
+    name: "df_e2e_${DOCKFORM_RUN_ID}_vol2"
+
+networks:
+  net:
+    external: true
+    name: "df_e2e_${DOCKFORM_RUN_ID}_net"
