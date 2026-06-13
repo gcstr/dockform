@@ -1,0 +1,15 @@
+services:
+  whoami:
+    image: alpine
+    command: ["sh", "-c", "sleep 5m"]
+    labels:
+      io.dockform.identifier: ${DOCKFORM_RUN_ID}
+    networks:
+      - internal
+
+# Network declared only here (not in dockform.yml). Compose creates it; dockform
+# injects its identifier label so destroy can find it. It must NOT be reported as
+# an orphan on a subsequent plan/apply (GH #54).
+networks:
+  internal:
+    name: df_e2e_${DOCKFORM_RUN_ID}_net

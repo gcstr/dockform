@@ -13,6 +13,7 @@ type mockDockerClient struct {
 	// Mock data to return
 	volumes         []string
 	networks        []string
+	composeNetworks []string // subset of networks owned by a compose stack
 	containers      []dockercli.PsBrief
 	composePsItems  []dockercli.ComposePsItem
 	volumeFiles     map[string]string            // volumeName -> file content
@@ -156,6 +157,13 @@ func (m *mockDockerClient) ListNetworks(ctx context.Context) ([]string, error) {
 		return nil, m.listNetworksError
 	}
 	return m.networks, nil
+}
+
+func (m *mockDockerClient) ListComposeNetworks(ctx context.Context) ([]string, error) {
+	if m.listNetworksError != nil {
+		return nil, m.listNetworksError
+	}
+	return m.composeNetworks, nil
 }
 
 func (m *mockDockerClient) CreateNetwork(ctx context.Context, name string, labels map[string]string, opts ...dockercli.NetworkCreateOpts) error {

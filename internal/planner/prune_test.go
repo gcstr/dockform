@@ -88,3 +88,28 @@ func TestPlanner_Prune_RemovesOrphanedContainers(t *testing.T) {
 		t.Errorf("expected 1 container to be removed, got %d", len(mock.removedContainers))
 	}
 }
+
+// TestPlanner_Prune_PreservesComposeOwnedNetworks verifies that networks created
+// by a compose stack (carrying the identifier label but managed by the stack) are
+// not pruned as orphans, while genuinely unmanaged networks still are. Regression
+// test for GH #54.
+func TestPlanner_Prune_PreservesComposeOwnedNetworks(t *testing.T) {
+	mock := newMockDocker()
+	mock.networks = []string{"whoami", "stale-net"}
+	mock.composeNetworks = []string{"whoami"} // owned by a compose stack
+
+	p := NewWithDocker(mock)
+
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+	}
+
+	if err := p.Prune(context.Background(), cfg); err != nil {
+		t.Fatalf("Prune failed: %v", err)
+	}
+
+	if len(mock.removedNetworks) != 1 || mock.removedNetworks[0] != "stale-net" {
+		t.Errorf("expected only stale-net removed (compose-owned whoami preserved), got %v", mock.removedNetworks)
+	}
+}

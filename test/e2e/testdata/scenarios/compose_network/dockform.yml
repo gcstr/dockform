@@ -1,0 +1,12 @@
+identifier: ${DOCKFORM_RUN_ID}
+
+contexts:
+  default: {}
+
+stacks:
+  default/app:
+    root: .
+    files:
+      - docker-compose.yaml
+    project:
+      name: df_e2e_${DOCKFORM_RUN_ID}
