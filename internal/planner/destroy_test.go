@@ -113,3 +113,57 @@ func TestDestroy_OptimizedContainerLookup(t *testing.T) {
 		t.Errorf("Expected 2 web containers removed, got %d", webCount)
 	}
 }
+
+// TestDestroy_ScopedToStack verifies that when the config is targeted (e.g. via
+// --stack), destroy only removes the targeted stack's services and its own
+// fileset volumes, leaving other stacks and context-level shared
+// networks/volumes untouched. Regression test for GH #55.
+func TestDestroy_ScopedToStack(t *testing.T) {
+	baseMock := newMockDocker()
+	baseMock.containers = []dockercli.PsBrief{
+		{Project: "nginx", Service: "nginx", Name: "nginx-nginx-1"},
+		{Project: "traefik", Service: "traefik", Name: "traefik-traefik-1"},
+	}
+	baseMock.networks = []string{"proxy", "traefik"}
+	baseMock.volumes = []string{"nginx-config", "traefik-config", "traefik-logs"}
+
+	mockCounter := &mockDockerListCounter{mockDockerClient: baseMock}
+
+	// Config targeted to services/nginx only.
+	cfg := manifest.Config{
+		Identifier: "test",
+		Targeted:   true,
+		Contexts: map[string]manifest.ContextConfig{
+			"services": {},
+		},
+		Stacks: map[string]manifest.Stack{
+			"services/nginx": {Context: "services"},
+		},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
+			"nginx-config": {TargetVolume: "nginx-config", Context: "services", Stack: "nginx"},
+		},
+	}
+
+	planner := NewWithDocker(mockCounter)
+	ctx := context.Background()
+
+	if err := planner.Destroy(ctx, cfg); err != nil {
+		t.Fatalf("Destroy failed: %v", err)
+	}
+
+	// Only the nginx service container should be removed.
+	if got := mockCounter.removedContainers; len(got) != 1 || got[0] != "nginx-nginx-1" {
+		t.Errorf("Expected only nginx-nginx-1 removed, got %v", got)
+	}
+
+	// Context-level shared networks must NOT be removed under a scoped destroy.
+	if got := mockCounter.removedNetworks; len(got) != 0 {
+		t.Errorf("Expected no networks removed under scoped destroy, got %v", got)
+	}
+
+	// Only the targeted stack's fileset volume should be removed; shared/other
+	// volumes must be left alone.
+	if got := mockCounter.removedVolumes; len(got) != 1 || got[0] != "nginx-config" {
+		t.Errorf("Expected only nginx-config volume removed, got %v", got)
+	}
+}

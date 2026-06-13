@@ -23,7 +23,11 @@ This command will:
 - Destroy resources in the correct order (containers → networks → volumes)
 
 Warning: This operation is irreversible and will destroy ALL managed resources,
-regardless of what's in your current configuration file.`,
+regardless of what's in your current configuration file.
+
+Use --stack or --context to scope the destroy. When scoped, only the targeted
+stacks' services and their own fileset volumes are removed; shared context-level
+networks and volumes are preserved.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			skipConfirm, _ := cmd.Flags().GetBool("skip-confirmation")
 
@@ -60,6 +64,7 @@ regardless of what's in your current configuration file.`,
 			confirmed, err := common.GetDestroyConfirmation(cmd, ctx.Printer, common.DestroyConfirmationOptions{
 				SkipConfirmation: skipConfirm,
 				Identifier:       identifier,
+				Targeted:         ctx.Config.Targeted,
 			})
 			if err != nil {
 				return err
