@@ -100,7 +100,7 @@ brew install dockform
 ### Go
 
 ```sh
-go install github.com/gcstr/dockform@latest
+go install github.com/gcstr/dockform/cmd/dockform@latest
 ```
 
 ### From source
