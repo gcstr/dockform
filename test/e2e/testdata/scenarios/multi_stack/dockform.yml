@@ -1,0 +1,20 @@
+identifier: ${DOCKFORM_RUN_ID}
+
+contexts:
+  default:
+    networks:
+      df_e2e_${DOCKFORM_RUN_ID}_net: {}
+
+stacks:
+  default/app1:
+    root: app1
+    files:
+      - docker-compose.yaml
+    project:
+      name: df_e2e_${DOCKFORM_RUN_ID}_app1
+  default/app2:
+    root: app2
+    files:
+      - docker-compose.yaml
+    project:
+      name: df_e2e_${DOCKFORM_RUN_ID}_app2

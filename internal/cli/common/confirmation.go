@@ -72,6 +72,9 @@ func GetConfirmation(cmd *cobra.Command, pr ui.Printer, opts ConfirmationOptions
 type DestroyConfirmationOptions struct {
 	SkipConfirmation bool
 	Identifier       string
+	// Targeted indicates the destroy was scoped by --stack/--context/--deployment,
+	// so only the targeted resources (shown in the plan) will be removed.
+	Targeted bool
 }
 
 // GetDestroyConfirmation handles user confirmation for destroy operations,
@@ -82,6 +85,9 @@ func GetDestroyConfirmation(cmd *cobra.Command, pr ui.Printer, opts DestroyConfi
 	}
 
 	msgSummary := fmt.Sprintf("│ This will destroy ALL managed resources with identifier '%s'.\n│ This operation is IRREVERSIBLE.", opts.Identifier)
+	if opts.Targeted {
+		msgSummary = fmt.Sprintf("│ This will destroy the targeted resources shown above (identifier '%s').\n│ This operation is IRREVERSIBLE.", opts.Identifier)
+	}
 	msgInstr := fmt.Sprintf("│ Type the identifier name '%s' to confirm.\n│", ui.ConfirmToken(opts.Identifier))
 
 	tty := detectTTY(cmd)

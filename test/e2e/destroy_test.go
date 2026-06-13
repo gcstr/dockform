@@ -354,3 +354,102 @@ func TestDestroy_IndependentOfConfigFile(t *testing.T) {
 
 	t.Logf("Successfully destroyed resources independent of config file content")
 }
+
+// TestDestroy_ScopedToStack verifies that `destroy --stack <context/stack>` only
+// removes the targeted stack's services, leaving other stacks, the shared
+// context-level network, and non-fileset volumes intact. Regression test for
+// GH #55, where a scoped destroy tore down ALL managed resources.
+func TestDestroy_ScopedToStack(t *testing.T) {
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker not found in PATH")
+	}
+
+	// Log context and apply safety gate
+	ctx := context.Background()
+	_ = logDockerContext(t)
+	if looksProd(t) && os.Getenv("E2E_ALLOW_HOST") != "1" {
+		t.Skip("refusing to run e2e against a production-looking daemon; set E2E_ALLOW_HOST=1 to override")
+	}
+
+	// Unique run id and identifier
+	runID := uniqueID()
+	identifier := runID
+	ensureNetworkCreatableOrSkip(t, identifier)
+
+	app1Project := "df_e2e_" + runID + "_app1"
+	app2Project := "df_e2e_" + runID + "_app2"
+
+	// Pre-create external volumes referenced by each stack's compose since the
+	// planner does not create top-level external volumes.
+	_ = exec.Command("docker", "volume", "create", "--label", "io.dockform.identifier="+identifier, "df_e2e_"+runID+"_vol1").Run()
+	_ = exec.Command("docker", "volume", "create", "--label", "io.dockform.identifier="+identifier, "df_e2e_"+runID+"_vol2").Run()
+
+	// Build dockform once and reuse path
+	bin := buildDockform(t)
+
+	// Always cleanup labeled resources
+	t.Cleanup(func() {
+		cleanupByLabel(t, identifier)
+	})
+
+	// Prepare temp workdir by copying scenario
+	tempDir := t.TempDir()
+	src := filepath.Join("testdata", "scenarios", "multi_stack")
+	if err := copyTree(src, tempDir); err != nil {
+		t.Fatalf("copy scenario: %v", err)
+	}
+
+	env := append(os.Environ(), "DOCKFORM_RUN_ID="+runID)
+
+	// 1. APPLY: Create both stacks, the shared network, and both volumes
+	stdout, stderr, code := runCmdWithStdinDetailed(t, tempDir, env, bin, "yes\n", "apply", "--manifest", tempDir)
+	if code != 0 {
+		t.Fatalf("apply failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", code, stdout, stderr)
+	}
+
+	// Assert both stacks' containers exist before destroy
+	app1Before := dockerLines(t, ctx, "ps", "-a", "--format", "{{.Names}}", "--filter", "label=com.docker.compose.project="+app1Project)
+	app2Before := dockerLines(t, ctx, "ps", "-a", "--format", "{{.Names}}", "--filter", "label=com.docker.compose.project="+app2Project)
+	if len(app1Before) == 0 || len(app2Before) == 0 {
+		t.Fatalf("expected both stacks to have containers before destroy: app1=%v app2=%v", app1Before, app2Before)
+	}
+
+	// 2. DESTROY SCOPED TO app1 ONLY
+	destroyOut, destroyErr, destroyCode := runCmdWithStdinDetailed(t, tempDir, env, bin, identifier+"\n", "destroy", "--stack", "default/app1", "--manifest", tempDir)
+	if destroyCode != 0 {
+		t.Fatalf("scoped destroy failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", destroyCode, destroyOut, destroyErr)
+	}
+
+	// Confirmation copy should reflect the scoped (targeted) destroy, not the
+	// full "ALL managed resources" warning.
+	if !strings.Contains(destroyOut, "targeted resources shown above") {
+		t.Fatalf("scoped destroy should show targeted confirmation copy:\n%s", destroyOut)
+	}
+	if strings.Contains(destroyOut, "destroy ALL managed resources") {
+		t.Fatalf("scoped destroy must not show the ALL-resources warning:\n%s", destroyOut)
+	}
+
+	// 3. VERIFY ONLY app1 WAS DESTROYED
+	app1After := dockerLines(t, ctx, "ps", "-a", "--format", "{{.Names}}", "--filter", "label=com.docker.compose.project="+app1Project)
+	app2After := dockerLines(t, ctx, "ps", "-a", "--format", "{{.Names}}", "--filter", "label=com.docker.compose.project="+app2Project)
+	if len(app1After) != 0 {
+		t.Fatalf("expected app1 containers to be destroyed, but found: %v", app1After)
+	}
+	if len(app2After) == 0 {
+		t.Fatalf("expected app2 containers to survive scoped destroy, but none found")
+	}
+
+	// Shared context-level network must be preserved.
+	networksAfter := dockerLines(t, ctx, "network", "ls", "--format", "{{.Name}}", "--filter", "label=io.dockform.identifier="+identifier)
+	if len(networksAfter) == 0 {
+		t.Fatalf("expected shared network to survive scoped destroy, but none found")
+	}
+
+	// Non-fileset volumes (both stacks') must be preserved.
+	volumesAfter := dockerLines(t, ctx, "volume", "ls", "--format", "{{.Name}}", "--filter", "label=io.dockform.identifier="+identifier)
+	if len(volumesAfter) != 2 {
+		t.Fatalf("expected both volumes to survive scoped destroy, found: %v", volumesAfter)
+	}
+
+	t.Logf("Scoped destroy removed only app1; app2, shared network, and volumes preserved")
+}
