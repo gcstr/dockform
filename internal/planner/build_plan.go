@@ -177,13 +177,21 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 				NewResource(ResourceNetwork, name, ActionCreate, ""))
 		}
 	}
-	// Plan removals for labeled networks no longer needed (skip when targeting specific stacks)
+	// Plan removals for labeled networks no longer needed (skip when targeting specific stacks).
+	// Compose-owned networks carry the identifier label but are managed by their
+	// stack's lifecycle, so they must not be reported as orphans (GH #54).
 	if !cfg.Targeted {
-		for name := range existingNetworks {
-			if _, want := desiredNetworks[name]; !want {
-				resourcePlan.Networks = append(resourcePlan.Networks,
-					NewResource(ResourceNetwork, name, ActionDelete, ""))
+		var composeOwnedNetworks map[string]struct{}
+		if client != nil {
+			owned, err := p.getComposeOwnedNetworks(ctx, client)
+			if err != nil {
+				return nil, err
 			}
+			composeOwnedNetworks = owned
+		}
+		for _, name := range orphanNetworks(existingNetworks, desiredNetworks, composeOwnedNetworks) {
+			resourcePlan.Networks = append(resourcePlan.Networks,
+				NewResource(ResourceNetwork, name, ActionDelete, ""))
 		}
 	}
 

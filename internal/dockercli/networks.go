@@ -23,6 +23,23 @@ func (c *Client) ListNetworks(ctx context.Context) ([]string, error) {
 	return util.SplitNonEmptyLines(out), nil
 }
 
+// ListComposeNetworks returns names of identifier-labeled networks that are owned
+// by a compose stack. Compose stamps the com.docker.compose.project label onto
+// networks it creates; dockform's own CreateNetwork does not. The label filters
+// are ANDed, so this returns only networks managed by a compose project.
+func (c *Client) ListComposeNetworks(ctx context.Context) ([]string, error) {
+	args := []string{"network", "ls", "--format", "{{.Name}}"}
+	if c.identifier != "" {
+		args = append(args, "--filter", "label=io.dockform.identifier="+c.identifier)
+	}
+	args = append(args, "--filter", "label=com.docker.compose.project")
+	out, err := c.exec.Run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return util.SplitNonEmptyLines(out), nil
+}
+
 // NetworkSummary contains key metadata about a network for dashboard display.
 type NetworkSummary struct {
 	Name   string

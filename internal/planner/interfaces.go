@@ -24,6 +24,9 @@ type DockerClient interface {
 
 	// Network operations
 	ListNetworks(ctx context.Context) ([]string, error)
+	// ListComposeNetworks returns identifier-labeled networks owned by a compose
+	// stack (also carrying the com.docker.compose.project label).
+	ListComposeNetworks(ctx context.Context) ([]string, error)
 	CreateNetwork(ctx context.Context, name string, labels map[string]string, opts ...dockercli.NetworkCreateOpts) error
 	RemoveNetwork(ctx context.Context, name string) error
 	InspectNetwork(ctx context.Context, name string) (dockercli.NetworkInspect, error)

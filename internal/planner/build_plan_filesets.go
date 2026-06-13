@@ -165,6 +165,41 @@ func (p *Planner) getExistingResourcesForClient(ctx context.Context, client Dock
 	return volumes, networks, apperr.Aggregate("planner.getExistingResourcesForClient", apperr.External, "failed to discover existing docker resources", errs...)
 }
 
+// getComposeOwnedNetworks returns the set of identifier-labeled networks that are
+// owned by a compose stack (they also carry the com.docker.compose.project label).
+// These must be excluded from orphan detection: dockform injects its identifier
+// label onto compose-defined networks so destroy can find them, but their
+// lifecycle belongs to the stack, not to dockform (GH #54).
+func (p *Planner) getComposeOwnedNetworks(ctx context.Context, client DockerClient) (map[string]struct{}, error) {
+	owned := map[string]struct{}{}
+	nets, err := client.ListComposeNetworks(ctx)
+	if err != nil {
+		return nil, apperr.Wrap("planner.getComposeOwnedNetworks", apperr.External, err, "list compose-owned networks")
+	}
+	for _, n := range nets {
+		owned[n] = struct{}{}
+	}
+	return owned, nil
+}
+
+// orphanNetworks returns the labeled networks that should be removed: those no
+// longer desired and not owned by a compose stack. Compose-owned networks carry
+// the identifier label but are managed by their stack's lifecycle, so they are
+// never treated as dockform orphans (GH #54).
+func orphanNetworks(existing, desired, composeOwned map[string]struct{}) []string {
+	var orphans []string
+	for name := range existing {
+		if _, want := desired[name]; want {
+			continue
+		}
+		if _, owned := composeOwned[name]; owned {
+			continue
+		}
+		orphans = append(orphans, name)
+	}
+	return orphans
+}
+
 // aggregateContextPlan merges a context plan into the aggregated plan.
 func (p *Planner) aggregateContextPlan(aggregated *ResourcePlan, contextPlan *ContextPlan) {
 	if contextPlan == nil || contextPlan.Resources == nil {

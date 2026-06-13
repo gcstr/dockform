@@ -133,11 +133,19 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 	if err != nil {
 		errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "list managed networks for context %s", contextName))
 	} else {
+		// Compose-owned networks carry the identifier label but are managed by
+		// their stack's lifecycle, so they must not be pruned as orphans (GH #54).
+		composeOwned, err := p.getComposeOwnedNetworks(ctx, client)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		existing := make(map[string]struct{}, len(nets))
 		for _, n := range nets {
-			if _, want := desiredNetworks[n]; !want {
-				if err := client.RemoveNetwork(ctx, n); err != nil {
-					errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "remove unmanaged network %s in context %s", n, contextName))
-				}
+			existing[n] = struct{}{}
+		}
+		for _, n := range orphanNetworks(existing, desiredNetworks, composeOwned) {
+			if err := client.RemoveNetwork(ctx, n); err != nil {
+				errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "remove unmanaged network %s in context %s", n, contextName))
 			}
 		}
 	}
