@@ -24,6 +24,38 @@ import (
 // is only checked for digest drift.
 const tagPatternLabel = "dockform.tag_pattern"
 
+// tagPatternIssue flags a service whose tag_pattern is set but not anchored with
+// a trailing '$'. This is the visible symptom of writing a lone '$' in the
+// compose label: Docker Compose interpolation consumes it (it needs '$$' for a
+// literal '$'), so dockform receives an unanchored pattern that silently matches
+// unintended tags.
+type tagPatternIssue struct {
+	stack   string
+	service string
+	pattern string
+}
+
+// unanchoredTagPatterns returns, sorted by stack then service, the services whose
+// tag_pattern is non-empty and does not end with '$'. These are likely cases of a
+// lone '$' being eaten by Compose interpolation (it needs '$$').
+func unanchoredTagPatterns(inputs []images.CheckInput) []tagPatternIssue {
+	var issues []tagPatternIssue
+	for _, in := range inputs {
+		for name, spec := range in.Services {
+			if spec.TagPattern != "" && !strings.HasSuffix(spec.TagPattern, "$") {
+				issues = append(issues, tagPatternIssue{stack: in.StackKey, service: name, pattern: spec.TagPattern})
+			}
+		}
+	}
+	sort.Slice(issues, func(i, j int) bool {
+		if issues[i].stack != issues[j].stack {
+			return issues[i].stack < issues[j].stack
+		}
+		return issues[i].service < issues[j].service
+	})
+	return issues
+}
+
 func newCheckCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "check [service...]",
@@ -105,6 +137,15 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	// Warn about tag_pattern labels that look mis-escaped: a lone '$' in a compose
+	// label is consumed by Compose interpolation (needs '$$'), leaving the pattern
+	// unanchored so it silently matches unintended tags. Warnings go to stderr so
+	// they don't corrupt --json output on stdout.
+	for _, issue := range unanchoredTagPatterns(inputs) {
+		pr.Warn("tag_pattern for %s/%s (%q) is not anchored with '$'; Compose needs '$$' for a literal '$' (a lone '$' is consumed). If intentional, ignore. See https://docs.docker.com/reference/compose-file/interpolation/",
+			issue.stack, issue.service, issue.pattern)
 	}
 
 	// Render output.
