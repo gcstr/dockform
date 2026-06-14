@@ -28,27 +28,30 @@ func New() *cobra.Command {
 				ctx.Planner = ctx.Planner.WithParallel(false)
 			}
 
-			// Build the plan with rolling logs (or direct when verbose)
+			// Build the plan with rolling logs (or direct when verbose). The rolling
+			// log shows BuildPlan progress only — we deliberately do not hand it the
+			// plan as its final report, because the TUI renders inline and clips a
+			// tall plan to the terminal height, hiding creates/destroys before the
+			// confirm prompt (dockform-ltv). The full plan is printed below instead.
 			var builtPlan *planner.Plan
 			verbose, _ := cmd.Flags().GetBool("verbose")
-			planOut, usedTUI, err := common.RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
-				var s string
-				err := ctx.WithRunContext(runCtx, func() error {
+			_, _, err = common.RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
+				return "", ctx.WithRunContext(runCtx, func() error {
 					plan, err := ctx.BuildPlan()
 					if err != nil {
 						return err
 					}
 					builtPlan = plan
-					s = plan.String()
 					return nil
 				})
-				return s, err
 			})
 			if err != nil {
 				return err
 			}
-			if !usedTUI {
-				ctx.Printer.Plain("%s", planOut)
+			// Print the full plan for review. Goes through the normal printer so it
+			// scrolls naturally instead of being clipped by the rolling-log TUI.
+			if builtPlan != nil {
+				ctx.Printer.Plain("%s", builtPlan.String())
 			}
 
 			// If the plan has no create/update/delete actions, inform and exit early
