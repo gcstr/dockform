@@ -95,14 +95,13 @@ func TestEnsureContextsReachable(t *testing.T) {
 			t.Errorf("expected 'contexts are unreachable' in error, got: %s", msg)
 		}
 		// Verify sorted order: down appears before down2
-		iDown := strings.Index(msg, "down\n")
-		if iDown < 0 {
-			// "down" may appear as "• down:" - find "• down:"
-			iDown = strings.Index(msg, "• down:")
-		}
+		iDown := strings.Index(msg, "• down:")
 		iDown2 := strings.Index(msg, "• down2:")
-		if iDown < 0 || iDown2 < 0 {
-			t.Fatalf("could not locate both contexts in error message: %s", msg)
+		if iDown < 0 {
+			t.Fatalf("could not locate '• down:' in error message: %s", msg)
+		}
+		if iDown2 < 0 {
+			t.Fatalf("could not locate '• down2:' in error message: %s", msg)
 		}
 		if iDown > iDown2 {
 			t.Errorf("expected 'down' before 'down2' in error message, got: %s", msg)
