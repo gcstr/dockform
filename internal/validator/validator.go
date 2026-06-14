@@ -15,17 +15,6 @@ import (
 // Validate performs comprehensive validation of the user config and environment.
 // For multi-context configs, it validates each context's context and all stacks.
 func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.DefaultClientFactory) error {
-	// 1) Validate each context's Docker context is reachable
-	for contextName := range cfg.Contexts {
-		client := factory.GetClientForContext(contextName, &cfg)
-		if err := client.CheckDaemon(ctx); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return apperr.Wrap("validator.Validate", apperr.Unavailable, err, "context %s", contextName)
-		}
-	}
-
 	// Validate identifier format (project-wide)
 	if cfg.Identifier != "" {
 		validIdent := regexp.MustCompile(`^[A-Za-z0-9-]+$`)

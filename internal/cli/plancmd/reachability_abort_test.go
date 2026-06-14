@@ -41,11 +41,10 @@ exit 0
 		t.Fatalf("expected Unavailable error kind (exit 69), got: %v", err)
 	}
 
-	// The error message must reference the failing context, confirming the gate fired.
-	// The validator probes the daemon during config validation and returns an Unavailable
-	// error with the context name when the daemon cannot be reached.
+	// The error message must say "unreachable", confirming EnsureContextsReachable fired
+	// (not the old validator probe which would say "context <name>").
 	msg := err.Error()
-	if !strings.Contains(msg, "context") {
-		t.Fatalf("expected error message to reference the unreachable context, got: %v", err)
+	if !strings.Contains(msg, "unreachable") {
+		t.Fatalf("expected error message to contain \"unreachable\" (gate fired), got: %v", err)
 	}
 }

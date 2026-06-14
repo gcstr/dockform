@@ -123,10 +123,6 @@ func newSnapshotCmd() *cobra.Command {
 				return err
 			}
 
-			if err := common.EnsureContextsReachable(ctx, clictx.Config, clictx.Factory); err != nil {
-				return err
-			}
-
 			pr := clictx.Printer
 			docker := clictx.GetDefaultClient()
 			volName := args[0]
@@ -219,10 +215,6 @@ func newRestoreCmd() *cobra.Command {
 			ctx := cmd.Context()
 			clictx, err := common.SetupCLIContext(cmd)
 			if err != nil {
-				return err
-			}
-
-			if err := common.EnsureContextsReachable(ctx, clictx.Config, clictx.Factory); err != nil {
 				return err
 			}
 

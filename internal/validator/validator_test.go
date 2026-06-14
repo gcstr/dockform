@@ -57,42 +57,6 @@ func withStubDocker(t *testing.T) func() {
 	return func() { _ = os.Setenv("PATH", oldPath) }
 }
 
-func withFailingDocker(t *testing.T) func() {
-	t.Helper()
-	dir := t.TempDir()
-	var stub string
-	path := filepath.Join(dir, "docker")
-	if runtime.GOOS == "windows" {
-		path += ".cmd"
-		stub = `@echo off
-if "%1"=="version" (
-    echo boom 1>&2
-    exit /b 1
-)
-exit /b 1
-`
-	} else {
-		stub = `#!/bin/sh
-cmd="$1"; shift
-case "$cmd" in
-  version)
-    echo "boom" 1>&2
-    exit 1
-    ;;
-esac
-exit 1
-`
-	}
-	if err := os.WriteFile(path, []byte(stub), 0o755); err != nil {
-		t.Fatalf("write stub: %v", err)
-	}
-	oldPath := os.Getenv("PATH")
-	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
-		t.Fatalf("set PATH: %v", err)
-	}
-	return func() { _ = os.Setenv("PATH", oldPath) }
-}
-
 func TestValidate_Succeeds_WithCompleteConfigAndFiles(t *testing.T) {
 	defer withStubDocker(t)()
 	tmp := t.TempDir()
@@ -367,34 +331,6 @@ stacks:
 	factory := dockercli.NewClientFactory()
 	if err := Validate(context.Background(), cfg, factory); err == nil {
 		t.Fatalf("expected identifier validation error")
-	}
-}
-
-func TestValidate_Fails_WhenDockerDaemonUnreachable(t *testing.T) {
-	defer withFailingDocker(t)()
-	tmp := t.TempDir()
-	// minimal config to hit daemon check first
-	if err := os.MkdirAll(filepath.Join(tmp, "website"), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	yml := []byte(`identifier: test-id
-contexts:
-  default: {}
-stacks:
-  default/website:
-    root: website
-    files: []
-`)
-	if err := os.WriteFile(filepath.Join(tmp, "dockform.yml"), yml, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := manifest.Load(tmp)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	factory := dockercli.NewClientFactory()
-	if err := Validate(context.Background(), cfg, factory); err == nil {
-		t.Fatalf("expected docker daemon error")
 	}
 }
 
