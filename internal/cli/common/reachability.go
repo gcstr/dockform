@@ -15,7 +15,8 @@ import (
 )
 
 // reachabilityProbeTimeout bounds each per-context daemon probe so an unreachable
-// host (e.g. a down SSH context) cannot hang the command.
+// host (e.g. a down SSH context) cannot hang the command. Tests override it; it is
+// not safe to mutate from parallel (t.Parallel) tests.
 var reachabilityProbeTimeout = 10 * time.Second
 
 type contextProbeResult struct {
@@ -78,6 +79,10 @@ func probeContext(ctx context.Context, name string, cfg *manifest.Config, factor
 
 	client := factory.GetClientForContext(name, cfg)
 	if err := client.CheckDaemon(probeCtx); err != nil {
+		// Parent context cancelled or expired — not our probe timeout; surface as-is.
+		if ctx.Err() != nil {
+			return err.Error()
+		}
 		if errors.Is(probeCtx.Err(), context.DeadlineExceeded) {
 			return fmt.Sprintf("timed out after %s", reachabilityProbeTimeout)
 		}
