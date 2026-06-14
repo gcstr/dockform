@@ -2,15 +2,21 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
 )
+
+// reachabilityProbeTimeout bounds each per-context daemon probe so an unreachable
+// host (e.g. a down SSH context) cannot hang the command.
+var reachabilityProbeTimeout = 10 * time.Second
 
 type contextProbeResult struct {
 	name  string
@@ -67,8 +73,14 @@ func EnsureContextsReachable(ctx context.Context, cfg *manifest.Config, factory 
 // probeContext returns an empty string when the context's daemon is reachable, or
 // a short human-readable cause when it is not.
 func probeContext(ctx context.Context, name string, cfg *manifest.Config, factory dockercli.ClientFactory) string {
+	probeCtx, cancel := context.WithTimeout(ctx, reachabilityProbeTimeout)
+	defer cancel()
+
 	client := factory.GetClientForContext(name, cfg)
-	if err := client.CheckDaemon(ctx); err != nil {
+	if err := client.CheckDaemon(probeCtx); err != nil {
+		if errors.Is(probeCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Sprintf("timed out after %s", reachabilityProbeTimeout)
+		}
 		return err.Error()
 	}
 	return ""

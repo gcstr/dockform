@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/cli/clitest"
@@ -15,6 +16,17 @@ case "$1" in
   version)
     case "$DOCKER_CONTEXT" in
       down|down2) echo 'cannot connect to daemon' >&2; exit 1 ;;
+      *) echo '27.0.0'; exit 0 ;;
+    esac ;;
+esac
+exit 0
+`
+
+const reachabilityTimeoutStub = `#!/bin/sh
+case "$1" in
+  version)
+    case "$DOCKER_CONTEXT" in
+      slow) exec sleep 2 ;;
       *) echo '27.0.0'; exit 0 ;;
     esac ;;
 esac
@@ -121,4 +133,46 @@ func TestEnsureContextsReachable(t *testing.T) {
 			t.Fatalf("expected nil for empty contexts, got %v", err)
 		}
 	})
+}
+
+func TestEnsureContextsReachable_Timeout(t *testing.T) {
+	restore := clitest.WithCustomDockerStub(t, reachabilityTimeoutStub)
+	defer restore()
+
+	// Shorten the timeout so the slow context is bounded well under its 2s sleep.
+	old := reachabilityProbeTimeout
+	reachabilityProbeTimeout = 200 * time.Millisecond
+	defer func() { reachabilityProbeTimeout = old }()
+
+	factory := CreateClientFactory()
+	cfg := &manifest.Config{
+		Identifier: "demo",
+		Contexts: map[string]manifest.ContextConfig{
+			"ok":   {},
+			"slow": {},
+		},
+	}
+
+	start := time.Now()
+	err := EnsureContextsReachable(context.Background(), cfg, factory)
+	elapsed := time.Since(start)
+
+	// The probe must have been bounded — well under the 2s sleep.
+	if elapsed >= 1500*time.Millisecond {
+		t.Errorf("EnsureContextsReachable took %s; expected < 1500ms (timeout not applied)", elapsed)
+	}
+
+	if err == nil {
+		t.Fatal("expected non-nil error for unreachable slow context")
+	}
+	if !apperr.IsKind(err, apperr.Unavailable) {
+		t.Errorf("expected Unavailable kind, got %v", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "slow") {
+		t.Errorf("expected error to mention 'slow', got: %s", msg)
+	}
+	if !strings.Contains(msg, "timed out") {
+		t.Errorf("expected error to contain 'timed out', got: %s", msg)
+	}
 }
