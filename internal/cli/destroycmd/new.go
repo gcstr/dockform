@@ -37,6 +37,10 @@ networks and volumes are preserved.`,
 				return err
 			}
 
+			if err := common.EnsureContextsReachable(cmd.Context(), ctx.Config, ctx.Factory); err != nil {
+				return err
+			}
+
 			// Allow environment to override identifier for discovery/confirmation independence
 			identifier := common.GetFirstIdentifier(ctx.Config)
 			if override := os.Getenv("DOCKFORM_RUN_ID"); override != "" {

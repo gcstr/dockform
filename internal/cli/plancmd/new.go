@@ -20,6 +20,10 @@ func New() *cobra.Command {
 				return err
 			}
 
+			if err := common.EnsureContextsReachable(cmd.Context(), ctx.Config, ctx.Factory); err != nil {
+				return err
+			}
+
 			// Configure sequential processing if requested (default is parallel)
 			sequential, _ := cmd.Flags().GetBool("sequential")
 			if sequential {

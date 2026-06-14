@@ -122,6 +122,11 @@ func newSnapshotCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			if err := common.EnsureContextsReachable(cmd.Context(), clictx.Config, clictx.Factory); err != nil {
+				return err
+			}
+
 			pr := clictx.Printer
 			docker := clictx.GetDefaultClient()
 			volName := args[0]
@@ -216,6 +221,11 @@ func newRestoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			if err := common.EnsureContextsReachable(cmd.Context(), clictx.Config, clictx.Factory); err != nil {
+				return err
+			}
+
 			pr := clictx.Printer
 			docker := clictx.GetDefaultClient()
 			volName := args[0]

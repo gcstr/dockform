@@ -24,6 +24,10 @@ func New() *cobra.Command {
 				return err
 			}
 
+			if err := common.EnsureContextsReachable(cmd.Context(), cliCtx.Config, cliCtx.Factory); err != nil {
+				return err
+			}
+
 			// Get the default Docker client for the dashboard
 			docker := cliCtx.GetDefaultClient()
 
