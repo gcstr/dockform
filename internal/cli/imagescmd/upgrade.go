@@ -59,6 +59,11 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// Create client factory for multi-context support.
 	factory := common.CreateClientFactory()
 
+	// imagescmd doesn't use SetupCLIContext, so probe context reachability here.
+	if err := common.EnsureContextsReachable(cmd.Context(), cfg, factory); err != nil {
+		return err
+	}
+
 	// Create registry client.
 	reg := registry.NewOCIClient(nil)
 

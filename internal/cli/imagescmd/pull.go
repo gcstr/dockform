@@ -58,6 +58,12 @@ func runPull(cmd *cobra.Command, args []string) error {
 	common.DisplayDaemonInfo(pr, cfg)
 
 	factory := common.CreateClientFactory()
+
+	// imagescmd doesn't use SetupCLIContext, so probe context reachability here.
+	if err := common.EnsureContextsReachable(cmd.Context(), cfg, factory); err != nil {
+		return err
+	}
+
 	reg := registry.NewOCIClient(nil)
 
 	inputs, err := buildCheckInputs(cmd.Context(), cfg, factory)

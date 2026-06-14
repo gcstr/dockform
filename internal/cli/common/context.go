@@ -61,6 +61,12 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	// Create client factory for multi-context support
 	factory := CreateClientFactory()
 
+	// Fail fast (bounded) if any selected context's daemon is unreachable, before
+	// validation does any unbounded per-context daemon work.
+	if err := EnsureContextsReachable(cmd.Context(), cfg, factory); err != nil {
+		return nil, err
+	}
+
 	// Validate in spinner
 	err = SpinnerOperation(pr, "Validating...", func() error {
 		return ValidateWithFactory(cmd.Context(), cfg, factory)

@@ -104,6 +104,17 @@ func newRenderCmd() *cobra.Command {
 				}
 			}
 
+			// Fail fast (bounded) if the stack's context daemon is unreachable, before
+			// shelling out to `docker compose config` (which can hang on a down host).
+			if _, ok := cfg.Contexts[contextName]; ok {
+				factory := common.CreateClientFactory()
+				renderCfg := cfg
+				renderCfg.Contexts = map[string]manifest.ContextConfig{contextName: cfg.Contexts[contextName]}
+				if err := common.EnsureContextsReachable(cmd.Context(), &renderCfg, factory); err != nil {
+					return err
+				}
+			}
+
 			// Compose raw config
 			var docker *dockercli.Client
 			if ctxCfg, ok := cfg.Contexts[contextName]; ok && ctxCfg.Host != "" {
