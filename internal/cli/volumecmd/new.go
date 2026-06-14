@@ -123,7 +123,7 @@ func newSnapshotCmd() *cobra.Command {
 				return err
 			}
 
-			if err := common.EnsureContextsReachable(cmd.Context(), clictx.Config, clictx.Factory); err != nil {
+			if err := common.EnsureContextsReachable(ctx, clictx.Config, clictx.Factory); err != nil {
 				return err
 			}
 
@@ -222,7 +222,7 @@ func newRestoreCmd() *cobra.Command {
 				return err
 			}
 
-			if err := common.EnsureContextsReachable(cmd.Context(), clictx.Config, clictx.Factory); err != nil {
+			if err := common.EnsureContextsReachable(ctx, clictx.Config, clictx.Factory); err != nil {
 				return err
 			}
 
