@@ -59,6 +59,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 	factory := common.CreateClientFactory()
 
+	// imagescmd doesn't use SetupCLIContext, so probe context reachability here.
 	if err := common.EnsureContextsReachable(cmd.Context(), cfg, factory); err != nil {
 		return err
 	}

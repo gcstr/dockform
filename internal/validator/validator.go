@@ -13,7 +13,7 @@ import (
 )
 
 // Validate performs comprehensive validation of the user config and environment.
-// For multi-context configs, it validates each context's context and all stacks.
+// For multi-context configs, it validates all stacks across each context.
 func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.DefaultClientFactory) error {
 	// Validate identifier format (project-wide)
 	if cfg.Identifier != "" {
@@ -23,7 +23,7 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 		}
 	}
 
-	// 2) Check if any SOPS secrets are configured (in any stack)
+	// 1) Check if any SOPS secrets are configured (in any stack)
 	hasSopsSecrets := false
 	allStacks := cfg.GetAllStacks()
 	for _, stack := range allStacks {
@@ -40,7 +40,7 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 		}
 	}
 
-	// 3) SOPS key file validation
+	// 2) SOPS key file validation
 	if hasSopsSecrets && cfg.Sops != nil && cfg.Sops.Age != nil {
 		// Check if key_file is empty - this indicates a missing environment variable
 		if cfg.Sops.Age.KeyFile == "" {
@@ -62,7 +62,7 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 		}
 	}
 
-	// 4) Validate all stacks (discovered + explicit)
+	// 3) Validate all stacks (discovered + explicit)
 	for stackKey, stack := range allStacks {
 		contextName, stackName, err := manifest.ParseStackKey(stackKey)
 		if err != nil {
@@ -142,7 +142,7 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 		}
 	}
 
-	// 5) Validate discovered filesets
+	// 4) Validate discovered filesets
 	for name, fs := range cfg.GetAllFilesets() {
 		if fs.SourceAbs == "" {
 			return apperr.New("validator.Validate", apperr.InvalidInput, "fileset %s: source path is required", name)
