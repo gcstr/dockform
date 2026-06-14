@@ -29,6 +29,38 @@ func TestApply_PrintsPlan_WhenRemovalsPresent(t *testing.T) {
 	}
 }
 
+// TestApply_PrintsFullPlanDetail_NotJustSummary guards dockform-ltv: apply must
+// print the full plan detail (section bodies) for review, not only the summary
+// line. Regression risk is re-routing the plan through the rolling-log TUI, which
+// clips tall plans and leaves only the trailing summary visible.
+func TestApply_PrintsFullPlanDetail_NotJustSummary(t *testing.T) {
+	defer clitest.WithStubDocker(t)()
+
+	root := cli.TestNewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader("no\n")) // decline so we only exercise the plan review
+	root.SetArgs([]string{"apply", "--manifest", clitest.BasicConfigPath(t)})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("apply execute: %v", err)
+	}
+	got := out.String()
+
+	// The summary line alone is not enough — the detail above it must be present.
+	if !strings.Contains(got, "Plan:") {
+		t.Fatalf("expected plan summary line; got: %s", got)
+	}
+	// Detail: at least one resource section body must be rendered alongside the summary.
+	hasDetail := strings.Contains(got, " will be deleted") ||
+		strings.Contains(got, " will be created") ||
+		strings.Contains(got, "up-to-date")
+	if !hasDetail {
+		t.Fatalf("expected full plan detail alongside summary, not just the summary line; got: %s", got)
+	}
+}
+
 func TestApply_NoRemovals_NoGuidance(t *testing.T) {
 	t.Helper()
 	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
