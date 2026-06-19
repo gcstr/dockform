@@ -99,12 +99,18 @@ func GetFirstIdentifier(cfg *manifest.Config) string {
 	return cfg.Identifier
 }
 
-// GetFirstDaemon returns the name and config of the first context.
+// GetFirstDaemon returns the name and config of the first context, ordered by
+// context name so the choice is deterministic (Go map iteration is randomized).
 func GetFirstDaemon(cfg *manifest.Config) (string, manifest.ContextConfig) {
-	for name, context := range cfg.Contexts {
-		return name, context
+	names := make([]string, 0, len(cfg.Contexts))
+	for name := range cfg.Contexts {
+		names = append(names, name)
 	}
-	return "", manifest.ContextConfig{}
+	if len(names) == 0 {
+		return "", manifest.ContextConfig{}
+	}
+	sort.Strings(names)
+	return names[0], cfg.Contexts[names[0]]
 }
 
 // MaskSecretsSimple redacts secret-like values from a YAML string based on stack config.

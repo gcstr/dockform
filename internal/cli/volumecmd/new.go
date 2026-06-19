@@ -96,12 +96,57 @@ func computeSpecHash(d dockercli.VolumeDetails) string {
 	return full
 }
 
-func manifestHasVolume(cfg *manifest.Config, name string) bool {
+// resolveVolumeTarget parses a volume argument that may be in "context/volume"
+// form (mirroring dockform's "context/stack" keys) and resolves the docker client
+// for the target context. A bare volume name (no "/") is allowed only when exactly
+// one context is configured; with multiple contexts it errors and asks for the
+// context/volume form rather than picking a context non-deterministically.
+func resolveVolumeTarget(clictx *common.CLIContext, arg string) (contextName, volName string, docker *dockercli.Client, err error) {
+	cfg := clictx.Config
+	if strings.Contains(arg, "/") {
+		parts := strings.SplitN(arg, "/", 2)
+		contextName, volName = parts[0], parts[1]
+		if contextName == "" || volName == "" {
+			return "", "", nil, apperr.New("cli.volume", apperr.InvalidInput, "volume target must be in 'context/volume' format: %q", arg)
+		}
+		if _, ok := cfg.Contexts[contextName]; !ok {
+			return "", "", nil, apperr.New("cli.volume", apperr.InvalidInput, "unknown context %q (in %q)", contextName, arg)
+		}
+		return contextName, volName, clictx.Factory.GetClientForContext(contextName, cfg), nil
+	}
+
+	if len(cfg.Contexts) == 1 {
+		for name := range cfg.Contexts {
+			return name, arg, clictx.Factory.GetClientForContext(name, cfg), nil
+		}
+	}
+	if len(cfg.Contexts) == 0 {
+		return "", "", nil, apperr.New("cli.volume", apperr.Precondition, "no contexts configured")
+	}
+
+	names := make([]string, 0, len(cfg.Contexts))
+	for name := range cfg.Contexts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return "", "", nil, apperr.New("cli.volume", apperr.InvalidInput,
+		"multiple contexts configured (%s); specify the volume as <context>/<volume> (e.g. %s/%s)",
+		strings.Join(names, ", "), names[0], arg)
+}
+
+// manifestHasVolume reports whether a volume name is declared for the given
+// context — either as a context-level volume (contexts.<ctx>.volumes) or as a
+// fileset target volume in that context.
+func manifestHasVolume(cfg *manifest.Config, contextName, name string) bool {
 	if cfg == nil {
 		return false
 	}
-	// In the new multi-daemon schema, volumes come from filesets only
-	for _, fs := range cfg.GetAllFilesets() {
+	if cc, ok := cfg.Contexts[contextName]; ok {
+		if _, ok := cc.Volumes[name]; ok {
+			return true
+		}
+	}
+	for _, fs := range cfg.GetFilesetsForContext(contextName) {
 		if fs.TargetVolume == name {
 			return true
 		}
@@ -113,8 +158,13 @@ func newSnapshotCmd() *cobra.Command {
 	var outDirFlag string
 	var note string
 	cmd := &cobra.Command{
-		Use:   "snapshot <volume>",
+		Use:   "snapshot <[context/]volume>",
 		Short: "Create a snapshot of a Docker volume to local storage",
+		Long: `Create a snapshot of a Docker volume to local storage.
+
+For multi-context setups, address the volume as <context>/<volume>
+(e.g. hetzner-two/netbird_data). A bare volume name is allowed only when a
+single context is configured.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -124,8 +174,10 @@ func newSnapshotCmd() *cobra.Command {
 			}
 
 			pr := clictx.Printer
-			docker := clictx.GetDefaultClient()
-			volName := args[0]
+			contextName, volName, docker, err := resolveVolumeTarget(clictx, args[0])
+			if err != nil {
+				return err
+			}
 			// Default output next to manifest
 			outDir := outDirFlag
 			if strings.TrimSpace(outDir) == "" {
@@ -138,7 +190,9 @@ func newSnapshotCmd() *cobra.Command {
 			}
 			short := computeSpecHash(details)
 			ts := time.Now().UTC().Format("2006-01-02T15-04-05Z")
-			volDir := filepath.Join(outDir, volName)
+			// Key snapshots by context so the same volume name on different hosts
+			// doesn't collide.
+			volDir := filepath.Join(outDir, contextName, volName)
 			if err := os.MkdirAll(volDir, 0o755); err != nil {
 				return apperr.Wrap("cli.volume.snapshot", apperr.Internal, err, "mkdir %s", volDir)
 			}
@@ -208,8 +262,13 @@ func newRestoreCmd() *cobra.Command {
 	var force bool
 	var stopContainers bool
 	cmd := &cobra.Command{
-		Use:   "restore <volume> <snapshot-path>",
+		Use:   "restore <[context/]volume> <snapshot-path>",
 		Short: "Restore a snapshot into a Docker volume",
+		Long: `Restore a snapshot into a Docker volume.
+
+For multi-context setups, address the volume as <context>/<volume>
+(e.g. hetzner-two/netbird_data). A bare volume name is allowed only when a
+single context is configured.`,
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -219,13 +278,15 @@ func newRestoreCmd() *cobra.Command {
 			}
 
 			pr := clictx.Printer
-			docker := clictx.GetDefaultClient()
-			volName := args[0]
+			contextName, volName, docker, err := resolveVolumeTarget(clictx, args[0])
+			if err != nil {
+				return err
+			}
 			snapPath := args[1]
 
-			// Ensure volume is in manifest
-			if !manifestHasVolume(clictx.Config, volName) {
-				return apperr.New("cli.volume.restore", apperr.InvalidInput, "volume %q is not defined in manifest", volName)
+			// Ensure volume is in manifest for the target context
+			if !manifestHasVolume(clictx.Config, contextName, volName) {
+				return apperr.New("cli.volume.restore", apperr.InvalidInput, "volume %q is not defined in manifest for context %q", volName, contextName)
 			}
 			// Ensure volume exists in context
 			exists, err := docker.VolumeExists(ctx, volName)
