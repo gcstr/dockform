@@ -109,8 +109,27 @@ func (r Resource) FormatAction() string {
 	}
 }
 
-// RenderResourcePlan renders a ResourcePlan with consistent formatting
+// PlanRenderOptions controls how a ResourcePlan is rendered.
+type PlanRenderOptions struct {
+	// Full renders all resources including no-ops. When false (changes-only mode,
+	// wired in a later task) only resources with actions are shown.
+	Full bool
+}
+
+// RenderResourcePlanOpts renders a ResourcePlan according to opts.
+func RenderResourcePlanOpts(rp *ResourcePlan, opts PlanRenderOptions) string {
+	// opts consumed in later tasks
+	_ = opts.Full
+	return renderResourcePlanFull(rp)
+}
+
+// RenderResourcePlan renders a ResourcePlan with consistent formatting.
+// It is equivalent to RenderResourcePlanOpts with Full: true.
 func RenderResourcePlan(rp *ResourcePlan) string {
+	return RenderResourcePlanOpts(rp, PlanRenderOptions{Full: true})
+}
+
+func renderResourcePlanFull(rp *ResourcePlan) string {
 	var sections []ui.NestedSection
 
 	// Volumes section
