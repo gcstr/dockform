@@ -58,6 +58,8 @@ var (
 
 	styleNestedSectionTitle = lipgloss.NewStyle().Bold(true).Italic(true)
 
+	styleMuted = lipgloss.NewStyle().Faint(true)
+
 	styleItalicName = lipgloss.NewStyle().Italic(true)
 )
 
@@ -77,6 +79,7 @@ type NestedSection struct {
 	Title    string
 	Items    []DiffLine
 	Sections []NestedSection
+	Footer   []DiffLine
 }
 
 // RenderSectionedList renders sections with simple headers and two-space indented items.
@@ -126,7 +129,7 @@ func RenderNestedSections(sections []NestedSection) string {
 
 	// Check if we have any content to render
 	for _, section := range sections {
-		if len(section.Items) > 0 || len(section.Sections) > 0 {
+		if len(section.Items) > 0 || len(section.Sections) > 0 || len(section.Footer) > 0 {
 			hasAnyContent = true
 			break
 		}
@@ -139,7 +142,7 @@ func RenderNestedSections(sections []NestedSection) string {
 
 	firstSection := true
 	for _, section := range sections {
-		hasContent := len(section.Items) > 0 || len(section.Sections) > 0
+		hasContent := len(section.Items) > 0 || len(section.Sections) > 0 || len(section.Footer) > 0
 		if !hasContent {
 			continue
 		}
@@ -188,6 +191,13 @@ func RenderNestedSections(sections []NestedSection) string {
 				result.WriteString(StripRedundantPrefixes(item.Message, section.Title))
 				result.WriteString("\n")
 			}
+		}
+
+		// Render footer lines: 2-space indent, dim, no icon
+		for _, item := range section.Footer {
+			result.WriteString("  ")
+			result.WriteString(styleMuted.Render(item.Message))
+			result.WriteString("\n")
 		}
 	}
 
