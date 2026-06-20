@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -40,6 +41,92 @@ func TestRenderResourcePlanOpts_ChangesOnly_FlatSections(t *testing.T) {
 	}
 	if !strings.Contains(out, "Networks") {
 		t.Errorf("expected output to contain 'Networks' header, got:\n%s", out)
+	}
+}
+
+func TestRenderResourcePlanOpts_ChangesOnly_Stacks(t *testing.T) {
+	rp := &ResourcePlan{Stacks: map[string][]Resource{
+		"ctx/app": {
+			NewResource(ResourceService, "web", ActionCreate, ""),
+			NewResource(ResourceService, "db", ActionNoop, "up-to-date"),
+		},
+		"ctx/idle": {
+			NewResource(ResourceService, "x", ActionNoop, "up-to-date"),
+			NewResource(ResourceService, "y", ActionNoop, "up-to-date"),
+		},
+	}}
+	out := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false}))
+
+	if !strings.Contains(out, "ctx/app") {
+		t.Errorf("expected output to contain 'ctx/app', got:\n%s", out)
+	}
+	if !strings.Contains(out, "web") {
+		t.Errorf("expected output to contain 'web', got:\n%s", out)
+	}
+	if strings.Contains(out, "ctx/idle") {
+		t.Errorf("expected output to NOT contain 'ctx/idle' (all no-op), got:\n%s", out)
+	}
+	if strings.Contains(out, "  x") || strings.Contains(out, "  y") {
+		t.Errorf("expected output to NOT contain noop service lines 'x'/'y', got:\n%s", out)
+	}
+	if strings.Contains(out, " db ") {
+		t.Errorf("expected output to NOT contain noop service 'db', got:\n%s", out)
+	}
+	if !strings.Contains(out, "3 unchanged") {
+		t.Errorf("expected footer '3 unchanged' (db+x+y), got:\n%s", out)
+	}
+	if !strings.Contains(out, "Stacks") {
+		t.Errorf("expected output to contain 'Stacks' header, got:\n%s", out)
+	}
+}
+
+func TestRenderResourcePlanOpts_ChangesOnly_FilesetsCount(t *testing.T) {
+	rp := &ResourcePlan{Filesets: map[string][]Resource{
+		"ctx/a/cfg":  {{Type: ResourceFile, Name: "", Action: ActionNoop, Details: "no file changes", ChangeType: ui.Noop}},
+		"ctx/a/data": {{Type: ResourceFile, Name: "f1", Action: ActionUpdate, Details: "", ChangeType: ui.Change}},
+	}}
+	out := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false}))
+
+	if !strings.Contains(out, "ctx/a/data") {
+		t.Errorf("expected output to contain 'ctx/a/data', got:\n%s", out)
+	}
+	if !strings.Contains(out, "f1") {
+		t.Errorf("expected output to contain 'f1', got:\n%s", out)
+	}
+	if strings.Contains(out, "ctx/a/cfg") {
+		t.Errorf("expected output to NOT contain 'ctx/a/cfg' (fully unchanged), got:\n%s", out)
+	}
+	if !strings.Contains(out, "1 unchanged") {
+		t.Errorf("expected Filesets footer '1 unchanged', got:\n%s", out)
+	}
+}
+
+func TestRenderResourcePlanOpts_ChangesOnly_FilesetCap(t *testing.T) {
+	// 13 changed files, all ActionUpdate
+	items := make([]Resource, 13)
+	for i := range items {
+		items[i] = NewResource(ResourceFile, fmt.Sprintf("f%02d", i+1), ActionUpdate, "")
+	}
+	rp := &ResourcePlan{Filesets: map[string][]Resource{
+		"ctx/a/big": items,
+	}}
+
+	// Changes-only: only 10 shown, remainder summarised
+	out := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false}))
+	if strings.Contains(out, "f11") {
+		t.Errorf("expected 'f11' to be suppressed (beyond cap of 10), got:\n%s", out)
+	}
+	if !strings.Contains(out, "… and 3 more changed (0 created, 3 updated, 0 deleted)") {
+		t.Errorf("expected remainder summary line, got:\n%s", out)
+	}
+
+	// Full: all 13 shown, no "more changed" line
+	outFull := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: true}))
+	if !strings.Contains(outFull, "f11") {
+		t.Errorf("expected full render to show 'f11', got:\n%s", outFull)
+	}
+	if strings.Contains(outFull, "more changed") {
+		t.Errorf("expected full render to NOT contain 'more changed', got:\n%s", outFull)
 	}
 }
 
