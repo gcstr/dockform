@@ -77,6 +77,14 @@ func (pln *Plan) String() string {
 	return RenderResourcePlan(pln.Resources)
 }
 
+// Render renders the plan with the given options (e.g. changes-only vs full).
+func (pln *Plan) Render(opts PlanRenderOptions) string {
+	if pln.Resources == nil {
+		return "[no plan]"
+	}
+	return RenderResourcePlanOpts(pln.Resources, opts)
+}
+
 // GetContextExecutionContext returns the execution context for a specific context.
 func (pln *Plan) GetContextExecutionContext(contextName string) *ContextExecutionContext {
 	if pln.ExecutionContext == nil || pln.ExecutionContext.ByContext == nil {
