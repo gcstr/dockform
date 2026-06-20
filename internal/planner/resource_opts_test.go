@@ -162,6 +162,40 @@ func TestRenderResourcePlanOpts_ChangesOnly_AllStacksUnchanged(t *testing.T) {
 	}
 }
 
+func TestRenderResourcePlanOpts_ChangesOnly_AllClear(t *testing.T) {
+	rp := &ResourcePlan{
+		Volumes: []Resource{
+			NewResource(ResourceVolume, "v1", ActionNoop, "exists"),
+			NewResource(ResourceVolume, "v2", ActionNoop, "exists"),
+		},
+		Networks: []Resource{
+			NewResource(ResourceNetwork, "n1", ActionNoop, "exists"),
+		},
+		Stacks: map[string][]Resource{
+			"ctx/app": {NewResource(ResourceService, "web", ActionNoop, "up-to-date")},
+		},
+		Filesets: map[string][]Resource{
+			"ctx/app/cfg": {NewResource(ResourceFile, "", ActionNoop, "no file changes")},
+		},
+	}
+
+	// changes-only: single concise line
+	got := strings.TrimRight(ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false})), "\n")
+	want := "No changes. 5 resources up to date."
+	if got != want {
+		t.Errorf("changes-only all-clear:\ngot:  %q\nwant: %q", got, want)
+	}
+
+	// full mode: unaffected — shows inventory, not the all-clear message
+	full := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: true}))
+	if strings.Contains(full, "No changes.") {
+		t.Errorf("full mode should NOT contain 'No changes.', got:\n%s", full)
+	}
+	if !strings.Contains(full, "exists") {
+		t.Errorf("full mode should contain 'exists' (inventory), got:\n%s", full)
+	}
+}
+
 func TestRenderResourcePlanOpts_FullMatchesLegacy(t *testing.T) {
 	rp := &ResourcePlan{
 		Volumes: []Resource{

@@ -306,9 +306,24 @@ func countNoop(rs []Resource) int {
 	return n
 }
 
+// totalUnits counts the resources a plan tracks, for the all-clear message.
+// Filesets are counted per-fileset (one unit each), matching how the changes-only
+// renderer treats a fileset as a single no-op unit.
+func totalUnits(rp *ResourcePlan) int {
+	n := len(rp.Volumes) + len(rp.Networks) + len(rp.Containers) + len(rp.Filesets)
+	for _, services := range rp.Stacks {
+		n += len(services)
+	}
+	return n
+}
+
 // renderResourcePlanChangesOnly renders only changed resources, with a footer
 // count of unchanged (no-op) resources per section.
 func renderResourcePlanChangesOnly(rp *ResourcePlan) string {
+	if c, u, d := rp.CountActions(); c == 0 && u == 0 && d == 0 {
+		return fmt.Sprintf("No changes. %d resources up to date.", totalUnits(rp))
+	}
+
 	var sections []ui.NestedSection
 
 	buildFlatSection := func(title string, resources []Resource) {
