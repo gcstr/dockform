@@ -130,6 +130,38 @@ func TestRenderResourcePlanOpts_ChangesOnly_FilesetCap(t *testing.T) {
 	}
 }
 
+func TestRenderResourcePlanOpts_ChangesOnly_AllStacksUnchanged(t *testing.T) {
+	rp := &ResourcePlan{
+		Volumes: []Resource{NewResource(ResourceVolume, "vNew", ActionCreate, "")},
+		Stacks: map[string][]Resource{
+			"ctx/app": {
+				NewResource(ResourceService, "web", ActionNoop, "up-to-date"),
+				NewResource(ResourceService, "db", ActionNoop, "up-to-date"),
+			},
+		},
+	}
+	out := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false}))
+
+	if !strings.Contains(out, "Stacks") {
+		t.Errorf("expected output to contain 'Stacks' header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "2 unchanged") {
+		t.Errorf("expected footer '2 unchanged', got:\n%s", out)
+	}
+	if strings.Contains(out, "ctx/app") {
+		t.Errorf("expected output to NOT contain 'ctx/app' subsection (no changed services), got:\n%s", out)
+	}
+	if strings.Contains(out, "web") {
+		t.Errorf("expected output to NOT contain 'web' service line, got:\n%s", out)
+	}
+	if strings.Contains(out, "db") {
+		t.Errorf("expected output to NOT contain 'db' service line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "vNew") {
+		t.Errorf("expected output to contain 'vNew' (volume still rendered), got:\n%s", out)
+	}
+}
+
 func TestRenderResourcePlanOpts_FullMatchesLegacy(t *testing.T) {
 	rp := &ResourcePlan{
 		Volumes: []Resource{

@@ -391,13 +391,10 @@ func renderResourcePlanChangesOnly(rp *ResourcePlan) string {
 				}
 			}
 
-			cap := filesetChangedFileCap
-			if cap > len(changedFiles) {
-				cap = len(changedFiles)
-			}
+			show := min(filesetChangedFileCap, len(changedFiles))
 
 			var diffLines []ui.DiffLine
-			for _, item := range changedFiles[:cap] {
+			for _, item := range changedFiles[:show] {
 				diffLines = append(diffLines, formatFilesetItem(item))
 			}
 
