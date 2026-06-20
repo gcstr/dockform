@@ -137,9 +137,7 @@ func renderResourcePlanFull(rp *ResourcePlan) string {
 	if len(rp.Volumes) > 0 {
 		var items []ui.DiffLine
 		for _, res := range rp.Volumes {
-			name := ui.Italic(res.Name)
-			msg := fmt.Sprintf("%s %s", name, res.FormatAction())
-			items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
+			items = append(items, formatResourceLine(res))
 		}
 		sections = append(sections, ui.NestedSection{Title: "Volumes", Items: items})
 	}
@@ -148,9 +146,7 @@ func renderResourcePlanFull(rp *ResourcePlan) string {
 	if len(rp.Networks) > 0 {
 		var items []ui.DiffLine
 		for _, res := range rp.Networks {
-			name := ui.Italic(res.Name)
-			msg := fmt.Sprintf("%s %s", name, res.FormatAction())
-			items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
+			items = append(items, formatResourceLine(res))
 		}
 		sections = append(sections, ui.NestedSection{Title: "Networks", Items: items})
 	}
@@ -171,10 +167,7 @@ func renderResourcePlanFull(rp *ResourcePlan) string {
 			var items []ui.DiffLine
 
 			for _, res := range services {
-				// For services, we don't repeat the stack name since it's in the section title
-				name := ui.Italic(res.Name)
-				msg := fmt.Sprintf("%s %s", name, res.FormatAction())
-				items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
+				items = append(items, formatResourceLine(res))
 			}
 
 			if len(items) > 0 {
@@ -240,27 +233,34 @@ func renderResourcePlanFull(rp *ResourcePlan) string {
 	if len(rp.Containers) > 0 {
 		var items []ui.DiffLine
 		for _, res := range rp.Containers {
-			name := ui.Italic(res.Name)
-			msg := fmt.Sprintf("%s %s", name, res.FormatAction())
-			items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
+			items = append(items, formatResourceLine(res))
 		}
 		sections = append(sections, ui.NestedSection{Title: "Containers", Items: items})
 	}
 
-	// Calculate summary counts
-	createCount, updateCount, deleteCount := rp.CountActions()
+	return appendPlanSummary(ui.RenderNestedSections(sections), rp)
+}
 
-	// Render sections
-	result := ui.RenderNestedSections(sections)
+// formatResourceLine returns a DiffLine for a resource using the standard
+// "italic-name action-text" format used by Volumes, Networks, Containers, and
+// Stacks flat items.
+func formatResourceLine(res Resource) ui.DiffLine {
+	return ui.DiffLine{
+		Type:    res.ChangeType,
+		Message: fmt.Sprintf("%s %s", ui.Italic(res.Name), res.FormatAction()),
+	}
+}
 
-	// Add summary line
-	if createCount > 0 || updateCount > 0 || deleteCount > 0 {
+// appendPlanSummary appends a plan summary line to result when there are any
+// creates, updates, or deletes.
+func appendPlanSummary(result string, rp *ResourcePlan) string {
+	create, update, delete := rp.CountActions()
+	if create > 0 || update > 0 || delete > 0 {
 		if result != "" {
 			result += "\n"
 		}
-		result += ui.FormatPlanSummary(createCount, updateCount, deleteCount)
+		result += ui.FormatPlanSummary(create, update, delete)
 	}
-
 	return result
 }
 
@@ -290,9 +290,7 @@ func renderResourcePlanChangesOnly(rp *ResourcePlan) string {
 			if res.Action == ActionNoop {
 				continue
 			}
-			name := ui.Italic(res.Name)
-			msg := fmt.Sprintf("%s %s", name, res.FormatAction())
-			items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
+			items = append(items, formatResourceLine(res))
 		}
 		sec := ui.NestedSection{Title: title, Items: items}
 		noop := countNoop(resources)
@@ -306,17 +304,7 @@ func renderResourcePlanChangesOnly(rp *ResourcePlan) string {
 	buildFlatSection("Networks", rp.Networks)
 	buildFlatSection("Containers", rp.Containers)
 
-	result := ui.RenderNestedSections(sections)
-
-	create, update, delete := rp.CountActions()
-	if create > 0 || update > 0 || delete > 0 {
-		if result != "" {
-			result += "\n"
-		}
-		result += ui.FormatPlanSummary(create, update, delete)
-	}
-
-	return result
+	return appendPlanSummary(ui.RenderNestedSections(sections), rp)
 }
 
 // CountActions counts the number of each action type in the plan

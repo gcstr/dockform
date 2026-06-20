@@ -7,10 +7,6 @@ import (
 	"github.com/gcstr/dockform/internal/ui"
 )
 
-func stripANSI(s string) string {
-	return ui.StripANSI(s)
-}
-
 func TestRenderResourcePlanOpts_ChangesOnly_FlatSections(t *testing.T) {
 	rp := &ResourcePlan{
 		Volumes: []Resource{
@@ -22,7 +18,7 @@ func TestRenderResourcePlanOpts_ChangesOnly_FlatSections(t *testing.T) {
 			NewResource(ResourceNetwork, "nKeep", ActionNoop, "exists"),
 		},
 	}
-	out := stripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false}))
+	out := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false}))
 
 	if !strings.Contains(out, "vNew") {
 		t.Errorf("expected output to contain 'vNew', got:\n%s", out)
