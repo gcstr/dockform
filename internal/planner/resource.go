@@ -118,9 +118,10 @@ type PlanRenderOptions struct {
 
 // RenderResourcePlanOpts renders a ResourcePlan according to opts.
 func RenderResourcePlanOpts(rp *ResourcePlan, opts PlanRenderOptions) string {
-	// opts consumed in later tasks
-	_ = opts.Full
-	return renderResourcePlanFull(rp)
+	if opts.Full {
+		return renderResourcePlanFull(rp)
+	}
+	return renderResourcePlanChangesOnly(rp)
 }
 
 // RenderResourcePlan renders a ResourcePlan with consistent formatting.
@@ -258,6 +259,61 @@ func renderResourcePlanFull(rp *ResourcePlan) string {
 			result += "\n"
 		}
 		result += ui.FormatPlanSummary(createCount, updateCount, deleteCount)
+	}
+
+	return result
+}
+
+// countNoop returns the number of resources with ActionNoop.
+func countNoop(rs []Resource) int {
+	n := 0
+	for _, r := range rs {
+		if r.Action == ActionNoop {
+			n++
+		}
+	}
+	return n
+}
+
+// renderResourcePlanChangesOnly renders only changed resources, with a footer
+// count of unchanged (no-op) resources per section.
+// Stacks and Filesets changes-only rendering added in a later task.
+func renderResourcePlanChangesOnly(rp *ResourcePlan) string {
+	var sections []ui.NestedSection
+
+	buildFlatSection := func(title string, resources []Resource) {
+		if len(resources) == 0 {
+			return
+		}
+		var items []ui.DiffLine
+		for _, res := range resources {
+			if res.Action == ActionNoop {
+				continue
+			}
+			name := ui.Italic(res.Name)
+			msg := fmt.Sprintf("%s %s", name, res.FormatAction())
+			items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
+		}
+		sec := ui.NestedSection{Title: title, Items: items}
+		noop := countNoop(resources)
+		if noop > 0 {
+			sec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", noop)}}
+		}
+		sections = append(sections, sec)
+	}
+
+	buildFlatSection("Volumes", rp.Volumes)
+	buildFlatSection("Networks", rp.Networks)
+	buildFlatSection("Containers", rp.Containers)
+
+	result := ui.RenderNestedSections(sections)
+
+	create, update, delete := rp.CountActions()
+	if create > 0 || update > 0 || delete > 0 {
+		if result != "" {
+			result += "\n"
+		}
+		result += ui.FormatPlanSummary(create, update, delete)
 	}
 
 	return result
