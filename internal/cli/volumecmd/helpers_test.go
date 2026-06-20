@@ -25,23 +25,27 @@ func TestComputeSpecHashDeterministic(t *testing.T) {
 
 func TestManifestHasVolume(t *testing.T) {
 	cfg := &manifest.Config{
+		Contexts: map[string]manifest.ContextConfig{
+			"ctx": {Volumes: map[string]manifest.TopLevelResourceSpec{"data": {}}},
+		},
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
-			"data": {TargetVolume: "data"},
-			"web":  {TargetVolume: "cache"},
+			"web": {TargetVolume: "cache", Context: "ctx"},
 		},
 	}
 	tests := []struct {
-		name string
-		vol  string
-		want bool
+		name    string
+		context string
+		vol     string
+		want    bool
 	}{
-		{"direct", "data", true},
-		{"fileset", "cache", true},
-		{"missing", "tmp", false},
+		{"context volume", "ctx", "data", true},
+		{"fileset volume", "ctx", "cache", true},
+		{"missing", "ctx", "tmp", false},
+		{"wrong context", "other", "data", false},
 	}
 	for _, tc := range tests {
-		if got := manifestHasVolume(cfg, tc.vol); got != tc.want {
-			t.Fatalf("%s: manifestHasVolume(%q)=%v, want %v", tc.name, tc.vol, got, tc.want)
+		if got := manifestHasVolume(cfg, tc.context, tc.vol); got != tc.want {
+			t.Fatalf("%s: manifestHasVolume(%q,%q)=%v, want %v", tc.name, tc.context, tc.vol, got, tc.want)
 		}
 	}
 }
