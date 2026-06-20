@@ -130,6 +130,25 @@ func TestRenderResourcePlanOpts_ChangesOnly_FilesetCap(t *testing.T) {
 	}
 }
 
+func TestRenderResourcePlanOpts_ChangesOnly_FilesetCapBoundary(t *testing.T) {
+	// Exactly 10 changed files — all must be shown, no "more changed" summary line.
+	items := make([]Resource, 10)
+	for i := range items {
+		items[i] = NewResource(ResourceFile, fmt.Sprintf("f%02d", i+1), ActionUpdate, "")
+	}
+	rp := &ResourcePlan{Filesets: map[string][]Resource{
+		"ctx/a/edge": items,
+	}}
+
+	out := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false}))
+	if !strings.Contains(out, "f10") {
+		t.Errorf("expected 'f10' (10th file) to be shown at the cap boundary, got:\n%s", out)
+	}
+	if strings.Contains(out, "more changed") {
+		t.Errorf("expected NO 'more changed' summary line at exactly the cap (10 files), got:\n%s", out)
+	}
+}
+
 func TestRenderResourcePlanOpts_ChangesOnly_AllStacksUnchanged(t *testing.T) {
 	rp := &ResourcePlan{
 		Volumes: []Resource{NewResource(ResourceVolume, "vNew", ActionCreate, "")},

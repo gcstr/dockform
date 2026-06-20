@@ -115,8 +115,8 @@ const filesetChangedFileCap = 10
 
 // PlanRenderOptions controls how a ResourcePlan is rendered.
 type PlanRenderOptions struct {
-	// Full renders all resources including no-ops. When false (changes-only mode,
-	// wired in a later task) only resources with actions are shown.
+	// Full renders the complete plan including unchanged resources; when false,
+	// output is changes-only (only resources with pending actions are shown).
 	Full bool
 }
 
@@ -268,8 +268,9 @@ func appendPlanSummary(result string, rp *ResourcePlan) string {
 	return result
 }
 
-// formatFilesetItem formats a single non-noop fileset item into a DiffLine,
-// using the same logic as the full renderer's fileset loop.
+// formatFilesetItem formats a CHANGED fileset file line. Callers must
+// pre-filter ActionNoop items (the no-op "no file changes" case is handled by
+// the full renderer).
 func formatFilesetItem(res Resource) ui.DiffLine {
 	var msg string
 	if res.Name != "" {
