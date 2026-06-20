@@ -44,6 +44,42 @@ func TestRenderNestedSections_Footer(t *testing.T) {
 	}
 }
 
+func TestRenderNestedSections_FooterAfterNestedSections(t *testing.T) {
+	sections := []NestedSection{{
+		Title: "Stacks",
+		Sections: []NestedSection{{
+			Title: "ctx/netbird",
+			Items: []DiffLine{{Type: Add, Message: "server will be created"}},
+		}},
+		Footer: []DiffLine{{Type: Info, Message: "44 unchanged"}},
+	}}
+
+	out := StripANSI(RenderNestedSections(sections))
+
+	if !strings.Contains(out, "server will be created") {
+		t.Errorf("expected output to contain nested item message, got:\n%s", out)
+	}
+	if !strings.Contains(out, "44 unchanged") {
+		t.Errorf("expected output to contain footer message, got:\n%s", out)
+	}
+
+	nestedIdx := strings.Index(out, "server will be created")
+	footerIdx := strings.Index(out, "44 unchanged")
+	if footerIdx <= nestedIdx {
+		t.Errorf("expected footer to appear after nested sections, but nested index=%d footer index=%d", nestedIdx, footerIdx)
+	}
+
+	// Footer line must be exactly two leading spaces, no icon
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "44 unchanged") {
+			if line != "  44 unchanged" {
+				t.Errorf("expected footer line to be %q, got %q", "  44 unchanged", line)
+			}
+			break
+		}
+	}
+}
+
 func TestRenderNestedSections_FooterOnly(t *testing.T) {
 	sections := []NestedSection{
 		{
