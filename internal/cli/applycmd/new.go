@@ -49,20 +49,22 @@ func New() *cobra.Command {
 				return err
 			}
 			long, _ := cmd.Flags().GetBool("long")
-			// Print the plan for review. Goes through the normal printer so it
-			// scrolls naturally instead of being clipped by the rolling-log TUI.
-			// --long shows all resources including no-ops; default is changes-only.
-			if builtPlan != nil {
-				ctx.Printer.Plain("%s", builtPlan.Render(planner.PlanRenderOptions{Full: long}))
-			}
 
 			// If the plan has no create/update/delete actions, inform and exit early
+			// (before the review render, so we don't print both "No changes…" and this).
 			if builtPlan != nil && builtPlan.Resources != nil {
 				createCount, updateCount, deleteCount := builtPlan.Resources.CountActions()
 				if createCount == 0 && updateCount == 0 && deleteCount == 0 {
 					ctx.Printer.Plain("Nothing to apply. Exiting.")
 					return nil
 				}
+			}
+
+			// Print the plan for review. Goes through the normal printer so it
+			// scrolls naturally instead of being clipped by the rolling-log TUI.
+			// --long shows all resources including no-ops; default is changes-only.
+			if builtPlan != nil {
+				ctx.Printer.Plain("%s", builtPlan.Render(planner.PlanRenderOptions{Full: long}))
 			}
 
 			// Get confirmation from user

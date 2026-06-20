@@ -89,7 +89,6 @@ exit 0
 // TestPlan_DefaultChangesOnly verifies that the default plan output omits
 // no-op lines (like "up-to-date") and instead shows an "unchanged" summary.
 func TestPlan_DefaultChangesOnly(t *testing.T) {
-	t.Helper()
 	undo := clitest.WithCustomDockerStub(t, upToDateDockerStub)
 	defer undo()
 
@@ -117,7 +116,6 @@ func TestPlan_DefaultChangesOnly(t *testing.T) {
 // TestPlan_LongShowsNoOpLines verifies that --long produces "up-to-date" lines
 // that are absent from the default changes-only output.
 func TestPlan_LongShowsNoOpLines(t *testing.T) {
-	t.Helper()
 	undo := clitest.WithCustomDockerStub(t, upToDateDockerStub)
 	defer undo()
 
