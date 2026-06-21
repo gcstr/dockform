@@ -98,12 +98,16 @@ func TestSimplePlanApplyLifecycle(t *testing.T) {
 		t.Fatalf("expected network labeled io.dockform.identifier=%s", identifier)
 	}
 
-	// Re-PLAN should show up-to-date/noop items
+	// Re-PLAN: the hello service should be up-to-date after apply, i.e. NOT
+	// requiring a create or start. In changes-only output an unchanged service
+	// produces no line at all (it's folded into the stack's "N unchanged"),
+	// so assert the absence of a create/start action for it. (This scenario's
+	// external volume is orphan-flagged on re-plan, so the plan is not fully
+	// no-op — we only assert on the service here.)
 	out2 := runCmd(t, tempDir, env, bin, "plan", "--manifest", tempDir)
-	if !strings.Contains(out2, "[noop] service app/hello up-to-date") && !strings.Contains(out2, "[noop] service app/hello running") {
-		if strings.Contains(out2, "[add] service app/hello will be started") {
-			t.Fatalf("service should not require start after apply, got plan:\n%s", out2)
-		}
+	plain2 := ui.StripANSI(out2)
+	if strings.Contains(plain2, "hello will be created") || strings.Contains(plain2, "hello will be started") {
+		t.Fatalf("service should be up-to-date after apply, got plan:\n%s", out2)
 	}
 }
 
@@ -231,15 +235,26 @@ func TestExamplePlanApplyIdempotentAndPrune(t *testing.T) {
 	if code2 != 0 {
 		t.Fatalf("plan after apply failed: %d\nSTDOUT:\n%s\nSTDERR:\n%s", code2, out2, err2)
 	}
-	// UI may render without explicit [noop] prefix; assert on core phrases instead
-	if !strings.Contains(out2, "demo-volume-1 exists") {
-		t.Fatalf("expected volume exists, got:\n%s", out2)
+	// Default output is changes-only, so a fully up-to-date plan prints the
+	// concise "No changes." message rather than listing unchanged resources.
+	if !strings.Contains(ui.StripANSI(out2), "No changes.") {
+		t.Fatalf("expected idempotent plan to report no changes, got:\n%s", out2)
 	}
-	if !strings.Contains(out2, "demo-network exists") {
-		t.Fatalf("expected network exists, got:\n%s", out2)
+
+	// 3b) --long shows the full inventory of unchanged resources.
+	outLong, errLong, codeLong := runCmdDetailed(t, root, env, bin, "plan", "--long", "--manifest", exampleCfg)
+	if codeLong != 0 {
+		t.Fatalf("plan --long after apply failed: %d\nSTDOUT:\n%s\nSTDERR:\n%s", codeLong, outLong, errLong)
 	}
-	if !strings.Contains(out2, "nginx up-to-date") && !strings.Contains(out2, "nginx running") {
-		t.Fatalf("expected nginx up-to-date or running, got:\n%s", out2)
+	plainLong := ui.StripANSI(outLong)
+	if !strings.Contains(plainLong, "demo-volume-1 exists") {
+		t.Fatalf("expected volume exists in --long output, got:\n%s", outLong)
+	}
+	if !strings.Contains(plainLong, "demo-network exists") {
+		t.Fatalf("expected network exists in --long output, got:\n%s", outLong)
+	}
+	if !strings.Contains(plainLong, "nginx up-to-date") && !strings.Contains(plainLong, "nginx running") {
+		t.Fatalf("expected nginx up-to-date or running in --long output, got:\n%s", outLong)
 	}
 	// Note: "no file changes" check removed - the example scenario doesn't configure filesets
 
