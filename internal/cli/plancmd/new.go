@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/gcstr/dockform/internal/cli/common"
+	"github.com/gcstr/dockform/internal/planner"
 	"github.com/gcstr/dockform/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +27,9 @@ func New() *cobra.Command {
 				ctx.Planner = ctx.Planner.WithParallel(false)
 			}
 
+			long, _ := cmd.Flags().GetBool("long")
+			renderOpts := planner.PlanRenderOptions{Full: long}
+
 			// Build plan normally
 			verbose, _ := cmd.Flags().GetBool("verbose")
 			if verbose {
@@ -33,7 +37,7 @@ func New() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				ctx.Printer.Plain("%s", plan.String())
+				ctx.Printer.Plain("%s", plan.Render(renderOpts))
 			} else {
 				var out string
 				_, err = ui.RunWithRollingLog(cmd.Context(), func(runCtx context.Context) (string, error) {
@@ -53,7 +57,7 @@ func New() *cobra.Command {
 							return runCtx.Err()
 						}
 
-						out = plan.String()
+						out = plan.Render(renderOpts)
 						return nil
 					})
 				})
@@ -68,6 +72,9 @@ func New() *cobra.Command {
 
 	// Add sequential flag
 	cmd.Flags().Bool("sequential", false, "Use sequential processing instead of the default parallel processing (slower but uses less CPU and Docker daemon resources)")
+
+	// Add long flag
+	cmd.Flags().Bool("long", false, "Show the full plan including unchanged resources")
 
 	// Add targeting flags
 	common.AddTargetFlags(cmd)

@@ -109,17 +109,39 @@ func (r Resource) FormatAction() string {
 	}
 }
 
-// RenderResourcePlan renders a ResourcePlan with consistent formatting
+// filesetChangedFileCap is the maximum number of changed file lines shown per
+// fileset in changes-only mode before the remainder is summarised.
+const filesetChangedFileCap = 10
+
+// PlanRenderOptions controls how a ResourcePlan is rendered.
+type PlanRenderOptions struct {
+	// Full renders the complete plan including unchanged resources; when false,
+	// output is changes-only (only resources with pending actions are shown).
+	Full bool
+}
+
+// RenderResourcePlanOpts renders a ResourcePlan according to opts.
+func RenderResourcePlanOpts(rp *ResourcePlan, opts PlanRenderOptions) string {
+	if opts.Full {
+		return renderResourcePlanFull(rp)
+	}
+	return renderResourcePlanChangesOnly(rp)
+}
+
+// RenderResourcePlan renders a ResourcePlan with consistent formatting.
+// It is equivalent to RenderResourcePlanOpts with Full: true.
 func RenderResourcePlan(rp *ResourcePlan) string {
+	return RenderResourcePlanOpts(rp, PlanRenderOptions{Full: true})
+}
+
+func renderResourcePlanFull(rp *ResourcePlan) string {
 	var sections []ui.NestedSection
 
 	// Volumes section
 	if len(rp.Volumes) > 0 {
 		var items []ui.DiffLine
 		for _, res := range rp.Volumes {
-			name := ui.Italic(res.Name)
-			msg := fmt.Sprintf("%s %s", name, res.FormatAction())
-			items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
+			items = append(items, formatResourceLine(res))
 		}
 		sections = append(sections, ui.NestedSection{Title: "Volumes", Items: items})
 	}
@@ -128,9 +150,7 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 	if len(rp.Networks) > 0 {
 		var items []ui.DiffLine
 		for _, res := range rp.Networks {
-			name := ui.Italic(res.Name)
-			msg := fmt.Sprintf("%s %s", name, res.FormatAction())
-			items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
+			items = append(items, formatResourceLine(res))
 		}
 		sections = append(sections, ui.NestedSection{Title: "Networks", Items: items})
 	}
@@ -151,10 +171,7 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 			var items []ui.DiffLine
 
 			for _, res := range services {
-				// For services, we don't repeat the stack name since it's in the section title
-				name := ui.Italic(res.Name)
-				msg := fmt.Sprintf("%s %s", name, res.FormatAction())
-				items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
+				items = append(items, formatResourceLine(res))
 			}
 
 			if len(items) > 0 {
@@ -220,28 +237,206 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 	if len(rp.Containers) > 0 {
 		var items []ui.DiffLine
 		for _, res := range rp.Containers {
-			name := ui.Italic(res.Name)
-			msg := fmt.Sprintf("%s %s", name, res.FormatAction())
-			items = append(items, ui.DiffLine{Type: res.ChangeType, Message: msg})
+			items = append(items, formatResourceLine(res))
 		}
 		sections = append(sections, ui.NestedSection{Title: "Containers", Items: items})
 	}
 
-	// Calculate summary counts
-	createCount, updateCount, deleteCount := rp.CountActions()
+	return appendPlanSummary(ui.RenderNestedSections(sections), rp)
+}
 
-	// Render sections
-	result := ui.RenderNestedSections(sections)
+// formatResourceLine returns a DiffLine for a resource using the standard
+// "italic-name action-text" format used by Volumes, Networks, Containers, and
+// Stacks flat items.
+func formatResourceLine(res Resource) ui.DiffLine {
+	return ui.DiffLine{
+		Type:    res.ChangeType,
+		Message: fmt.Sprintf("%s %s", ui.Italic(res.Name), res.FormatAction()),
+	}
+}
 
-	// Add summary line
-	if createCount > 0 || updateCount > 0 || deleteCount > 0 {
+// appendPlanSummary appends a plan summary line to result when there are any
+// creates, updates, or deletes.
+func appendPlanSummary(result string, rp *ResourcePlan) string {
+	create, update, delete := rp.CountActions()
+	if create > 0 || update > 0 || delete > 0 {
 		if result != "" {
 			result += "\n"
 		}
-		result += ui.FormatPlanSummary(createCount, updateCount, deleteCount)
+		result += ui.FormatPlanSummary(create, update, delete)
+	}
+	return result
+}
+
+// formatFilesetItem formats a CHANGED fileset file line. Callers must
+// pre-filter ActionNoop items (the no-op "no file changes" case is handled by
+// the full renderer).
+func formatFilesetItem(res Resource) ui.DiffLine {
+	var msg string
+	if res.Name != "" {
+		msg = fmt.Sprintf("%s %s", res.Action, ui.Italic(res.Name))
+	} else {
+		msg = res.FormatAction()
+	}
+	return ui.DiffLine{Type: res.ChangeType, Message: msg}
+}
+
+// summarizeFileActions counts creates, updates, and deletes in a slice of Resources.
+func summarizeFileActions(rs []Resource) (create, update, delete int) {
+	for _, r := range rs {
+		switch r.Action {
+		case ActionCreate:
+			create++
+		case ActionUpdate, ActionReconcile:
+			update++
+		case ActionDelete:
+			delete++
+		}
+	}
+	return
+}
+
+// countNoop returns the number of resources with ActionNoop.
+func countNoop(rs []Resource) int {
+	n := 0
+	for _, r := range rs {
+		if r.Action == ActionNoop {
+			n++
+		}
+	}
+	return n
+}
+
+// totalUnits counts the resources a plan tracks, for the all-clear message.
+// Filesets are counted per-fileset (one unit each), matching how the changes-only
+// renderer treats a fileset as a single no-op unit.
+func totalUnits(rp *ResourcePlan) int {
+	n := len(rp.Volumes) + len(rp.Networks) + len(rp.Containers) + len(rp.Filesets)
+	for _, services := range rp.Stacks {
+		n += len(services)
+	}
+	return n
+}
+
+// renderResourcePlanChangesOnly renders only changed resources, with a footer
+// count of unchanged (no-op) resources per section.
+func renderResourcePlanChangesOnly(rp *ResourcePlan) string {
+	if c, u, d := rp.CountActions(); c == 0 && u == 0 && d == 0 {
+		return fmt.Sprintf("No changes. %d resources up to date.", totalUnits(rp))
 	}
 
-	return result
+	var sections []ui.NestedSection
+
+	buildFlatSection := func(title string, resources []Resource) {
+		if len(resources) == 0 {
+			return
+		}
+		var items []ui.DiffLine
+		for _, res := range resources {
+			if res.Action == ActionNoop {
+				continue
+			}
+			items = append(items, formatResourceLine(res))
+		}
+		sec := ui.NestedSection{Title: title, Items: items}
+		noop := countNoop(resources)
+		if noop > 0 {
+			sec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", noop)}}
+		}
+		sections = append(sections, sec)
+	}
+
+	buildFlatSection("Volumes", rp.Volumes)
+	buildFlatSection("Networks", rp.Networks)
+
+	// Stacks section (changes-only)
+	if len(rp.Stacks) > 0 {
+		stackNames := make([]string, 0, len(rp.Stacks))
+		for name := range rp.Stacks {
+			stackNames = append(stackNames, name)
+		}
+		sort.Strings(stackNames)
+
+		var changedStackSections []ui.NestedSection
+		unchangedServices := 0
+
+		for _, stackName := range stackNames {
+			services := rp.Stacks[stackName]
+			unchangedServices += countNoop(services)
+
+			var items []ui.DiffLine
+			for _, svc := range services {
+				if svc.Action != ActionNoop {
+					items = append(items, formatResourceLine(svc))
+				}
+			}
+			if len(items) > 0 {
+				changedStackSections = append(changedStackSections, ui.NestedSection{Title: stackName, Items: items})
+			}
+		}
+
+		stacksSec := ui.NestedSection{Title: "Stacks", Sections: changedStackSections}
+		if unchangedServices > 0 {
+			stacksSec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", unchangedServices)}}
+		}
+		sections = append(sections, stacksSec)
+	}
+
+	// Filesets section (changes-only)
+	if len(rp.Filesets) > 0 {
+		filesetNames := make([]string, 0, len(rp.Filesets))
+		for name := range rp.Filesets {
+			filesetNames = append(filesetNames, name)
+		}
+		sort.Strings(filesetNames)
+
+		var changedFilesetSections []ui.NestedSection
+		unchangedFilesets := 0
+
+		for _, filesetName := range filesetNames {
+			items := rp.Filesets[filesetName]
+			if countNoop(items) == len(items) {
+				unchangedFilesets++
+				continue
+			}
+
+			var changedFiles []Resource
+			for _, item := range items {
+				if item.Action != ActionNoop {
+					changedFiles = append(changedFiles, item)
+				}
+			}
+
+			show := min(filesetChangedFileCap, len(changedFiles))
+
+			var diffLines []ui.DiffLine
+			for _, item := range changedFiles[:show] {
+				diffLines = append(diffLines, formatFilesetItem(item))
+			}
+
+			if len(changedFiles) > filesetChangedFileCap {
+				remaining := changedFiles[filesetChangedFileCap:]
+				extra := len(remaining)
+				c, u, d := summarizeFileActions(remaining)
+				diffLines = append(diffLines, ui.DiffLine{
+					Type:    ui.Info,
+					Message: fmt.Sprintf("… and %d more changed (%d created, %d updated, %d deleted)", extra, c, u, d),
+				})
+			}
+
+			changedFilesetSections = append(changedFilesetSections, ui.NestedSection{Title: filesetName, Items: diffLines})
+		}
+
+		filesetsSec := ui.NestedSection{Title: "Filesets", Sections: changedFilesetSections}
+		if unchangedFilesets > 0 {
+			filesetsSec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", unchangedFilesets)}}
+		}
+		sections = append(sections, filesetsSec)
+	}
+
+	buildFlatSection("Containers", rp.Containers)
+
+	return appendPlanSummary(ui.RenderNestedSections(sections), rp)
 }
 
 // CountActions counts the number of each action type in the plan

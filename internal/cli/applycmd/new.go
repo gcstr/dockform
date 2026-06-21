@@ -48,19 +48,23 @@ func New() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Print the full plan for review. Goes through the normal printer so it
-			// scrolls naturally instead of being clipped by the rolling-log TUI.
-			if builtPlan != nil {
-				ctx.Printer.Plain("%s", builtPlan.String())
-			}
+			long, _ := cmd.Flags().GetBool("long")
 
 			// If the plan has no create/update/delete actions, inform and exit early
+			// (before the review render, so we don't print both "No changes…" and this).
 			if builtPlan != nil && builtPlan.Resources != nil {
 				createCount, updateCount, deleteCount := builtPlan.Resources.CountActions()
 				if createCount == 0 && updateCount == 0 && deleteCount == 0 {
 					ctx.Printer.Plain("Nothing to apply. Exiting.")
 					return nil
 				}
+			}
+
+			// Print the plan for review. Goes through the normal printer so it
+			// scrolls naturally instead of being clipped by the rolling-log TUI.
+			// --long shows all resources including no-ops; default is changes-only.
+			if builtPlan != nil {
+				ctx.Printer.Plain("%s", builtPlan.Render(planner.PlanRenderOptions{Full: long}))
 			}
 
 			// Get confirmation from user
@@ -105,6 +109,7 @@ func New() *cobra.Command {
 	}
 	cmd.Flags().Bool("skip-confirmation", false, "Skip confirmation prompt and apply immediately")
 	cmd.Flags().Bool("sequential", false, "Use sequential processing instead of the default parallel processing (slower but uses less CPU and Docker daemon resources)")
+	cmd.Flags().Bool("long", false, "Show the full plan including unchanged resources")
 	cmd.Flags().Bool("strict-prune", false, "Fail apply when prune operations encounter errors")
 	cmd.Flags().Bool("verbose-prune-errors", false, "Print detailed prune error details when not using --strict-prune")
 	common.AddTargetFlags(cmd)
