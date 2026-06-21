@@ -34,7 +34,9 @@ type Exec interface {
 // "Connection reset by peer" failures during parallel plan building.
 const MaxConcurrentSSH = 2
 
-const (
+// sshMaxRetries and sshRetryBaseDelay are vars (not consts) so tests can shrink
+// the backoff; the same pattern is used for reachabilityProbeTimeout.
+var (
 	sshMaxRetries     = 4
 	sshRetryBaseDelay = 1 * time.Second
 )
@@ -54,6 +56,11 @@ type Options struct {
 	Env     []string
 	Stdin   io.Reader
 	Timeout time.Duration
+	// Probe marks a lightweight liveness check (e.g. a reachability `docker
+	// version`). When true, the call bypasses the SSH concurrency semaphore and
+	// the retry/backoff loop: a down host must not be serialized behind other
+	// calls or retried during a reachability check.
+	Probe bool
 }
 
 // Result contains structured outcome of a command.
@@ -103,7 +110,7 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 		defer cancel()
 	}
 
-	if s.sem != nil {
+	if s.sem != nil && !opts.Probe {
 		select {
 		case s.sem <- struct{}{}:
 			defer func() { <-s.sem }()
@@ -128,7 +135,7 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 	}
 
 	_, streamingStdout := ctx.Value(stdOutWriterKey{}).(io.Writer)
-	canRetry := s.sem != nil && opts.Stdin == nil && !streamingStdout
+	canRetry := s.sem != nil && opts.Stdin == nil && !streamingStdout && !opts.Probe
 	maxAttempts := 1
 	if canRetry {
 		maxAttempts = sshMaxRetries + 1
