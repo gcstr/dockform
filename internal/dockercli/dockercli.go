@@ -93,7 +93,7 @@ func (c *Client) storeComposeCache(key string, doc ComposeConfigDoc) {
 
 // CheckDaemon verifies the docker daemon for the configured context is reachable.
 func (c *Client) CheckDaemon(ctx context.Context) error {
-	if _, err := c.exec.Run(ctx, "version", "--format", "{{.Server.Version}}"); err != nil {
+	if _, err := c.exec.RunDetailed(ctx, Options{Probe: true}, "version", "--format", "{{.Server.Version}}"); err != nil {
 		// Check if this is a context cancellation error - if so, return it directly
 		if ctx.Err() != nil {
 			return ctx.Err()

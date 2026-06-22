@@ -2,6 +2,8 @@ package common
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -133,6 +135,47 @@ func TestEnsureContextsReachable(t *testing.T) {
 			t.Fatalf("expected nil for empty contexts, got %v", err)
 		}
 	})
+}
+
+func TestEnsureContextsReachable_DownContextsProbedOnce(t *testing.T) {
+	dir := t.TempDir()
+	counter := filepath.Join(dir, "calls.txt")
+	t.Setenv("DF_PROBE_COUNTER", counter)
+
+	// Stub: every reachable context returns a version; every `down*` context
+	// records one invocation and fails with an SSH-connection error (the only
+	// kind the retry path would retry). If retries were active, the count would
+	// be 5 per down context instead of 1.
+	stub := `#!/bin/sh
+case "$1" in
+  version)
+    case "$DOCKER_CONTEXT" in
+      down|down2|down3)
+        echo x >> "$DF_PROBE_COUNTER"
+        echo 'kex_exchange_identification: Connection reset by peer' >&2; exit 1 ;;
+      *) echo '27.0.0'; exit 0 ;;
+    esac ;;
+esac
+exit 0
+`
+	restore := clitest.WithCustomDockerStub(t, stub)
+	defer restore()
+
+	factory := CreateClientFactory()
+	cfg := &manifest.Config{
+		Identifier: "demo",
+		Contexts: map[string]manifest.ContextConfig{
+			"down": {}, "down2": {}, "down3": {}, "ok": {},
+		},
+	}
+	if err := EnsureContextsReachable(context.Background(), cfg, factory); err == nil {
+		t.Fatal("expected unreachable error")
+	}
+
+	b, _ := os.ReadFile(counter)
+	if got := strings.Count(string(b), "x\n"); got != 3 {
+		t.Fatalf("expected exactly 3 probe invocations (one per down context), got %d", got)
+	}
 }
 
 func TestEnsureContextsReachable_Timeout(t *testing.T) {
