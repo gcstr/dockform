@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/gcstr/dockform/internal/cli"
+	"github.com/gcstr/dockform/internal/sshmux"
 )
 
 var (
@@ -29,5 +31,12 @@ func run() int {
 }
 
 func main() {
+	if sshmux.ShouldRunAsShim(os.Args[0]) {
+		if err := sshmux.Run(os.Args[0], os.Args[1:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(255)
+		}
+		return
+	}
 	os.Exit(run())
 }
