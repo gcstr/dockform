@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
@@ -312,6 +313,66 @@ func (c *Client) ReadFileFromVolume(ctx context.Context, volumeName, targetPath,
 		return "", err
 	}
 	return strings.TrimRight(out, "\r\n"), nil
+}
+
+// ReadIndexFilesFromVolumes reads relFile from each named volume in a single
+// helper container, returning a map of volume name -> file content (empty string
+// when the file is absent). The file is resolved relative to a synthetic mount
+// per volume, so this collapses N per-volume container boots into one. Volumes
+// must already exist; callers filter to existing volumes.
+func (c *Client) ReadIndexFilesFromVolumes(ctx context.Context, volumeNames []string, relFile string) (map[string]string, error) {
+	result := make(map[string]string, len(volumeNames))
+	if len(volumeNames) == 0 {
+		return result, nil
+	}
+	args := []string{"run", "--rm"}
+	var script strings.Builder
+	for i, vol := range volumeNames {
+		if vol == "" {
+			return nil, apperr.New("dockercli.ReadIndexFilesFromVolumes", apperr.InvalidInput, "empty volume name")
+		}
+		mnt := fmt.Sprintf("/dfidx/%d", i)
+		args = append(args, "-v", fmt.Sprintf("%s:%s:ro", vol, mnt))
+		full := path.Join(mnt, relFile)
+		// Marker line, then file content (or nothing), then a newline so the next
+		// marker always starts on its own line.
+		script.WriteString("echo '===DFIDX:" + fmt.Sprintf("%d", i) + "==='; cat '" + util.ShellEscape(full) + "' 2>/dev/null || true; echo; ")
+	}
+	args = append(args, HelperImage, "sh", "-c", script.String())
+	out, err := c.exec.Run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return parseBatchedIndexOutput(out, volumeNames), nil
+}
+
+// parseBatchedIndexOutput splits the delimited helper-container output (blocks
+// separated by "===DFIDX:<i>===" marker lines) back into a volume -> content map.
+func parseBatchedIndexOutput(out string, volumeNames []string) map[string]string {
+	res := make(map[string]string, len(volumeNames))
+	cur := -1
+	var buf []string
+	flush := func() {
+		if cur >= 0 && cur < len(volumeNames) {
+			res[volumeNames[cur]] = strings.TrimRight(strings.Join(buf, "\n"), "\r\n")
+		}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "===DFIDX:") && strings.HasSuffix(line, "===") {
+			flush()
+			idxStr := strings.TrimSuffix(strings.TrimPrefix(line, "===DFIDX:"), "===")
+			if n, err := strconv.Atoi(idxStr); err == nil {
+				cur = n
+			} else {
+				cur = -1
+			}
+			buf = nil
+			continue
+		}
+		buf = append(buf, line)
+	}
+	flush()
+	return res
 }
 
 // WriteFileToVolume writes content to a file inside a mounted volume target path, creating parent directories.
