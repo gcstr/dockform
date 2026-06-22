@@ -67,6 +67,9 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 		return nil, err
 	}
 
+	// Install run-scoped SSH multiplexing (best-effort) before any docker work.
+	ActivateSSHMux(cmd, cfg)
+
 	// Validate in spinner
 	err = SpinnerOperation(pr, "Validating...", func() error {
 		return ValidateWithFactory(cmd.Context(), cfg, factory)
