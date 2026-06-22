@@ -136,6 +136,20 @@ func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profil
 	return nil, apperr.New("dockercli.ComposePs", apperr.External, "unexpected compose ps json: %s", util.Truncate(out, 256))
 }
 
+// parseComposeHashLines parses `docker compose config --hash *` output, which is
+// one "<service> <hash>" line per service, into a map of service -> hash.
+func parseComposeHashLines(out string) map[string]string {
+	res := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		res[fields[0]] = fields[len(fields)-1]
+	}
+	return res
+}
+
 // ComposeConfigHash returns the compose config hash for a single service.
 // If identifier is non-empty, a temporary overlay compose file is used to add
 // the label `io.dockform.identifier: <identifier>` to that service before hashing.
@@ -181,25 +195,21 @@ func (c *Client) ComposeConfigHashes(ctx context.Context, workingDir string, fil
 		}
 	}
 	base := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
-	out := make(map[string]string, len(services))
-	for _, svc := range services {
-		args := append(append([]string{}, base...), "config", "--hash", svc)
-		txt, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
-		if err != nil {
-			return nil, err
-		}
-		trimmed := strings.TrimSpace(txt)
-		firstLine := trimmed
-		if idx := strings.IndexAny(trimmed, "\r\n"); idx >= 0 {
-			firstLine = trimmed[:idx]
-		}
-		fields := strings.Fields(firstLine)
-		if len(fields) == 0 {
-			return nil, apperr.New("dockercli.ComposeConfigHashes", apperr.External, "unexpected compose hash output: %s", util.Truncate(trimmed, 200))
-		}
-		out[svc] = fields[len(fields)-1]
+	args := append(append([]string{}, base...), "config", "--hash", "*")
+	out, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	all := parseComposeHashLines(out)
+	result := make(map[string]string, len(services))
+	for _, svc := range services {
+		h, ok := all[svc]
+		if !ok {
+			return nil, apperr.New("dockercli.ComposeConfigHashes", apperr.External, "compose config --hash '*' missing service %q in output: %s", svc, util.Truncate(out, 200))
+		}
+		result[svc] = h
+	}
+	return result, nil
 }
 
 func (c *Client) composeCacheKey(workingDir string, files, profiles, envFiles []string, inlineEnv []string) string {

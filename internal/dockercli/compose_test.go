@@ -26,6 +26,7 @@ type fakeExec struct {
 	errConfigYAML error
 	errPs         error
 	errHash       error
+	hashCalls     int
 }
 
 func (f *fakeExec) Run(ctx context.Context, args ...string) (string, error) {
@@ -66,6 +67,7 @@ func (f *fakeExec) dispatch(args []string) (string, error) {
 		return f.outPs, f.errPs
 	}
 	if hasSuffix(args, []string{"config", "--hash"}) || contains(args, "--hash") {
+		f.hashCalls++
 		return f.outHash, f.errHash
 	}
 	if hasSuffix(args, []string{"up", "-d"}) {
@@ -188,16 +190,19 @@ func TestComposeConfigHash_ParsesLastField(t *testing.T) {
 }
 
 func TestComposeConfigHashes_ReusesOverlayAndParses(t *testing.T) {
-	// Simulate overlay build (config yaml) once, then two hash calls
-	f := &fakeExec{outConfigYAML: "services:\n  web:\n    image: nginx\n  api:\n    image: busybox\n", outHash: "web deadbeef\n"}
+	// Simulate overlay build (config yaml) once, then single batched hash call
+	f := &fakeExec{outConfigYAML: "services:\n  web:\n    image: nginx\n  api:\n    image: busybox\n", outHash: "web 1111\napi 2222\n"}
 	c := &Client{exec: f, identifier: "demo"}
 	dir := t.TempDir()
 	hashes, err := c.ComposeConfigHashes(context.Background(), dir, []string{"compose.yml"}, nil, nil, "proj", []string{"web", "api"}, "demo", nil)
 	if err != nil {
 		t.Fatalf("multihash: %v", err)
 	}
-	if hashes["web"] != "deadbeef" {
-		t.Fatalf("expected web hash deadbeef, got %#v", hashes)
+	if hashes["web"] != "1111" || hashes["api"] != "2222" {
+		t.Fatalf("unexpected hashes: %v", hashes)
+	}
+	if f.hashCalls != 1 {
+		t.Fatalf("expected exactly 1 hash call (batched), got %d", f.hashCalls)
 	}
 	// Ensure the last command was a hash invocation (not another config yaml render)
 	if !contains(f.lastArgs, "--hash") {
@@ -235,6 +240,24 @@ func TestBuildLabeledProjectTemp_AddsIdentifierLabel(t *testing.T) {
 	// When identifier empty, returns empty path
 	if p2, err := c.buildLabeledProjectTemp(context.Background(), ".", nil, nil, nil, "proj", "", nil); err != nil || p2 != "" {
 		t.Fatalf("expected empty result when identifier empty; got %q err=%v", p2, err)
+	}
+}
+
+func TestParseComposeHashLines(t *testing.T) {
+	out := "web bf6121f2\ncache 781cb76a\nworker 37fd6b88\n"
+	got := parseComposeHashLines(out)
+	want := map[string]string{"web": "bf6121f2", "cache": "781cb76a", "worker": "37fd6b88"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d entries, want %d: %v", len(got), len(want), got)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("hash[%q] = %q, want %q", k, got[k], v)
+		}
+	}
+	// Blank and malformed lines are ignored.
+	if g := parseComposeHashLines("\n  \nweb abc\n"); len(g) != 1 || g["web"] != "abc" {
+		t.Fatalf("expected only web=abc, got %v", g)
 	}
 }
 
