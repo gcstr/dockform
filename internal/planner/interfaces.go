@@ -17,6 +17,7 @@ type DockerClient interface {
 
 	// Volume file operations
 	ReadFileFromVolume(ctx context.Context, volumeName, targetPath, relFile string) (string, error)
+	ReadIndexFilesFromVolumes(ctx context.Context, volumeNames []string, relFile string) (map[string]string, error)
 	WriteFileToVolume(ctx context.Context, volumeName, targetPath, relFile, content string) error
 	ExtractTarToVolume(ctx context.Context, volumeName, targetPath string, tarReader io.Reader) error
 	RemovePathsFromVolume(ctx context.Context, volumeName, targetPath string, relPaths []string) error

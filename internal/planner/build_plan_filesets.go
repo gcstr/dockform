@@ -51,7 +51,39 @@ func (p *Planner) buildFilesetResourcesForContext(ctx context.Context, filesetSp
 		localIndexes[res.name] = res.index
 	}
 
-	// Phase 2: read remote indexes sequentially to avoid SSH connection floods.
+	// Phase 2: batch-read remote indexes for all existing fileset volumes in a
+	// single helper container (one boot per host instead of one per fileset).
+	volSet := map[string]struct{}{}
+	for _, name := range filesetNames {
+		if _, ok := localIndexes[name]; !ok {
+			continue
+		}
+		a := filesetSpecs[name]
+		if _, exists := existingVolumes[a.TargetVolume]; exists {
+			volSet[a.TargetVolume] = struct{}{}
+		}
+	}
+	indexByVolume := map[string]string{}
+	if len(volSet) > 0 {
+		vols := sortedKeys(volSet)
+		m, err := client.ReadIndexFilesFromVolumes(ctx, vols, filesets.IndexFileName)
+		if err != nil {
+			// Degrade gracefully: mark every fileset whose volume we could not read.
+			for _, name := range filesetNames {
+				if _, ok := localIndexes[name]; !ok {
+					continue
+				}
+				a := filesetSpecs[name]
+				if _, exists := existingVolumes[a.TargetVolume]; exists {
+					plan.Filesets[name] = []Resource{NewResource(ResourceFile, "", ActionUpdate, "unable to read remote index")}
+					errs = append(errs, apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.External, err, "read remote indexes (batched)"))
+				}
+			}
+			return apperr.Aggregate("planner.buildFilesetResourcesForContext", apperr.External, "one or more fileset analyses failed", errs...)
+		}
+		indexByVolume = m
+	}
+
 	for _, name := range filesetNames {
 		local, ok := localIndexes[name]
 		if !ok {
@@ -61,13 +93,7 @@ func (p *Planner) buildFilesetResourcesForContext(ctx context.Context, filesetSp
 
 		raw := ""
 		if _, volumeExists := existingVolumes[a.TargetVolume]; volumeExists {
-			var err error
-			raw, err = client.ReadFileFromVolume(ctx, a.TargetVolume, a.TargetPath, filesets.IndexFileName)
-			if err != nil {
-				plan.Filesets[name] = []Resource{NewResource(ResourceFile, "", ActionUpdate, "unable to read remote index")}
-				errs = append(errs, apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.External, err, "read remote index for %s", name))
-				continue
-			}
+			raw = indexByVolume[a.TargetVolume]
 		}
 		remote, err := filesets.ParseIndexJSON(raw)
 		if err != nil {

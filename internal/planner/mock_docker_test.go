@@ -32,6 +32,7 @@ type mockDockerClient struct {
 	extractedTars       []string            // volume names that had tars extracted
 	removedPaths        map[string][]string // volumeName -> removed paths
 	runVolumeScriptRuns int
+	readIndexBatchCalls int
 
 	// Control behavior
 	listVolumesError             error
@@ -110,6 +111,15 @@ func (m *mockDockerClient) ReadFileFromVolume(ctx context.Context, volumeName, t
 		return "", nil
 	}
 	return content, nil
+}
+
+func (m *mockDockerClient) ReadIndexFilesFromVolumes(ctx context.Context, volumeNames []string, relFile string) (map[string]string, error) {
+	m.readIndexBatchCalls++
+	res := make(map[string]string, len(volumeNames))
+	for _, v := range volumeNames {
+		res[v] = m.volumeFiles[v] // "" when absent, mirroring ReadFileFromVolume
+	}
+	return res, nil
 }
 
 func (m *mockDockerClient) RunVolumeScript(ctx context.Context, volumeName, targetPath, script string, env []string) (dockercli.VolumeScriptResult, error) {
