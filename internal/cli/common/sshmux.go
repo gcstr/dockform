@@ -59,15 +59,20 @@ func ActivateSSHMux(cmd *cobra.Command, cfg *manifest.Config) {
 	if err != nil {
 		return
 	}
-	cmd.SetContext(context.WithValue(cmd.Context(), sshMuxKey{}, mgr))
+	root := cmd.Root()
+	root.SetContext(context.WithValue(root.Context(), sshMuxKey{}, mgr))
 }
 
 // TeardownSSHMux tears down any multiplexing installed for this command.
 func TeardownSSHMux(cmd *cobra.Command) {
-	if cmd == nil || cmd.Context() == nil {
+	if cmd == nil {
 		return
 	}
-	if mgr, ok := cmd.Context().Value(sshMuxKey{}).(*sshmux.Manager); ok {
+	root := cmd.Root()
+	if root.Context() == nil {
+		return
+	}
+	if mgr, ok := root.Context().Value(sshMuxKey{}).(*sshmux.Manager); ok {
 		mgr.Teardown()
 	}
 }

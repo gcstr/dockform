@@ -15,6 +15,9 @@ import (
 // Its presence also signals that multiplexing is active for this run.
 const ControlEnvVar = "DOCKFORM_SSH_CONTROL_DIR"
 
+// injectedOptionsCount is the number of elements returned by InjectedOptions.
+const injectedOptionsCount = 10
+
 // InjectedOptions returns the ssh -o flags that enable run-scoped multiplexing.
 // ControlPath uses ssh's %C token (a hash of host/port/user) to stay short and
 // unique per destination, well under the ~104-char unix socket limit.
@@ -46,7 +49,7 @@ func FindRealSSH(shimDir, pathEnv string) (string, error) {
 // ShimArgs builds argv for exec'ing the real ssh: realSSH, injected options,
 // then the original incoming args (the destination and docker's own flags).
 func ShimArgs(realSSH, controlDir string, incoming []string) []string {
-	argv := make([]string, 0, 1+10+len(incoming))
+	argv := make([]string, 0, 1+injectedOptionsCount+len(incoming))
 	argv = append(argv, realSSH)
 	argv = append(argv, InjectedOptions(controlDir)...)
 	argv = append(argv, incoming...)
