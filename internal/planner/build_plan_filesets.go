@@ -69,6 +69,10 @@ func (p *Planner) buildFilesetResourcesForContext(ctx context.Context, filesetSp
 		m, err := client.ReadIndexFilesFromVolumes(ctx, vols, filesets.IndexFileName)
 		if err != nil {
 			// Degrade gracefully: mark every fileset whose volume we could not read.
+			// This is an intentional trade-off of batching: a single failed batched read
+			// marks the WHOLE context's filesets as "unable to read remote index" (wider
+			// blast radius than the old per-fileset read), in exchange for one container
+			// boot per host instead of one per fileset.
 			for _, name := range filesetNames {
 				if _, ok := localIndexes[name]; !ok {
 					continue
@@ -76,9 +80,9 @@ func (p *Planner) buildFilesetResourcesForContext(ctx context.Context, filesetSp
 				a := filesetSpecs[name]
 				if _, exists := existingVolumes[a.TargetVolume]; exists {
 					plan.Filesets[name] = []Resource{NewResource(ResourceFile, "", ActionUpdate, "unable to read remote index")}
-					errs = append(errs, apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.External, err, "read remote indexes (batched)"))
 				}
 			}
+			errs = append(errs, apperr.Wrap("planner.buildFilesetResourcesForContext", apperr.External, err, "read remote indexes (batched)"))
 			return apperr.Aggregate("planner.buildFilesetResourcesForContext", apperr.External, "one or more fileset analyses failed", errs...)
 		}
 		indexByVolume = m

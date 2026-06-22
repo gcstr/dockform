@@ -348,6 +348,9 @@ func (c *Client) ReadIndexFilesFromVolumes(ctx context.Context, volumeNames []st
 
 // parseBatchedIndexOutput splits the delimited helper-container output (blocks
 // separated by "===DFIDX:<i>===" marker lines) back into a volume -> content map.
+// This relies on the index being compact single-line JSON (filesets.Index.ToJSON),
+// so a content line can never look like a "===DFIDX:<i>===" marker; if ToJSON ever
+// emits multi-line/indented output, the delimiter scheme would need revisiting.
 func parseBatchedIndexOutput(out string, volumeNames []string) map[string]string {
 	res := make(map[string]string, len(volumeNames))
 	cur := -1
