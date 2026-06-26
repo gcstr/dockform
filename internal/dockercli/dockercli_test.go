@@ -210,3 +210,19 @@ func mustWriteFile(t *testing.T, path string, b []byte) {
 		t.Fatalf("write file: %v", err)
 	}
 }
+
+func TestParseBatchedIndexOutput(t *testing.T) {
+	vols := []string{"volA", "volB", "volC"}
+	// volB has no file (empty block); volA and volC have JSON.
+	out := "===DFIDX:0===\n{\"version\":\"v1\"}\n\n===DFIDX:1===\n\n===DFIDX:2===\n{\"a\":1}\n\n"
+	got := parseBatchedIndexOutput(out, vols)
+	if got["volA"] != `{"version":"v1"}` {
+		t.Fatalf("volA = %q", got["volA"])
+	}
+	if got["volB"] != "" {
+		t.Fatalf("volB should be empty, got %q", got["volB"])
+	}
+	if got["volC"] != `{"a":1}` {
+		t.Fatalf("volC = %q", got["volC"])
+	}
+}

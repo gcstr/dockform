@@ -29,6 +29,8 @@ case "$cmd" in
   run)
     # WriteFileToVolume: detect cat > and log
     for a in "$@"; do echo "$a" | grep -q "cat > "; if [ $? -eq 0 ]; then echo "write_index" >> "$log"; exit 0; fi; done
+    # ReadIndexFilesFromVolumes (batched): emit marker-delimited remote index
+    for a in "$@"; do echo "$a" | grep -q "===DFIDX:" && { printf '===DFIDX:0===\n%s\n' "$REMOTE_JSON"; exit 0; }; done
     # ReadFileFromVolume: cat index (non-redirect)
     for a in "$@"; do echo "$a" | grep -q "cat "; if [ $? -eq 0 ]; then printf '%s' "$REMOTE_JSON"; exit 0; fi; done
     # Extract tar
