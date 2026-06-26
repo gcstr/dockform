@@ -11,11 +11,12 @@ import (
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/cli/applycmd"
 	"github.com/gcstr/dockform/internal/cli/buildinfo"
+	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/gcstr/dockform/internal/cli/composecmd"
 	"github.com/gcstr/dockform/internal/cli/dashboardcmd"
-	"github.com/gcstr/dockform/internal/cli/imagescmd"
 	"github.com/gcstr/dockform/internal/cli/destroycmd"
 	"github.com/gcstr/dockform/internal/cli/doctorcmd"
+	"github.com/gcstr/dockform/internal/cli/imagescmd"
 	"github.com/gcstr/dockform/internal/cli/initcmd"
 	"github.com/gcstr/dockform/internal/cli/manifestcmd"
 	"github.com/gcstr/dockform/internal/cli/plancmd"
@@ -39,6 +40,7 @@ func Execute(ctx context.Context) int {
 	cmd := newRootCmd()
 	err := cmd.ExecuteContext(ctx)
 	closeLogCloser(cmd)
+	common.TeardownSSHMux(cmd)
 	if err != nil {
 		// Check if the error is a context cancellation (user interrupted)
 		// If so, don't print the error and exit with code 130 (128 + SIGINT)
@@ -107,6 +109,7 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().String("log-format", "auto", "Log format: auto, pretty, json")
 	cmd.PersistentFlags().String("log-file", "", "Write logs to file using the format specified by --log-format (in addition to stderr)")
 	cmd.PersistentFlags().Bool("no-color", false, "Disable color in pretty logs")
+	cmd.PersistentFlags().Bool("ssh-multiplex", true, "Reuse one SSH connection per host for a run (ControlMaster); disable with --ssh-multiplex=false or DOCKFORM_SSH_MULTIPLEX=false")
 
 	cmd.AddCommand(initcmd.New())
 	cmd.AddCommand(plancmd.New())
