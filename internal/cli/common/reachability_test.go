@@ -183,9 +183,9 @@ func TestEnsureContextsReachable_Timeout(t *testing.T) {
 	defer restore()
 
 	// Shorten the timeout so the slow context is bounded well under its 2s sleep.
-	old := reachabilityProbeTimeout
-	reachabilityProbeTimeout = 200 * time.Millisecond
-	defer func() { reachabilityProbeTimeout = old }()
+	old := ReachabilityProbeTimeout
+	ReachabilityProbeTimeout = 200 * time.Millisecond
+	defer func() { ReachabilityProbeTimeout = old }()
 
 	factory := CreateClientFactory()
 	cfg := &manifest.Config{

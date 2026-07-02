@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/gcstr/dockform/internal/cli/buildinfo"
+	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -44,7 +46,8 @@ func New() *cobra.Command {
 			start := time.Now()
 
 			// Resolve context override
-			ctxName := strings.TrimSpace(contextName)
+			ctxOverride := strings.TrimSpace(contextName)
+			ctxName := ctxOverride
 			if ctxName == "" {
 				ctxName = "default"
 			}
@@ -60,12 +63,16 @@ func New() *cobra.Command {
 			// Run checks in sequence; keep simple and deterministic output ordering
 			var results []checkResult
 
-			// [engine]
+			// [engine] — bounded so an unreachable daemon (e.g. a dead SSH context)
+			// cannot hang the command.
 			engRes := checkEngine(ctx, docker)
 			results = append(results, engRes)
 
-			// [context]
-			results = append(results, checkContextReachable(ctx, docker, ctxName))
+			// [context] — probe every context configured in the manifest (or just
+			// the --context override, if given), each bounded by
+			// common.ReachabilityProbeTimeout so a down host reports as
+			// unreachable instead of hanging.
+			results = append(results, checkContextsReachable(ctx, cmd, ctxOverride, ctxName, docker)...)
 
 			// [compose]
 			results = append(results, checkCompose(ctx, docker))
@@ -167,29 +174,109 @@ func New() *cobra.Command {
 }
 
 func checkEngine(ctx context.Context, docker *dockercli.Client) checkResult {
-	if err := docker.CheckDaemon(ctx); err != nil {
+	// Bounded: exec.CommandContext only kills the docker CLI once the deadline
+	// fires, and the plain command context has none. Without this timeout, a
+	// docker-over-SSH call to a dead host hangs the doctor command forever.
+	probeCtx, cancel := context.WithTimeout(ctx, common.ReachabilityProbeTimeout)
+	defer cancel()
+	if err := docker.CheckDaemon(probeCtx); err != nil {
+		summary := "daemon not reachable"
+		if probeCtx.Err() != nil && ctx.Err() == nil {
+			summary = fmt.Sprintf("timed out after %s", common.ReachabilityProbeTimeout)
+		}
 		return checkResult{
 			id:      "engine",
 			title:   "Docker Engine reachable",
 			status:  StatusFail,
-			summary: "daemon not reachable",
+			summary: summary,
 			errMsg:  err.Error(),
 			note:    "Remedy: Ensure Docker is running and your user can access it.",
 		}
 	}
-	ver, err := docker.ServerVersion(ctx)
+	ver, err := docker.ServerVersion(probeCtx)
 	if err != nil || strings.TrimSpace(ver) == "" {
 		return checkResult{id: "engine", title: "Docker Engine reachable", status: StatusPass, summary: "version unknown"}
 	}
 	return checkResult{id: "engine", title: "Docker Engine reachable", status: StatusPass, summary: "v" + ver}
 }
 
-func checkContextReachable(ctx context.Context, docker *dockercli.Client, ctxName string) checkResult {
-	// If engine is reachable, context is implicitly resolvable; still try to display
-	if _, err := docker.ContextHost(ctx); err != nil {
-		return checkResult{id: "context", title: "Active context reachable", status: StatusFail, summary: fmt.Sprintf("%q unreachable", ctxName), errMsg: err.Error(), note: "Remedy: Verify context exists: docker context ls"}
+// checkContextsReachable determines which context(s) doctor should probe for
+// daemon reachability and returns one checkResult per context.
+//
+//   - When --context is given, only that context is probed (bounded), matching
+//     the pre-existing single-context "Active context reachable" behavior.
+//   - Otherwise, doctor best-effort loads the manifest and probes every
+//     configured context in parallel via common.ProbeContextsReachability, the
+//     same bounded-parallel mechanism the plan/apply reachability gate uses.
+//   - If no manifest can be loaded (or it has no contexts), doctor degrades
+//     gracefully to the single active/default context, noting that manifest
+//     contexts were not checked.
+func checkContextsReachable(ctx context.Context, cmd *cobra.Command, ctxOverride, ctxName string, docker *dockercli.Client) []checkResult {
+	if ctxOverride != "" {
+		return []checkResult{checkSingleContextReachable(ctx, docker, ctxName, "")}
 	}
-	return checkResult{id: "context", title: "Active context reachable", status: StatusPass, summary: fmt.Sprintf("%q", ctxName)}
+
+	cfg, err := loadManifestQuietly(cmd)
+	if err != nil || cfg == nil || len(cfg.Contexts) == 0 {
+		return []checkResult{checkSingleContextReachable(ctx, docker, ctxName,
+			"Note: manifest contexts were not checked (no manifest loaded); only the active context was probed.")}
+	}
+
+	factory := common.CreateClientFactory()
+	probeResults := common.ProbeContextsReachability(ctx, cfg, factory)
+	results := make([]checkResult, 0, len(probeResults))
+	for _, r := range probeResults {
+		id := fmt.Sprintf("context:%s", r.Name)
+		if r.Reachable() {
+			results = append(results, checkResult{
+				id:      id,
+				title:   fmt.Sprintf("Context %q reachable", r.Name),
+				status:  StatusPass,
+				summary: "ok",
+			})
+			continue
+		}
+		results = append(results, checkResult{
+			id:      id,
+			title:   fmt.Sprintf("Context %q reachable", r.Name),
+			status:  StatusFail,
+			summary: "unreachable",
+			errMsg:  r.Cause,
+			note:    "Remedy: Verify the host is up and the Docker context is correct (docker context ls).",
+		})
+	}
+	return results
+}
+
+// checkSingleContextReachable performs the bounded, single-context reachability
+// check used when no manifest is available or when --context scopes doctor to
+// one context explicitly. Daemon liveness itself is already covered by
+// checkEngine (also bounded); this check resolves the named context to a host,
+// which is local metadata lookup (docker context inspect) rather than a call to
+// the remote daemon, but is still bounded defensively.
+func checkSingleContextReachable(ctx context.Context, docker *dockercli.Client, ctxName, degradedNote string) checkResult {
+	probeCtx, cancel := context.WithTimeout(ctx, common.ReachabilityProbeTimeout)
+	defer cancel()
+
+	var sub []string
+	if degradedNote != "" {
+		sub = append(sub, degradedNote)
+	}
+
+	// If engine is reachable, context is implicitly resolvable; still try to display
+	if _, err := docker.ContextHost(probeCtx); err != nil {
+		return checkResult{id: "context", title: "Active context reachable", status: StatusFail, summary: fmt.Sprintf("%q unreachable", ctxName), errMsg: err.Error(), note: "Remedy: Verify context exists: docker context ls", sub: sub}
+	}
+	return checkResult{id: "context", title: "Active context reachable", status: StatusPass, summary: fmt.Sprintf("%q", ctxName), sub: sub}
+}
+
+// loadManifestQuietly best-effort loads the manifest without emitting warnings
+// or prompting interactively, so `dockform doctor` keeps working from any
+// directory (matching its pre-existing no-manifest-required behavior). Any
+// error (missing manifest, invalid YAML, ambiguous selection, etc.) is treated
+// as "no manifest available" and the caller falls back to single-context mode.
+func loadManifestQuietly(cmd *cobra.Command) (*manifest.Config, error) {
+	return common.LoadConfigWithWarnings(cmd, ui.NoopPrinter{})
 }
 
 func checkCompose(ctx context.Context, docker *dockercli.Client) checkResult {
