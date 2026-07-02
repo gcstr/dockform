@@ -13,6 +13,7 @@ import (
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/cli/clitest"
+	"github.com/spf13/cobra"
 )
 
 func TestRoot_HasSubcommandsAndManifestFlag(t *testing.T) {
@@ -228,6 +229,90 @@ func TestExecuteContextCanceled(t *testing.T) {
 	cancel()
 	if code := Execute(ctx); code != 130 {
 		t.Fatalf("expected exit code 130 for canceled context, got %d", code)
+	}
+}
+
+// fakeCloser records whether Close was invoked, for round-trip assertions.
+type fakeCloser struct {
+	closed bool
+}
+
+func (f *fakeCloser) Close() error {
+	f.closed = true
+	return nil
+}
+
+func TestCloseLogCloser_RoundTripFromLeafPersistentPreRunE(t *testing.T) {
+	// Mirror the real wiring: the log closer is stashed on the root command's
+	// context from inside a leaf subcommand's PersistentPreRunE (cmd there is
+	// the leaf, not the root), and closeLogCloser is later called on the root
+	// command, exactly as Execute does.
+	root := &cobra.Command{Use: "dockform"}
+
+	fc := &fakeCloser{}
+	leaf := &cobra.Command{
+		Use: "plan",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			r := cmd.Root()
+			r.SetContext(context.WithValue(r.Context(), logCloserKey{}, io.Closer(fc)))
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}
+	root.AddCommand(leaf)
+
+	root.SetArgs([]string{"plan"})
+	if err := root.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	if fc.closed {
+		t.Fatal("closer should not be closed before closeLogCloser runs")
+	}
+
+	// closeLogCloser on the ROOT command, exactly as Execute does.
+	closeLogCloser(root)
+
+	if !fc.closed {
+		t.Fatal("closer stashed during leaf PersistentPreRunE was not found/invoked via root context (closeLogCloser looked in the wrong context)")
+	}
+}
+
+func TestExecute_RealPersistentPreRunEStashesLogCloserOnRootContext(t *testing.T) {
+	// Regression guard through the REAL wiring: run the actual root command so
+	// the real PersistentPreRunE (invoked with the leaf subcommand) creates a
+	// non-nil log-file closer, then assert it is discoverable from the ROOT
+	// command's context, exactly where Execute-side closeLogCloser looks.
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	logFile := filepath.Join(t.TempDir(), "dockform.log")
+	root.SetArgs([]string{"version", "--log-file", logFile})
+
+	if err := root.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	if root.Context() == nil {
+		t.Fatal("root context is nil after execute")
+	}
+	v := root.Context().Value(logCloserKey{})
+	if v == nil {
+		t.Fatal("log closer not found on root command context; PersistentPreRunE stashed it on the leaf context instead")
+	}
+	closer, ok := v.(io.Closer)
+	if !ok || closer == nil {
+		t.Fatalf("stashed value is not a non-nil io.Closer: %T", v)
+	}
+
+	// And the Execute-side read must invoke it without error.
+	closeLogCloser(root)
+
+	if _, err := os.Stat(logFile); err != nil {
+		t.Fatalf("expected log file to have been created by real PersistentPreRunE: %v", err)
 	}
 }
 
