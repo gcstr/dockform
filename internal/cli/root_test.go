@@ -246,6 +246,167 @@ func TestProvideExternalErrorHints(t *testing.T) {
 	}
 }
 
+func TestComposeStderrHint_KnownPatterns(t *testing.T) {
+	cases := []struct {
+		name    string
+		msg     string
+		wantSub string
+	}{
+		{
+			name:    "manifest unknown with image ref",
+			msg:     "manifest for henrygd/beszel-agent:0.18.8 not found: manifest unknown",
+			wantSub: `"henrygd/beszel-agent:0.18.8" does not exist`,
+		},
+		{
+			name:    "repository does not exist without denied",
+			msg:     "Error response from daemon: foo/bar: repository does not exist",
+			wantSub: "does not exist in the registry",
+		},
+		{
+			name:    "denied",
+			msg:     "pull access denied for foo/bar, repository does not exist or may require authorization: denied",
+			wantSub: "Registry authentication problem",
+		},
+		{
+			name:    "unauthorized",
+			msg:     "Head \"https://registry-1.docker.io/v2/foo/bar/manifests/latest\": unauthorized",
+			wantSub: "Registry authentication problem",
+		},
+		{
+			name:    "no space left",
+			msg:     "write /var/lib/docker/tmp/foo: no space left on device",
+			wantSub: "out of disk space",
+		},
+		{
+			name:    "no match falls back to empty",
+			msg:     "some completely unrelated error",
+			wantSub: "",
+		},
+		// A bare "not found" is NOT image-pull-shaped; docker emits it for
+		// networks, volumes, contexts, etc. These must fall through to the
+		// generic hint — a wrong specific hint is worse than a generic one.
+		{
+			name:    "network not found does not get image hint",
+			msg:     "Error response from daemon: network foo not found",
+			wantSub: "",
+		},
+		{
+			name:    "volume not found does not get image hint",
+			msg:     "Error response from daemon: volume bar not found",
+			wantSub: "",
+		},
+		{
+			name:    "context not found does not get image hint",
+			msg:     "context \"xyz\" not found",
+			wantSub: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := composeStderrHint(tc.msg)
+			if tc.wantSub == "" {
+				if got != "" {
+					t.Fatalf("expected no hint for unmatched pattern, got: %q", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.wantSub) {
+				t.Fatalf("expected hint to contain %q, got: %q", tc.wantSub, got)
+			}
+		})
+	}
+}
+
+func TestPrintUserFriendly_MultiContextSurfacesComposeStderr(t *testing.T) {
+	old := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+
+	mk := func(ctxName, stderr string) error {
+		leaf := &apperr.E{Op: "dockercli.Exec", Kind: apperr.External, Err: errors.New("exit status 1"), Msg: stderr}
+		return &apperr.ContextError{ContextName: ctxName, Err: apperr.Wrap("planner.Apply", apperr.External, leaf, "compose up %s/stack", ctxName)}
+	}
+
+	multi := &apperr.MultiError{Errors: []error{
+		mk("hetzner-one", "manifest for henrygd/beszel-agent:0.18.8 not found: manifest unknown"),
+		mk("hetzner-two", "no space left on device"),
+	}}
+	agg := &apperr.E{
+		Op:   "planner.ExecuteAcrossContexts",
+		Kind: apperr.External,
+		Err:  multi,
+		Msg:  "multiple context errors",
+	}
+
+	verbose = false
+	printUserFriendly(agg)
+	_ = w.Close()
+	b, _ := io.ReadAll(r)
+	s := string(b)
+
+	// The real, underlying compose stderr must be visible in the final
+	// output, not hidden behind the generic "Docker Compose operation
+	// failed" hint. This is the core UX bug: dockform had the stderr but
+	// threw it away before printing.
+	if !strings.Contains(s, "manifest for henrygd/beszel-agent:0.18.8 not found: manifest unknown") {
+		t.Fatalf("expected compose stderr for hetzner-one to be surfaced, got: %s", s)
+	}
+	if !strings.Contains(s, "no space left on device") {
+		t.Fatalf("expected compose stderr for hetzner-two to be surfaced, got: %s", s)
+	}
+	// Actionable, pattern-specific hints for each failing context.
+	if !strings.Contains(s, `"henrygd/beszel-agent:0.18.8" does not exist`) {
+		t.Fatalf("expected image-not-found hint, got: %s", s)
+	}
+	if !strings.Contains(s, "out of disk space") {
+		t.Fatalf("expected disk-space hint, got: %s", s)
+	}
+	if !strings.Contains(s, "context hetzner-one:") || !strings.Contains(s, "context hetzner-two:") {
+		t.Fatalf("expected per-context labels, got: %s", s)
+	}
+}
+
+func TestPrintUserFriendly_SingleContextSurfacesComposeStderrAndHint(t *testing.T) {
+	old := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+
+	// Single failing context: no MultiError involved. This is the chain
+	// exactly as produced by dockercli.Exec (stderr in Msg) wrapped by
+	// planner.Apply. The targeted hint must still fire — hint matching has
+	// to look at the deepest message, because err.Error() collapses to
+	// "planner.Apply: compose up ..." and never contains the stderr.
+	leaf := &apperr.E{
+		Op:   "dockercli.Exec",
+		Kind: apperr.External,
+		Err:  errors.New("exit status 1"),
+		Msg:  "manifest for henrygd/beszel-agent:0.18.8 not found: manifest unknown",
+	}
+	err := apperr.Wrap("planner.Apply", apperr.External, leaf, "compose up hetzner-one/beszel")
+
+	verbose = false
+	printUserFriendly(err)
+	_ = w.Close()
+	b, _ := io.ReadAll(r)
+	s := string(b)
+
+	if !strings.Contains(s, "Error: compose up hetzner-one/beszel") {
+		t.Fatalf("expected top-level context message, got: %s", s)
+	}
+	if !strings.Contains(s, "manifest for henrygd/beszel-agent:0.18.8 not found: manifest unknown") {
+		t.Fatalf("expected compose stderr to be surfaced, got: %s", s)
+	}
+	if !strings.Contains(s, `"henrygd/beszel-agent:0.18.8" does not exist`) {
+		t.Fatalf("expected targeted image-not-found hint on single-context failure, got: %s", s)
+	}
+	if strings.Contains(s, "Check your compose files and Docker daemon status") {
+		t.Fatalf("generic compose hint should be replaced by the targeted hint, got: %s", s)
+	}
+}
+
 func TestProvideDockerTroubleshootingHintsNonDefaultContext(t *testing.T) {
 	old := os.Stderr
 	r, w, _ := os.Pipe()

@@ -76,8 +76,18 @@ func executeParallel(ctx context.Context, contextNames []string, fn func(ctx con
 	// Sort errors by context name for deterministic output
 	sort.Slice(errs, func(i, j int) bool { return errs[i].ContextName < errs[j].ContextName })
 	var msgs []string
+	wrapped := make([]error, 0, len(errs))
 	for _, r := range errs {
 		msgs = append(msgs, fmt.Sprintf("context %s: %v", r.ContextName, r.Err))
+		wrapped = append(wrapped, &apperr.ContextError{ContextName: r.ContextName, Err: r.Err})
 	}
-	return apperr.New("planner.ExecuteAcrossContexts", apperr.External, "multiple context errors:\n  %s", strings.Join(msgs, "\n  "))
+	// Preserve each child's underlying cause (rather than pre-stringifying with
+	// %v) so the deepest error detail, e.g. captured compose stderr, survives
+	// through to printUserFriendly instead of being discarded here.
+	return &apperr.E{
+		Op:   "planner.ExecuteAcrossContexts",
+		Kind: apperr.External,
+		Err:  &apperr.MultiError{Errors: wrapped},
+		Msg:  fmt.Sprintf("multiple context errors:\n  %s", strings.Join(msgs, "\n  ")),
+	}
 }
