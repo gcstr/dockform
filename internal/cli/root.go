@@ -300,12 +300,32 @@ func printUserFriendly(err error) {
 // printMultiErrorDetail prints, for each child error in a MultiError, its
 // deepest underlying message (e.g. captured compose/docker stderr) along with
 // a per-failure actionable hint when one of the known patterns matches.
+//
+// Children that were only aborted because a sibling context failed first
+// (apperr.AbortedError, e.g. a killed in-flight subprocess from fail-fast
+// cancellation) are rendered distinctly as "aborted: another context failed"
+// and never receive a failure hint, so they cannot be mistaken for genuine
+// failures in the summary.
 func printMultiErrorDetail(multi *apperr.MultiError) {
 	for _, child := range multi.Errors {
-		detail := apperr.DeepestMessage(child)
+		contextName := ""
 		var ctxErr *apperr.ContextError
 		if errors.As(child, &ctxErr) {
-			fmt.Fprintf(os.Stderr, "context %s: %s\n", ctxErr.ContextName, detail)
+			contextName = ctxErr.ContextName
+		}
+
+		if apperr.IsAborted(child) {
+			if contextName != "" {
+				fmt.Fprintf(os.Stderr, "context %s: aborted: another context failed\n", contextName)
+			} else {
+				fmt.Fprintln(os.Stderr, "aborted: another context failed")
+			}
+			continue
+		}
+
+		detail := apperr.DeepestMessage(child)
+		if contextName != "" {
+			fmt.Fprintf(os.Stderr, "context %s: %s\n", contextName, detail)
 		} else {
 			fmt.Fprintf(os.Stderr, "%s\n", detail)
 		}

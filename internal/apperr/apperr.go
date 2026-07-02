@@ -118,6 +118,43 @@ func (c *ContextError) Unwrap() error {
 	return c.Err
 }
 
+// AbortedError marks a child result that did not fail on its own merits but
+// was cut short because a sibling running under the same fail-fast
+// orchestration failed first (e.g. its context was canceled, killing an
+// in-flight subprocess). Callers such as printUserFriendly must render these
+// distinctly from genuine failures and must not attach failure hints to them.
+type AbortedError struct {
+	// ContextName is the context (e.g. Docker context/host) that was aborted.
+	ContextName string
+	// Err is the underlying error observed on the aborted child, if any
+	// (typically context.Canceled or a wrapped form of it).
+	Err error
+}
+
+func (a *AbortedError) Error() string {
+	if a == nil {
+		return "aborted: another context failed"
+	}
+	if a.ContextName != "" {
+		return fmt.Sprintf("context %s: aborted: another context failed", a.ContextName)
+	}
+	return "aborted: another context failed"
+}
+
+func (a *AbortedError) Unwrap() error {
+	if a == nil {
+		return nil
+	}
+	return a.Err
+}
+
+// IsAborted reports whether err is (or wraps) an *AbortedError, i.e. a child
+// that was cut short by a sibling's failure rather than failing on its own.
+func IsAborted(err error) bool {
+	var aborted *AbortedError
+	return errors.As(err, &aborted)
+}
+
 // MultiError groups multiple errors and supports errors.Is/errors.As traversal.
 type MultiError struct {
 	Errors []error
