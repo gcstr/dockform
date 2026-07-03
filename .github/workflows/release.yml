@@ -65,10 +65,10 @@ jobs:
           cd website
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if [ -n "$(git status --porcelain)" ]; then
-            git add docs/cli
+          git add docs/cli
+          if git diff --cached --quiet; then
+            echo "No documentation changes to publish"
+          else
             git commit -m "docs: update CLI docs for $TAG"
             git push origin main
-          else
-            echo "No documentation changes to publish"
           fi
