@@ -89,7 +89,8 @@ func newRootCmd() *cobra.Command {
 				return err
 			}
 			if closer != nil {
-				cmd.SetContext(context.WithValue(cmd.Context(), logCloserKey{}, closer))
+				root := cmd.Root()
+				root.SetContext(context.WithValue(root.Context(), logCloserKey{}, closer))
 			}
 			// Attach per-run fields
 			runID := logger.NewRunID()
@@ -148,10 +149,14 @@ func TestPrintUserFriendly(err error) {
 func TestNewRootCmd() *cobra.Command { return newRootCmd() }
 
 func closeLogCloser(cmd *cobra.Command) {
-	if cmd == nil || cmd.Context() == nil {
+	if cmd == nil {
 		return
 	}
-	v := cmd.Context().Value(logCloserKey{})
+	root := cmd.Root()
+	if root.Context() == nil {
+		return
+	}
+	v := root.Context().Value(logCloserKey{})
 	if v == nil {
 		return
 	}
