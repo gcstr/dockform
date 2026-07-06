@@ -2,11 +2,13 @@ package planner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/manifest"
 )
 
@@ -92,6 +94,58 @@ func TestExecuteAcrossContexts_ParallelCollectsErrors(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// TestExecuteAcrossContexts_ParallelPreservesChildCauses verifies that when
+// multiple contexts fail, the aggregate error keeps each child's underlying
+// cause reachable (via apperr.MultiError + apperr.ContextError) instead of
+// pre-stringifying them with %v and discarding the cause, as
+// printUserFriendly relies on this to surface e.g. captured compose stderr.
+func TestExecuteAcrossContexts_ParallelPreservesChildCauses(t *testing.T) {
+	p := New().WithParallel(true)
+	cfg := twoContextConfig()
+
+	err := p.ExecuteAcrossContexts(context.Background(), cfg, func(_ context.Context, name string) error {
+		leaf := &apperr.E{
+			Op:   "dockercli.Exec",
+			Kind: apperr.External,
+			Err:  errors.New("exit status 1"),
+			Msg:  fmt.Sprintf("manifest for example/%s:1.0 not found: manifest unknown", name),
+		}
+		return apperr.Wrap("planner.Apply", apperr.External, leaf, "compose up %s/stack", name)
+	})
+	if err == nil {
+		t.Fatal("expected aggregate error")
+	}
+
+	var e *apperr.E
+	if !errors.As(err, &e) {
+		t.Fatalf("expected *apperr.E, got %T", err)
+	}
+	var multi *apperr.MultiError
+	if !errors.As(e.Err, &multi) {
+		t.Fatalf("expected aggregate Err to be *apperr.MultiError, got %T", e.Err)
+	}
+	if len(multi.Errors) != 2 {
+		t.Fatalf("expected 2 child errors, got %d", len(multi.Errors))
+	}
+
+	seen := map[string]bool{}
+	for _, child := range multi.Errors {
+		var ctxErr *apperr.ContextError
+		if !errors.As(child, &ctxErr) {
+			t.Fatalf("expected child to be *apperr.ContextError, got %T", child)
+		}
+		seen[ctxErr.ContextName] = true
+		detail := apperr.DeepestMessage(child)
+		want := fmt.Sprintf("manifest for example/%s:1.0 not found: manifest unknown", ctxErr.ContextName)
+		if detail != want {
+			t.Fatalf("expected deepest message %q for context %s, got %q", want, ctxErr.ContextName, detail)
+		}
+	}
+	if !seen["alpha"] || !seen["beta"] {
+		t.Fatalf("expected both alpha and beta contexts present, got %v", seen)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
@@ -167,11 +168,21 @@ func closeLogCloser(cmd *cobra.Command) {
 
 func provideExternalErrorHints(err error) {
 	msg := err.Error()
+	// err.Error() on an *apperr.E collapses to Op+Msg and drops the wrapped
+	// cause, so the captured command stderr (which lives on the innermost
+	// error's Msg) would never be visible here. Match the known failure
+	// patterns against the deepest message in the chain instead.
+	deepest := apperr.DeepestMessage(err)
 
-	if strings.Contains(msg, "invalid compose file") {
+	if strings.Contains(msg, "invalid compose file") || strings.Contains(deepest, "invalid compose file") {
 		fmt.Fprintln(os.Stderr, "\nHint: Check your Docker Compose file syntax")
 		fmt.Fprintln(os.Stderr, "      Try: docker compose config --quiet")
 		fmt.Fprintln(os.Stderr, "      Try: docker compose -f <file> config")
+		return
+	}
+
+	if hint := composeStderrHint(deepest); hint != "" {
+		fmt.Fprintln(os.Stderr, "\nHint:", hint)
 		return
 	}
 
@@ -179,6 +190,40 @@ func provideExternalErrorHints(err error) {
 		fmt.Fprintln(os.Stderr, "\nHint: Docker Compose operation failed")
 		fmt.Fprintln(os.Stderr, "      Check your compose files and Docker daemon status")
 		return
+	}
+}
+
+// imageRefPattern extracts an image[:tag] reference from a "manifest for
+// <image:tag> not found" style message emitted by docker/compose pulls.
+var imageRefPattern = regexp.MustCompile(`(?i)manifest for (\S+) not found`)
+
+// composeStderrHint inspects captured compose/docker stderr for known failure
+// signatures and returns an actionable, single-line hint. It returns "" when
+// no known pattern matches, so callers can fall back to a generic hint.
+//
+// The auth case is checked before the image case on purpose: messages like
+// "pull access denied for foo/bar, repository does not exist or may require
+// authorization" contain both signatures and are auth problems first.
+func composeStderrHint(msg string) string {
+	lower := strings.ToLower(msg)
+
+	switch {
+	case strings.Contains(lower, "denied") || strings.Contains(lower, "unauthorized"):
+		return "Registry authentication problem. Check your credentials (docker login) and image access permissions."
+	case strings.Contains(lower, "manifest unknown") ||
+		strings.Contains(lower, "repository does not exist") ||
+		imageRefPattern.MatchString(msg):
+		// Only genuinely image-pull-shaped messages reach here; a bare
+		// "not found" (e.g. "network foo not found") must NOT match, since a
+		// wrong specific hint is worse than the generic fallback.
+		if m := imageRefPattern.FindStringSubmatch(msg); len(m) == 2 {
+			return fmt.Sprintf("Image %q does not exist in the registry (or the tag is wrong). Check the image name and tag.", m[1])
+		}
+		return "The referenced image or tag does not exist in the registry. Check the image name and tag."
+	case strings.Contains(lower, "no space left"):
+		return "The Docker host is out of disk space. Free up space on the daemon host and try again."
+	default:
+		return ""
 	}
 }
 
@@ -214,17 +259,17 @@ func printUserFriendly(err error) {
 			if e.Msg != "" {
 				fmt.Fprintf(os.Stderr, "Error: %s\n", e.Msg)
 			}
-			// Always show the underlying error for External errors
-			if e.Err != nil {
-				// Check if the underlying error has useful information
-				var underlyingAppErr *apperr.E
-				if errors.As(e.Err, &underlyingAppErr) && underlyingAppErr.Msg != "" {
-					// If the underlying error is also an apperr.E with a message, show it
-					fmt.Fprintf(os.Stderr, "%s\n", underlyingAppErr.Msg)
-				} else {
-					// Otherwise show the full error string
-					fmt.Fprintf(os.Stderr, "%s\n", e.Err.Error())
-				}
+			// A MultiError means several contexts/stacks failed independently.
+			// Surface each child's deepest cause (e.g. captured compose stderr)
+			// and an actionable hint for that specific failure, instead of
+			// collapsing everything into one generic message.
+			var multi *apperr.MultiError
+			if errors.As(e.Err, &multi) {
+				printMultiErrorDetail(multi)
+			} else if e.Err != nil {
+				// Otherwise show the deepest message in the chain (e.g. the
+				// captured command stderr), not just the immediate child's Msg.
+				fmt.Fprintf(os.Stderr, "%s\n", apperr.DeepestMessage(e.Err))
 			}
 		} else {
 			// Non-External errors: use existing logic
@@ -242,9 +287,33 @@ func printUserFriendly(err error) {
 		if apperr.IsKind(err, apperr.Unavailable) {
 			provideDockerTroubleshootingHints(err)
 		} else if apperr.IsKind(err, apperr.External) {
-			provideExternalErrorHints(err)
+			var multi *apperr.MultiError
+			if !errors.As(e.Err, &multi) {
+				provideExternalErrorHints(err)
+			}
 		}
 		return
 	}
 	fmt.Fprintln(os.Stderr, "Error:", err)
+}
+
+// printMultiErrorDetail prints, for each child error in a MultiError, its
+// deepest underlying message (e.g. captured compose/docker stderr) along with
+// a per-failure actionable hint when one of the known patterns matches.
+func printMultiErrorDetail(multi *apperr.MultiError) {
+	for _, child := range multi.Errors {
+		detail := apperr.DeepestMessage(child)
+		var ctxErr *apperr.ContextError
+		if errors.As(child, &ctxErr) {
+			fmt.Fprintf(os.Stderr, "context %s: %s\n", ctxErr.ContextName, detail)
+		} else {
+			fmt.Fprintf(os.Stderr, "%s\n", detail)
+		}
+		if hint := composeStderrHint(detail); hint != "" {
+			fmt.Fprintln(os.Stderr, "  Hint:", hint)
+		} else {
+			fmt.Fprintln(os.Stderr, "  Hint: Docker Compose operation failed")
+			fmt.Fprintln(os.Stderr, "        Check your compose files and Docker daemon status")
+		}
+	}
 }

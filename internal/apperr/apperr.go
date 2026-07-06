@@ -69,6 +69,55 @@ func IsKind(err error, k Kind) bool {
 	return false
 }
 
+// DeepestMessage walks the Err chain of an *E (and plain wrapped errors) and
+// returns the message from the innermost node that carries one. This lets
+// callers surface the most specific detail (e.g. captured command stderr)
+// even though (*E).Error() itself only renders Op+Msg for the outermost node.
+func DeepestMessage(err error) string {
+	var last string
+	cur := err
+	for cur != nil {
+		var e *E
+		if !errors.As(cur, &e) {
+			break
+		}
+		if e.Msg != "" {
+			last = e.Msg
+		}
+		cur = e.Err
+	}
+	if last != "" {
+		return last
+	}
+	if err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// ContextError associates an error with the named context (e.g. a Docker
+// context/host) it occurred in, while preserving the original error via
+// Unwrap so callers like printUserFriendly can still reach the deepest
+// cause (such as captured command stderr).
+type ContextError struct {
+	ContextName string
+	Err         error
+}
+
+func (c *ContextError) Error() string {
+	if c == nil || c.Err == nil {
+		return fmt.Sprintf("context %s", c.ContextName)
+	}
+	return fmt.Sprintf("context %s: %s", c.ContextName, c.Err.Error())
+}
+
+func (c *ContextError) Unwrap() error {
+	if c == nil {
+		return nil
+	}
+	return c.Err
+}
+
 // MultiError groups multiple errors and supports errors.Is/errors.As traversal.
 type MultiError struct {
 	Errors []error
