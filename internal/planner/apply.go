@@ -32,8 +32,11 @@ func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *
 		"stacks", len(allStacks),
 		"filesets", len(allFilesets))
 
-	// Process each context (parallel by default, sequential with --sequential)
-	err := p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
+	// Process each context (parallel by default, sequential with --sequential).
+	// Apply mutates state (compose up, volume/network creation), so contexts
+	// always run to completion: a failure on one host must never cancel an
+	// in-flight compose up on another, healthy host.
+	err := p.ExecuteAcrossContextsMode(ctx, &cfg, RunToCompletion, func(ctx context.Context, contextName string) error {
 		contextConfig := cfg.Contexts[contextName]
 
 		// Get Docker client for this context

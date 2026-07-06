@@ -77,7 +77,10 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 
 	var mu sync.Mutex
 
-	err := p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
+	// BuildDestroyPlan only discovers/lists resources (no mutation), so it is
+	// safe to fail fast: canceling a sibling's in-flight discovery call loses
+	// nothing.
+	err := p.ExecuteAcrossContextsMode(ctx, &cfg, FailFast, func(ctx context.Context, contextName string) error {
 		client := p.getClientForContext(contextName, &cfg)
 		if client == nil {
 			return apperr.New("planner.BuildDestroyPlan", apperr.Precondition, "docker client not available for context %s", contextName)
@@ -208,7 +211,10 @@ func (p *Planner) DestroyWithOptions(ctx context.Context, cfg manifest.Config, o
 	}
 	scope := newDestroyScope(&cfg)
 
-	err := p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
+	// Destroy mutates state (removes containers/networks/volumes), so contexts
+	// always run to completion: a failure on one host must never cancel
+	// in-flight teardown work on another host.
+	err := p.ExecuteAcrossContextsMode(ctx, &cfg, RunToCompletion, func(ctx context.Context, contextName string) error {
 		client := p.getClientForContext(contextName, &cfg)
 		if client == nil {
 			return apperr.New("planner.Destroy", apperr.Precondition, "docker client not available for context %s", contextName)

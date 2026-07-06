@@ -30,7 +30,10 @@ func (p *Planner) PruneWithPlanOptions(ctx context.Context, cfg manifest.Config,
 		return apperr.New("planner.Prune", apperr.Precondition, "docker client not configured")
 	}
 
-	err := p.ExecuteAcrossContexts(ctx, &cfg, func(ctx context.Context, contextName string) error {
+	// Prune mutates state (removes containers/networks/volumes), so contexts
+	// always run to completion: a failure on one host must never cancel
+	// in-flight cleanup work on another host.
+	err := p.ExecuteAcrossContextsMode(ctx, &cfg, RunToCompletion, func(ctx context.Context, contextName string) error {
 		client := p.getClientForContext(contextName, &cfg)
 		if client == nil {
 			return apperr.New("planner.Prune", apperr.Precondition, "docker client not available for context %s", contextName)
