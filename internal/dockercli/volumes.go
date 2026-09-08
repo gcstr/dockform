@@ -29,6 +29,19 @@ func (c *Client) ListVolumes(ctx context.Context) ([]string, error) {
 	return util.SplitNonEmptyLines(out), nil
 }
 
+// ListAllVolumes returns the names of every docker volume, ignoring the
+// identifier label filter. Dockform needs this to tell "volume is missing"
+// apart from "volume exists but predates dockform management": the latter is
+// invisible to ListVolumes, and `docker volume create` is idempotent by name,
+// so it can never be labelled after the fact.
+func (c *Client) ListAllVolumes(ctx context.Context) ([]string, error) {
+	out, err := c.exec.Run(ctx, "volume", "ls", "--format", "{{.Name}}")
+	if err != nil {
+		return nil, err
+	}
+	return util.SplitNonEmptyLines(out), nil
+}
+
 // VolumeSummary contains basic metadata about a volume for dashboard display.
 type VolumeSummary struct {
 	Name       string

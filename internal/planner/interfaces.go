@@ -12,6 +12,7 @@ import (
 type DockerClient interface {
 	// Volume operations
 	ListVolumes(ctx context.Context) ([]string, error)
+	ListAllVolumes(ctx context.Context) ([]string, error)
 	CreateVolume(ctx context.Context, name string, labels map[string]string) error
 	RemoveVolume(ctx context.Context, name string) error
 
