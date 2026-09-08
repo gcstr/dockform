@@ -90,6 +90,12 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 	}, nil
 }
 
+// unlabeledVolumeDetails is shown for a declared volume that exists on the
+// daemon without dockform's identifier label. Dockform cannot adopt it in
+// place: labels are only set at creation and there is no `docker volume
+// update`, so taking it over means recreating it (and losing its data).
+const unlabeledVolumeDetails = "exists (unlabeled, not managed by dockform)"
+
 // buildContextPlan builds a plan for a single contextConfig.
 func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, contextName string, contextConfig manifest.ContextConfig, client DockerClient, execCtx *ContextExecutionContext) (*ContextPlan, error) {
 	log := logger.FromContext(ctx).With("component", "planner", "context", contextName)
@@ -107,10 +113,10 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 	contextFilesets := cfg.GetFilesetsForContext(contextName)
 
 	// Accumulate existing sets when docker client is available
-	var existingVolumes, existingNetworks map[string]struct{}
+	var existingVolumes, allVolumes, existingNetworks map[string]struct{}
 	if client != nil {
 		var err error
-		existingVolumes, existingNetworks, err = p.getExistingResourcesForClient(ctx, client)
+		existingVolumes, allVolumes, existingNetworks, err = p.getExistingResourcesForClient(ctx, client)
 		if err != nil {
 			return nil, err
 		}
@@ -135,14 +141,28 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 
 	volNames := sortedKeys(desiredVolumes)
 	for _, name := range volNames {
-		exists := false
+		managed := false
 		if existingVolumes != nil {
-			_, exists = existingVolumes[name]
+			_, managed = existingVolumes[name]
 		}
-		if exists {
+		unmanaged := false
+		if !managed && allVolumes != nil {
+			_, unmanaged = allVolumes[name]
+		}
+		switch {
+		case managed:
 			resourcePlan.Volumes = append(resourcePlan.Volumes,
 				NewResource(ResourceVolume, name, ActionNoop, "exists"))
-		} else {
+		case unmanaged:
+			// The volume exists but carries no identifier label. Creating it is a
+			// no-op that never applies the label (docker volume create is
+			// idempotent by name), so planning a create would loop forever.
+			// Adopting it in place is impossible without recreating it, which
+			// would destroy data, so report the drift and leave it alone.
+			log.Warn("volume_exists_unlabeled", "volume", name)
+			resourcePlan.Volumes = append(resourcePlan.Volumes,
+				NewResource(ResourceVolume, name, ActionNoop, unlabeledVolumeDetails))
+		default:
 			resourcePlan.Volumes = append(resourcePlan.Volumes,
 				NewResource(ResourceVolume, name, ActionCreate, ""))
 		}

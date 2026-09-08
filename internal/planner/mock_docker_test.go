@@ -12,6 +12,7 @@ import (
 type mockDockerClient struct {
 	// Mock data to return
 	volumes         []string
+	allVolumes      []string
 	networks        []string
 	composeNetworks []string // subset of networks owned by a compose stack
 	containers      []dockercli.PsBrief
@@ -76,6 +77,16 @@ func newMockDocker() *mockDockerClient {
 }
 
 // Volume operations
+func (m *mockDockerClient) ListAllVolumes(ctx context.Context) ([]string, error) {
+	if m.listVolumesError != nil {
+		return nil, m.listVolumesError
+	}
+	if m.allVolumes != nil {
+		return m.allVolumes, nil
+	}
+	return m.volumes, nil
+}
+
 func (m *mockDockerClient) ListVolumes(ctx context.Context) ([]string, error) {
 	if m.listVolumesError != nil {
 		return nil, m.listVolumesError

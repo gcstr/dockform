@@ -142,12 +142,13 @@ func (p *Planner) buildFilesetResourcesForContext(ctx context.Context, filesetSp
 }
 
 // getExistingResourcesForClient fetches volumes and networks for a specific client
-func (p *Planner) getExistingResourcesForClient(ctx context.Context, client DockerClient) (volumes, networks map[string]struct{}, err error) {
+func (p *Planner) getExistingResourcesForClient(ctx context.Context, client DockerClient) (volumes, allVolumes, networks map[string]struct{}, err error) {
 	volumes = map[string]struct{}{}
+	allVolumes = map[string]struct{}{}
 	networks = map[string]struct{}{}
 
 	var wg sync.WaitGroup
-	var volumesMu, networksMu sync.Mutex
+	var volumesMu, allVolumesMu, networksMu sync.Mutex
 	var errsMu sync.Mutex
 	var errs []error
 
@@ -171,6 +172,25 @@ func (p *Planner) getExistingResourcesForClient(ctx context.Context, client Dock
 		}
 	}()
 
+	// Fetch volumes again without the label filter, so a volume that exists but
+	// predates dockform management is distinguishable from a missing one.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		vols, err := client.ListAllVolumes(ctx)
+		if err != nil {
+			errsMu.Lock()
+			errs = append(errs, apperr.Wrap("planner.getExistingResourcesForClient", apperr.External, err, "list all volumes"))
+			errsMu.Unlock()
+			return
+		}
+		allVolumesMu.Lock()
+		for _, v := range vols {
+			allVolumes[v] = struct{}{}
+		}
+		allVolumesMu.Unlock()
+	}()
+
 	// Fetch networks concurrently
 	wg.Add(1)
 	go func() {
@@ -192,7 +212,7 @@ func (p *Planner) getExistingResourcesForClient(ctx context.Context, client Dock
 	}()
 
 	wg.Wait()
-	return volumes, networks, apperr.Aggregate("planner.getExistingResourcesForClient", apperr.External, "failed to discover existing docker resources", errs...)
+	return volumes, allVolumes, networks, apperr.Aggregate("planner.getExistingResourcesForClient", apperr.External, "failed to discover existing docker resources", errs...)
 }
 
 // getComposeOwnedNetworks returns the set of identifier-labeled networks that are

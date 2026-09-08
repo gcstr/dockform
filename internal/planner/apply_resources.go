@@ -56,8 +56,33 @@ func (rm *ResourceManager) EnsureVolumesExistForContext(ctx context.Context, cfg
 		}
 	}
 
+	// Volumes that exist without dockform's identifier label are invisible to
+	// ListVolumes above. `docker volume create` is idempotent by name and never
+	// applies labels to an existing volume, so creating them would be a no-op
+	// repeated on every apply. Skip the create and report the drift instead;
+	// adopting one in place is impossible without recreating it (data loss).
+	unlabeledVolumes := map[string]struct{}{}
+	if allVols, err := rm.docker.ListAllVolumes(ctx); err == nil {
+		for _, v := range allVols {
+			if _, managed := existingVolumes[v]; !managed {
+				unlabeledVolumes[v] = struct{}{}
+			}
+		}
+	} else {
+		return nil, apperr.Wrap("resourcemanager.EnsureVolumesExistForContext", apperr.External, err, "list all volumes")
+	}
+
 	// Create missing volumes
 	for name := range desiredVolumes {
+		if _, unlabeled := unlabeledVolumes[name]; unlabeled {
+			log.Warn("volume_exists_unlabeled", "volume", name)
+			st := logger.StartStep(log, "volume_ensure", name, "resource_kind", "volume")
+			st.OK(false)
+			// Still treat it as present: it is a usable volume, and filesets
+			// targeting it must keep syncing exactly as before.
+			existingVolumes[name] = struct{}{}
+			continue
+		}
 		if _, exists := existingVolumes[name]; !exists {
 			st := logger.StartStep(log, "volume_ensure", name, "resource_kind", "volume")
 			if rm.progress != nil {
