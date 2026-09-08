@@ -68,7 +68,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	reg := registry.NewOCIClient(nil)
 
 	// Build check inputs from all stacks.
-	inputs, err := buildCheckInputs(cmd.Context(), cfg, factory)
+	inputs, err := buildCheckInputs(cmd.Context(), cfg, factoryClientGetter(factory, cfg))
 	if err != nil {
 		return err
 	}
