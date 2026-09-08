@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gcstr/dockform/internal/cli/common"
-	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/images"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/registry"
@@ -66,7 +65,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 	reg := registry.NewOCIClient(nil)
 
-	inputs, err := buildCheckInputs(cmd.Context(), cfg, factory)
+	inputs, err := buildCheckInputs(cmd.Context(), cfg, factoryClientGetter(factory, cfg))
 	if err != nil {
 		return err
 	}
@@ -117,7 +116,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 	allStacks := cfg.GetAllStacks()
 
 	err = common.SpinnerOperation(pr, "Pulling images...", func() error {
-		return executePull(cmd.Context(), stale, allStacks, factory, cfg, recreate)
+		return executePull(cmd.Context(), stale, allStacks, factoryClientGetter(factory, cfg), cfg, recreate)
 	})
 	if err != nil {
 		return err
@@ -161,7 +160,7 @@ func groupByStackForPull(stale []images.ImageStatus, allStacks map[string]manife
 	return groups
 }
 
-func executePull(ctx context.Context, stale []images.ImageStatus, allStacks map[string]manifest.Stack, factory *dockercli.DefaultClientFactory, cfg *manifest.Config, recreate bool) error {
+func executePull(ctx context.Context, stale []images.ImageStatus, allStacks map[string]manifest.Stack, getClient clientGetter, cfg *manifest.Config, recreate bool) error {
 	groups := groupByStackForPull(stale, allStacks)
 
 	for _, g := range groups {
@@ -169,19 +168,24 @@ func executePull(ctx context.Context, stale []images.ImageStatus, allStacks map[
 		if err != nil {
 			return err
 		}
-		client := factory.GetClientForContext(ctxName, cfg)
+		client := getClient(ctxName)
 
 		projName := ""
 		if g.stack.Project != nil {
 			projName = g.stack.Project.Name
 		}
 
-		if _, err := client.ComposePull(ctx, g.stack.RootAbs, g.stack.Files, g.stack.Profiles, g.stack.EnvFile, projName, g.services, g.stack.EnvInline); err != nil {
+		inline, err := stackInlineEnv(ctx, g.stack, cfg)
+		if err != nil {
+			return err
+		}
+
+		if _, err := client.ComposePull(ctx, g.stack.RootAbs, g.stack.Files, g.stack.Profiles, g.stack.EnvFile, projName, g.services, inline); err != nil {
 			return err
 		}
 
 		if recreate {
-			if _, err := client.ComposeUp(ctx, g.stack.RootAbs, g.stack.Files, g.stack.Profiles, g.stack.EnvFile, projName, g.stack.EnvInline); err != nil {
+			if _, err := client.ComposeUp(ctx, g.stack.RootAbs, g.stack.Files, g.stack.Profiles, g.stack.EnvFile, projName, inline); err != nil {
 				return err
 			}
 		}

@@ -111,7 +111,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	reg := registry.NewOCIClient(nil)
 
 	// Build check inputs from all stacks.
-	inputs, err := buildCheckInputs(cmd.Context(), cfg, factory)
+	inputs, err := buildCheckInputs(cmd.Context(), cfg, factoryClientGetter(factory, cfg))
 	if err != nil {
 		return err
 	}
@@ -166,7 +166,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 
 // buildCheckInputs iterates over all stacks and builds CheckInput entries
 // by calling ComposeConfigFull to discover service images.
-func buildCheckInputs(ctx context.Context, cfg *manifest.Config, factory *dockercli.DefaultClientFactory) ([]images.CheckInput, error) {
+func buildCheckInputs(ctx context.Context, cfg *manifest.Config, getClient clientGetter) ([]images.CheckInput, error) {
 	allStacks := cfg.GetAllStacks()
 
 	// Sort stack keys for deterministic output.
@@ -187,10 +187,18 @@ func buildCheckInputs(ctx context.Context, cfg *manifest.Config, factory *docker
 		}
 
 		// Get a docker client for this stack's context.
-		client := factory.GetClientForContext(ctxName, cfg)
+		client := getClient(ctxName)
+
+		// Build the inline env (including SOPS secrets) so services whose image
+		// refs interpolate secret-sourced variables resolve the same way they do
+		// under apply.
+		inline, err := stackInlineEnv(ctx, stack, cfg)
+		if err != nil {
+			return nil, err
+		}
 
 		// Get the full compose config to extract service images.
-		doc, err := client.ComposeConfigFull(ctx, stack.RootAbs, stack.Files, stack.Profiles, stack.EnvFile, stack.EnvInline)
+		doc, err := client.ComposeConfigFull(ctx, stack.RootAbs, stack.Files, stack.Profiles, stack.EnvFile, inline)
 		if err != nil {
 			return nil, apperr.Wrap("imagescmd.buildCheckInputs", apperr.External, err, "failed to get compose config for stack %s", stackKey)
 		}
