@@ -186,11 +186,12 @@ func provideExternalErrorHints(err error) {
 		return
 	}
 
-	if strings.Contains(msg, "compose") {
-		fmt.Fprintln(os.Stderr, "\nHint: Docker Compose operation failed")
-		fmt.Fprintln(os.Stderr, "      Check your compose files and Docker daemon status")
-		return
-	}
+	// No generic fallback on purpose. The only thing left to match on here is
+	// the operation name, and every compose-phase failure carries "compose" in
+	// it (e.g. "compose up ctx/stack") whatever the real cause. Asserting that
+	// the compose files or the daemon are at fault on that basis has actively
+	// misled users into misdiagnosing unrelated failures as compose problems.
+	// A hint must be earned by the captured stderr, via composeStderrHint.
 }
 
 // imageRefPattern extracts an image[:tag] reference from a "manifest for
@@ -329,11 +330,13 @@ func printMultiErrorDetail(multi *apperr.MultiError) {
 		} else {
 			fmt.Fprintf(os.Stderr, "%s\n", detail)
 		}
+		// Only an evidence-backed hint; see provideExternalErrorHints for why
+		// there is no generic fallback. This branch previously emitted the
+		// compose-files hint unconditionally, so failures with no compose
+		// involvement at all (e.g. "restart service traefik") were told to
+		// check their compose files.
 		if hint := composeStderrHint(detail); hint != "" {
 			fmt.Fprintln(os.Stderr, "  Hint:", hint)
-		} else {
-			fmt.Fprintln(os.Stderr, "  Hint: Docker Compose operation failed")
-			fmt.Fprintln(os.Stderr, "        Check your compose files and Docker daemon status")
 		}
 	}
 }
