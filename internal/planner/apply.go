@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 )
@@ -198,6 +199,12 @@ func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.
 			progress.SetAction("docker compose up for " + contextName + "/" + stackName)
 		}
 		if _, err := client.ComposeUp(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline); err != nil {
+			// Each service opens its own SSH session, so the stack's size is
+			// what overflows the host's MaxSessions limit. Name it here, where
+			// it is known; the transport layer cannot see it.
+			if dockercli.IsSSHSessionLimit(err) {
+				return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s/%s (%d services started concurrently)", contextName, stackName, len(services))
+			}
 			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s/%s", contextName, stackName)
 		}
 
@@ -205,6 +212,15 @@ func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.
 		if identifier != "" {
 			items, err := client.ComposePs(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline)
 			if err != nil {
+				// This call, not ComposeUp above, is where the host's SSH
+				// session limit usually bites in practice: by the time it runs,
+				// compose has already opened a connection per service and the
+				// connection is at its ceiling. Verified by live reproduction —
+				// enriching only ComposeUp looked correct from reading the code
+				// and produced no output at all on a real failure. Keep both.
+				if dockercli.IsSSHSessionLimit(err) {
+					return apperr.Wrap("planner.Apply", apperr.External, err, "list compose containers for stack %s/%s (%d services started concurrently)", contextName, stackName, len(services))
+				}
 				return apperr.Wrap("planner.Apply", apperr.External, err, "list compose containers for stack %s/%s", contextName, stackName)
 			}
 			var labelErrs []error
