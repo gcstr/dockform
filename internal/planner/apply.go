@@ -212,6 +212,12 @@ func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.
 		if identifier != "" {
 			items, err := client.ComposePs(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline)
 			if err != nil {
+				// This call, not ComposeUp above, is where the host's SSH
+				// session limit usually bites in practice: by the time it runs,
+				// compose has already opened a connection per service and the
+				// connection is at its ceiling. Verified by live reproduction —
+				// enriching only ComposeUp looked correct from reading the code
+				// and produced no output at all on a real failure. Keep both.
 				if dockercli.IsSSHSessionLimit(err) {
 					return apperr.Wrap("planner.Apply", apperr.External, err, "list compose containers for stack %s/%s (%d services started concurrently)", contextName, stackName, len(services))
 				}
