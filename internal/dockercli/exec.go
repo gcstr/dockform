@@ -91,8 +91,23 @@ func (s *SystemExec) WithDefaultTimeout(d time.Duration) *SystemExec { s.Default
 // WithLogger sets a logger hook to observe command execution.
 func (s *SystemExec) WithLogger(h LoggerHook) *SystemExec { s.Logger = h; return s }
 
+// IsSSHSessionLimit reports whether err was caused by sshd refusing a new
+// session because the connection's MaxSessions limit is exhausted. Callers use
+// this to enrich the failure with context the transport layer cannot know, such
+// as how many services were being started at the time.
+func IsSSHSessionLimit(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(apperr.DeepestMessage(err), "Session open refused by peer")
+}
+
 func isSSHConnectionError(stderr string) bool {
-	return strings.Contains(stderr, "kex_exchange_identification") ||
+	// "Session open refused by peer" is sshd hitting MaxSessions on a
+	// multiplexed connection. It normally arrives with "Connection closed by",
+	// but is matched in its own right so it is recognised when it does not.
+	return strings.Contains(stderr, "Session open refused by peer") ||
+		strings.Contains(stderr, "kex_exchange_identification") ||
 		strings.Contains(stderr, "Connection reset by peer") ||
 		strings.Contains(stderr, "Connection closed by") ||
 		strings.Contains(stderr, "ssh_exchange_identification") ||

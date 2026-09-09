@@ -198,6 +198,25 @@ func provideExternalErrorHints(err error) {
 // <image:tag> not found" style message emitted by docker/compose pulls.
 var imageRefPattern = regexp.MustCompile(`(?i)manifest for (\S+) not found`)
 
+// isSSHTransportRefusal reports whether stderr carries one of the signatures ssh
+// emits when the far end drops or refuses the connection outright. These are
+// ambiguous by nature: a host that is down and a host shedding connections look
+// identical from here, so callers must hedge rather than assert a cause.
+func isSSHTransportRefusal(msg string) bool {
+	for _, sig := range []string{
+		"Connection closed by",
+		"Connection reset by peer",
+		"kex_exchange_identification",
+		"ssh_exchange_identification",
+		"banner exchange",
+	} {
+		if strings.Contains(msg, sig) {
+			return true
+		}
+	}
+	return false
+}
+
 // composeStderrHint inspects captured compose/docker stderr for known failure
 // signatures and returns an actionable, single-line hint. It returns "" when
 // no known pattern matches, so callers can fall back to a generic hint.
@@ -209,6 +228,24 @@ func composeStderrHint(msg string) string {
 	lower := strings.ToLower(msg)
 
 	switch {
+	// SSH transport limits are checked first: their stderr can also contain
+	// words like "denied" from the surrounding docker error, and a registry
+	// hint here would be actively misleading.
+	case strings.Contains(msg, "Session open refused by peer"):
+		// Unambiguous: sshd refused a channel because the connection's
+		// MaxSessions limit is exhausted. Each service in a compose stack
+		// opens its own SSH session, so the stack's size is what overflows it.
+		return "The SSH server refused a new session: the host's MaxSessions limit is exhausted (OpenSSH default: 10).\n" +
+			"      Each service in a stack opens its own SSH session, so a stack larger than that limit cannot start.\n" +
+			"      Fix by either raising MaxSessions in sshd_config on that host, or splitting the stack into smaller ones.\n" +
+			"      Note: --parallel does not affect this. The concurrency is inside docker compose, not dockform."
+	case isSSHTransportRefusal(msg):
+		// Ambiguous: a bare connection close looks the same whether the host
+		// is down or sshd is shedding connections (MaxStartups). Raise the
+		// possibility, do not assert it.
+		return "The SSH connection was closed by the host. This may mean the host is unreachable, or that sshd is\n" +
+			"      refusing new connections because too many arrived at once (MaxStartups, default 10:30:100).\n" +
+			"      If the host is up, either reduce how much runs against it at once or raise MaxStartups in sshd_config."
 	case strings.Contains(lower, "denied") || strings.Contains(lower, "unauthorized"):
 		return "Registry authentication problem. Check your credentials (docker login) and image access permissions."
 	case strings.Contains(lower, "manifest unknown") ||
