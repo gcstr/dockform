@@ -38,30 +38,36 @@ type Client struct {
 }
 
 func New(contextName string) *Client {
-	return &Client{
-		exec:         newSystemExec(contextName, ""),
-		contextName:  contextName,
-		composeCache: NewLRUCache[string, ComposeConfigDoc](ComposeCacheMaxSize),
-	}
+	return newClient(contextName, "", MaxConcurrentSSH)
 }
 
 // NewWithHost creates a Client that uses a direct Docker host URI instead of a named Docker context.
 // When host is non-empty, DOCKER_HOST is set instead of DOCKER_CONTEXT for all CLI invocations.
 func NewWithHost(contextName, host string) *Client {
+	return newClient(contextName, host, MaxConcurrentSSH)
+}
+
+// newClient builds a Client whose remote-host concurrency cap is limit.
+func newClient(contextName, host string, limit int) *Client {
 	return &Client{
-		exec:         newSystemExec(contextName, host),
+		exec:         newSystemExecWithLimit(contextName, host, limit),
 		contextName:  contextName,
 		hostOverride: host,
 		composeCache: NewLRUCache[string, ComposeConfigDoc](ComposeCacheMaxSize),
 	}
 }
 
-// newSystemExec creates a SystemExec, enabling the SSH concurrency semaphore for
-// remote contexts (non-empty context name that isn't "default", or SSH host override).
-func newSystemExec(contextName, hostOverride string) SystemExec {
+// newSystemExecWithLimit creates a SystemExec with a per-host concurrency
+// semaphore of size limit for remote contexts (named non-default contexts,
+// ssh:// hosts and tunnel sockets). Local contexts stay uncapped, as they always
+// have been.
+func newSystemExecWithLimit(contextName, hostOverride string, limit int) SystemExec {
 	s := SystemExec{ContextName: contextName, HostOverride: hostOverride}
 	if isRemoteContext(contextName, hostOverride) {
-		s.sem = make(chan struct{}, MaxConcurrentSSH)
+		if limit < 1 {
+			limit = MaxConcurrentSSH
+		}
+		s.sem = make(chan struct{}, limit)
 	}
 	return s
 }

@@ -22,12 +22,6 @@ func New() *cobra.Command {
 				return err
 			}
 
-			// Configure sequential processing if requested (default is parallel)
-			sequential, _ := cmd.Flags().GetBool("sequential")
-			if sequential {
-				ctx.Planner = ctx.Planner.WithParallel(false)
-			}
-
 			// Build the plan with rolling logs (or direct when verbose). The rolling
 			// log shows BuildPlan progress only — we deliberately do not hand it the
 			// plan as its final report, because the TUI renders inline and clips a
@@ -108,7 +102,9 @@ func New() *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("skip-confirmation", false, "Skip confirmation prompt and apply immediately")
-	cmd.Flags().Bool("sequential", false, "Use sequential processing instead of the default parallel processing (slower but uses less CPU and Docker daemon resources)")
+	cmd.Flags().Int("parallel", common.DefaultParallel, "How many docker operations to run at once against each remote host. Lower it for small servers; 1 runs everything one at a time. It does not limit how many containers compose starts at once within a single stack")
+	cmd.Flags().Bool("sequential", false, "Deprecated: use --parallel 1")
+	_ = cmd.Flags().MarkDeprecated("sequential", "use --parallel 1 instead")
 	cmd.Flags().Bool("long", false, "Show the full plan including unchanged resources")
 	cmd.Flags().Bool("strict-prune", false, "Fail apply when prune operations encounter errors")
 	cmd.Flags().Bool("verbose-prune-errors", false, "Print detailed prune error details when not using --strict-prune")
