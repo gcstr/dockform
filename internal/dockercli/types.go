@@ -7,6 +7,9 @@ import (
 )
 
 type ComposeConfigDoc struct {
+	// Name is the project name compose resolved (COMPOSE_PROJECT_NAME, then the
+	// top-level name:, then the working directory), unless overridden with -p.
+	Name     string                    `json:"name" yaml:"name"`
 	Services map[string]ComposeService `json:"services" yaml:"services"`
 }
 

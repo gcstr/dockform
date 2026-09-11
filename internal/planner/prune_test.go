@@ -2,6 +2,8 @@ package planner
 
 import (
 	"context"
+	"errors"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
@@ -105,7 +107,7 @@ func TestPlanner_Prune_PreservesComposeOwnedNetworks(t *testing.T) {
 	cfg := manifest.Config{
 		Identifier: "test",
 		Contexts:   map[string]manifest.ContextConfig{"default": {}},
-		Stacks:     map[string]manifest.Stack{"default/whoami": {Root: t.TempDir(), Files: []string{"compose.yml"}}},
+		Stacks:     map[string]manifest.Stack{"default/whoami": {Root: filepath.Join(t.TempDir(), "whoami"), Files: []string{"compose.yml"}}},
 	}
 
 	if err := p.Prune(context.Background(), cfg); err != nil {
@@ -128,7 +130,7 @@ func TestPlanner_Prune_RemovesComposeNetworkOfRemovedStack(t *testing.T) {
 	cfg := manifest.Config{
 		Identifier: "test",
 		Contexts:   map[string]manifest.ContextConfig{"default": {}},
-		Stacks:     map[string]manifest.Stack{"default/app": {Root: t.TempDir(), Files: []string{"compose.yml"}}},
+		Stacks:     map[string]manifest.Stack{"default/app": {Root: filepath.Join(t.TempDir(), "app"), Files: []string{"compose.yml"}}},
 	}
 	if err := p.Prune(context.Background(), cfg); err != nil {
 		t.Fatalf("Prune failed: %v", err)
@@ -137,5 +139,48 @@ func TestPlanner_Prune_RemovesComposeNetworkOfRemovedStack(t *testing.T) {
 	sort.Strings(got)
 	if want := []string{"gone_default", "stale-net"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("removed networks = %v, want %v (app_default belongs to the active stack)", got, want)
+	}
+}
+
+// A stack whose compose file sets name: (or COMPOSE_PROJECT_NAME) runs under
+// that project, not its directory name, so its network must be kept.
+func TestPlanner_Prune_KeepsNetworkOfStackWithComposeName(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "app")
+	mock := newMockDocker()
+	mock.networks = []string{"custom_default", "app_default"}
+	mock.composeNetworks = map[string]string{"custom_default": "custom", "app_default": "app"}
+	mock.composeProjectNames = map[string]string{root: "custom"}
+
+	p := NewWithDocker(mock)
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks:     map[string]manifest.Stack{"default/app": {Root: root, Files: []string{"compose.yml"}}},
+	}
+	if err := p.Prune(context.Background(), cfg); err != nil {
+		t.Fatalf("Prune failed: %v", err)
+	}
+	if want := []string{"app_default"}; !reflect.DeepEqual(mock.removedNetworks, want) {
+		t.Errorf("removed networks = %v, want %v (custom_default belongs to the active stack)", mock.removedNetworks, want)
+	}
+}
+
+// When any stack's project cannot be resolved, prune cannot tell an active
+// compose network from a stale one, so it keeps all of them.
+func TestPlanner_Prune_UnresolvedProjectKeepsComposeNetworks(t *testing.T) {
+	mock := newMockDocker()
+	mock.networks = []string{"gone_default", "stale-net"}
+	mock.composeNetworks = map[string]string{"gone_default": "gone"}
+	mock.composeConfigFullError = errors.New("compose config failed")
+
+	p := NewWithDocker(mock)
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks:     map[string]manifest.Stack{"default/app": {Root: filepath.Join(t.TempDir(), "app"), Files: []string{"compose.yml"}}},
+	}
+	_ = p.Prune(context.Background(), cfg)
+	if want := []string{"stale-net"}; !reflect.DeepEqual(mock.removedNetworks, want) {
+		t.Errorf("removed networks = %v, want %v", mock.removedNetworks, want)
 	}
 }

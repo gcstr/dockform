@@ -1,6 +1,8 @@
 package planner
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"sort"
 	"testing"
@@ -109,18 +111,37 @@ func TestNormalizeComposeProject(t *testing.T) {
 	}
 }
 
-// A stack without an explicit project name is matched on both its stack name and
-// its directory name: compose defaults the project to the directory, while
-// dockform's destroy scoping uses the stack name. Accepting both only ever keeps
-// more networks, never deletes an active one.
-func TestDesiredComposeProjects(t *testing.T) {
-	got := desiredComposeProjects(map[string]manifest.Stack{
-		"hetzner-two/MyApp":  {RootAbs: "/srv/homelab/hetzner-two/MyApp"},
-		"hetzner-two/web":    {RootAbs: "/srv/website"},
-		"hetzner-two/custom": {RootAbs: "/srv/custom", Project: &manifest.Project{Name: "Custom.Name"}},
-	})
-	want := set("myapp", "web", "website", "customname")
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("desiredComposeProjects = %v, want %v", got, want)
+// The project comes from the manifest when set (dockform passes it as -p) and
+// otherwise from compose itself, which honors COMPOSE_PROJECT_NAME and name:.
+func TestStackComposeProject(t *testing.T) {
+	mock := newMockDocker()
+	mock.composeProjectNames = map[string]string{"/srv/named": "custom-project", "/srv/blank": ""}
+
+	cases := []struct {
+		name    string
+		stack   manifest.Stack
+		want    string
+		wantErr bool
+	}{
+		{"explicit manifest project wins", manifest.Stack{Root: "/srv/named", Project: &manifest.Project{Name: "Explicit"}}, "explicit", false},
+		{"name resolved by compose", manifest.Stack{Root: "/srv/named"}, "custom-project", false},
+		{"compose default is the directory", manifest.Stack{Root: "/srv/My.App"}, "myapp", false},
+		{"empty resolved name is an error", manifest.Stack{Root: "/srv/blank"}, "", true},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := stackComposeProject(context.Background(), mock, tt.stack, nil)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("project = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	mock.composeConfigFullError = errors.New("compose config failed")
+	if _, err := stackComposeProject(context.Background(), mock, manifest.Stack{Root: "/srv/other"}, nil); err == nil {
+		t.Fatal("expected an error when compose config fails")
 	}
 }
