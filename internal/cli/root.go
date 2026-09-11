@@ -41,7 +41,7 @@ func Execute(ctx context.Context) int {
 	cmd := newRootCmd()
 	err := cmd.ExecuteContext(ctx)
 	closeLogCloser(cmd)
-	common.TeardownSSHMux(cmd)
+	common.TeardownSSHTransport(cmd)
 	if err != nil {
 		// Check if the error is a context cancellation (user interrupted)
 		// If so, don't print the error and exit with code 130 (128 + SIGINT)
@@ -111,7 +111,7 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().String("log-format", "auto", "Log format: auto, pretty, json")
 	cmd.PersistentFlags().String("log-file", "", "Write logs to file using the format specified by --log-format (in addition to stderr)")
 	cmd.PersistentFlags().Bool("no-color", false, "Disable color in pretty logs")
-	cmd.PersistentFlags().String("ssh-transport", string(common.DefaultSSHTransport), "How to reach ssh:// Docker contexts: mux reuses one SSH connection per host (default); direct opens a new connection per docker call and is not recommended. Also settable with DOCKFORM_SSH_TRANSPORT")
+	cmd.PersistentFlags().String("ssh-transport", string(common.DefaultSSHTransport), "How to reach ssh:// Docker contexts: tunnel forwards the Docker socket over one SSH connection per host (default); mux multiplexes an SSH session per docker call over one connection; direct opens a new connection per docker call and is not recommended. Also settable with DOCKFORM_SSH_TRANSPORT")
 	cmd.PersistentFlags().Bool("ssh-multiplex", true, "Deprecated: use --ssh-transport")
 	_ = cmd.PersistentFlags().MarkDeprecated("ssh-multiplex", "use --ssh-transport=mux or --ssh-transport=direct instead")
 
