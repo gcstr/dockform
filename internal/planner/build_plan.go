@@ -197,24 +197,6 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 				NewResource(ResourceNetwork, name, ActionCreate, ""))
 		}
 	}
-	// Plan removals for labeled networks no longer needed (skip when targeting specific stacks).
-	// Compose-owned networks carry the identifier label but belong to their
-	// stack, so they are only removed once that stack is gone (GH #54, dockform-x59).
-	if !cfg.Targeted {
-		var composeOwnedNetworks map[string]string
-		if client != nil {
-			owned, err := p.getComposeOwnedNetworks(ctx, client)
-			if err != nil {
-				return nil, err
-			}
-			composeOwnedNetworks = owned
-		}
-		for _, name := range orphanNetworks(existingNetworks, desiredNetworks, composeOwnedNetworks, desiredComposeProjects(contextStacks)) {
-			resourcePlan.Networks = append(resourcePlan.Networks,
-				NewResource(ResourceNetwork, name, ActionDelete, ""))
-		}
-	}
-
 	// Build stack resources
 	if err := p.buildStackResourcesForContext(ctx, cfg, contextName, contextStacks, cfg.Identifier, client, resourcePlan, execCtx); err != nil {
 		return nil, err
@@ -223,9 +205,20 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 	// Track services that should be removed (orphan detection)
 	// Skip when targeting specific stacks — we only have a partial view of desired state
 	if client != nil && !cfg.Targeted {
-		desiredServices, err := p.collectDesiredServicesForContext(ctx, cfg, contextStacks, client)
+		desiredServices, desiredProjects, err := p.collectDesiredServicesForContext(ctx, cfg, contextName, contextStacks, client)
 		if err != nil {
 			return nil, err
+		}
+		// Plan removals for labeled networks no longer needed. Compose-owned
+		// networks carry the identifier label but belong to their stack, so they
+		// are only removed once that stack's project is gone (GH #54).
+		composeOwnedNetworks, err := p.getComposeOwnedNetworks(ctx, client)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range orphanNetworks(existingNetworks, desiredNetworks, composeOwnedNetworks, desiredProjects) {
+			resourcePlan.Networks = append(resourcePlan.Networks,
+				NewResource(ResourceNetwork, name, ActionDelete, ""))
 		}
 		if all, err := client.ListComposeContainersAll(ctx); err == nil {
 			toDelete := map[string]map[string]struct{}{}

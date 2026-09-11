@@ -3,6 +3,7 @@ package planner
 import (
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/dockercli"
@@ -15,6 +16,9 @@ type mockDockerClient struct {
 	allVolumes      []string
 	networks        []string
 	composeNetworks map[string]string // subset of networks owned by a compose stack
+	// root -> project name compose resolves (default: lowercased directory name)
+	composeProjectNames    map[string]string
+	composeConfigFullError error
 	containers      []dockercli.PsBrief
 	composePsItems  []dockercli.ComposePsItem
 	volumeFiles     map[string]string            // volumeName -> file content
@@ -304,15 +308,24 @@ func (m *mockDockerClient) InspectContainerLabels(ctx context.Context, container
 
 // Compose operations (minimal implementations for testing)
 func (m *mockDockerClient) ComposeConfigFull(ctx context.Context, root string, files []string, profiles []string, envFiles []string, inline []string) (dockercli.ComposeConfigDoc, error) {
+	if m.composeConfigFullError != nil {
+		return dockercli.ComposeConfigDoc{}, m.composeConfigFullError
+	}
+	// Mirror compose's default project name (the directory) unless a test overrides it.
+	name := strings.ToLower(filepath.Base(root))
+	if override, ok := m.composeProjectNames[root]; ok {
+		name = override
+	}
 	// Return a valid config with nginx service for website directory
 	if strings.Contains(root, "website") {
 		return dockercli.ComposeConfigDoc{
+			Name: name,
 			Services: map[string]dockercli.ComposeService{
 				"nginx": {Image: "nginx:latest"},
 			},
 		}, nil
 	}
-	return dockercli.ComposeConfigDoc{}, nil
+	return dockercli.ComposeConfigDoc{Name: name}, nil
 }
 
 func (m *mockDockerClient) ComposeConfigServices(ctx context.Context, root string, files []string, profiles []string, envFiles []string, inline []string) ([]string, error) {

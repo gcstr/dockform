@@ -2,9 +2,6 @@ package planner
 
 import (
 	"context"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"sync"
 
 	"github.com/gcstr/dockform/internal/apperr"
@@ -284,49 +281,4 @@ func (p *Planner) aggregateContextPlan(aggregated *ResourcePlan, contextPlan *Co
 
 	// Containers
 	aggregated.Containers = append(aggregated.Containers, dp.Containers...)
-}
-
-// composeProjectChars is the character set compose keeps in a project name.
-var composeProjectChars = regexp.MustCompile(`[a-z0-9_-]`)
-
-// normalizeComposeProject mirrors compose's own project-name normalization
-// (compose-go NormalizeProjectName): lowercase, drop characters outside
-// [a-z0-9_-], and trim leading '_' and '-'.
-func normalizeComposeProject(s string) string {
-	s = strings.ToLower(s)
-	s = strings.Join(composeProjectChars.FindAllString(s, -1), "")
-	return strings.TrimLeft(s, "_-")
-}
-
-// desiredComposeProjects returns the normalized compose project names of the
-// stacks that should exist on a context. A stack with an explicit project name
-// owns exactly that project. Otherwise both its stack name (what dockform's
-// destroy scoping uses) and its directory name (compose's default) count: a
-// doubtful match only ever keeps a network, never deletes an active one.
-func desiredComposeProjects(stacks map[string]manifest.Stack) map[string]struct{} {
-	out := map[string]struct{}{}
-	add := func(s string) {
-		if n := normalizeComposeProject(s); n != "" {
-			out[n] = struct{}{}
-		}
-	}
-	for key, st := range stacks {
-		if st.Project != nil && st.Project.Name != "" {
-			add(st.Project.Name)
-			continue
-		}
-		name := key
-		if i := strings.LastIndex(key, "/"); i >= 0 {
-			name = key[i+1:]
-		}
-		add(name)
-		root := st.RootAbs
-		if root == "" {
-			root = st.Root
-		}
-		if root != "" {
-			add(filepath.Base(root))
-		}
-	}
-	return out
 }
