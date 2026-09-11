@@ -53,10 +53,13 @@ type SystemExec struct {
 
 // Options controls execution behavior per call.
 type Options struct {
-	Dir     string
-	Env     []string
-	Stdin   io.Reader
-	Timeout time.Duration
+	Dir   string
+	Env   []string
+	Stdin io.Reader
+	// StdinData is stdin given as bytes. Unlike Stdin it can be replayed, so a
+	// call that uses it keeps the SSH retry loop.
+	StdinData []byte
+	Timeout   time.Duration
 	// Probe marks a lightweight liveness check (e.g. a reachability `docker
 	// version`). When true, the call bypasses the SSH concurrency semaphore and
 	// the retry/backoff loop: a down host must not be serialized behind other
@@ -177,7 +180,9 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 		if opts.Dir != "" {
 			cmd.Dir = opts.Dir
 		}
-		if opts.Stdin != nil {
+		if opts.StdinData != nil {
+			cmd.Stdin = bytes.NewReader(opts.StdinData) // fresh reader per attempt
+		} else if opts.Stdin != nil {
 			cmd.Stdin = opts.Stdin
 		}
 

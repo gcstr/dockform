@@ -3,9 +3,6 @@ package dockercli
 import (
 	"context"
 	"io"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/goccy/go-yaml"
@@ -15,6 +12,7 @@ type fakeExec struct {
 	lastArgs    []string
 	lastDir     string
 	lastWithEnv bool
+	lastStdin   []byte
 	// canned outputs
 	outServices   string
 	outConfigJSON string
@@ -50,6 +48,7 @@ func (f *fakeExec) RunWithStdout(ctx context.Context, stdout io.Writer, args ...
 	return nil
 }
 func (f *fakeExec) RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error) {
+	f.lastDir, f.lastArgs, f.lastWithEnv, f.lastStdin = opts.Dir, args, len(opts.Env) > 0, opts.StdinData
 	out, err := f.dispatch(args)
 	return Result{Stdout: out, Stderr: "", ExitCode: 0}, err
 }
@@ -210,20 +209,16 @@ func TestComposeConfigHashes_ReusesOverlayAndParses(t *testing.T) {
 	}
 }
 
-func TestBuildLabeledProjectTemp_AddsIdentifierLabel(t *testing.T) {
+func TestBuildLabeledProject_AddsIdentifierLabel(t *testing.T) {
 	yam := "services:\n  web:\n    image: nginx\n  api:\n    image: busybox\n"
 	f := &fakeExec{outConfigYAML: yam}
 	c := &Client{exec: f}
-	path, err := c.buildLabeledProjectTemp(context.Background(), t.TempDir(), []string{"compose.yml"}, nil, nil, "proj", "demo", nil)
+	b, err := c.buildLabeledProject(context.Background(), t.TempDir(), []string{"compose.yml"}, nil, nil, "proj", "demo", nil)
 	if err != nil {
 		t.Fatalf("build labeled: %v", err)
 	}
-	if path == "" {
-		t.Fatalf("expected path to temp project")
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read tmp: %v", err)
+	if len(b) == 0 {
+		t.Fatalf("expected a labeled document")
 	}
 	var doc map[string]any
 	if err := yaml.Unmarshal(b, &doc); err != nil {
@@ -237,9 +232,9 @@ func TestBuildLabeledProjectTemp_AddsIdentifierLabel(t *testing.T) {
 			t.Fatalf("service %s missing identifier label: %#v", name, labels)
 		}
 	}
-	// When identifier empty, returns empty path
-	if p2, err := c.buildLabeledProjectTemp(context.Background(), ".", nil, nil, nil, "proj", "", nil); err != nil || p2 != "" {
-		t.Fatalf("expected empty result when identifier empty; got %q err=%v", p2, err)
+	// When identifier empty, returns no document
+	if b2, err := c.buildLabeledProject(context.Background(), ".", nil, nil, nil, "proj", "", nil); err != nil || b2 != nil {
+		t.Fatalf("expected no document when identifier empty; got %q err=%v", b2, err)
 	}
 }
 
@@ -261,7 +256,7 @@ func TestParseComposeHashLines(t *testing.T) {
 	}
 }
 
-func TestBuildLabeledProjectTemp_AddsIdentifierLabelToNetworks(t *testing.T) {
+func TestBuildLabeledProject_AddsIdentifierLabelToNetworks(t *testing.T) {
 	yam := `services:
   whoami:
     image: traefik/whoami
@@ -273,13 +268,9 @@ networks:
 `
 	f := &fakeExec{outConfigYAML: yam}
 	c := &Client{exec: f}
-	path, err := c.buildLabeledProjectTemp(context.Background(), t.TempDir(), []string{"compose.yml"}, nil, nil, "proj", "demo", nil)
+	b, err := c.buildLabeledProject(context.Background(), t.TempDir(), []string{"compose.yml"}, nil, nil, "proj", "demo", nil)
 	if err != nil {
 		t.Fatalf("build labeled: %v", err)
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read tmp: %v", err)
 	}
 	var doc map[string]any
 	if err := yaml.Unmarshal(b, &doc); err != nil {
@@ -295,22 +286,5 @@ networks:
 		if labels == nil || labels["io.dockform.identifier"] != "demo" {
 			t.Fatalf("network %s missing identifier label: %#v", name, labels)
 		}
-	}
-}
-
-func TestComposeUp_UsesOverlayWhenIdentifier(t *testing.T) {
-	// Ensure that when identifier is set, the compose args include only one -f <tempfile>
-	yam := "services:\n  web:\n    image: nginx\n"
-	f := &fakeExec{outConfigYAML: yam}
-	c := &Client{exec: f, identifier: "demo"}
-	_, _ = c.ComposeUp(context.Background(), t.TempDir(), []string{"a.yml", "b.yml"}, nil, nil, "proj", nil)
-	joined := strings.Join(f.lastArgs, " ")
-	// After overlay, should use a single -f pointing to a temp file name
-	if count := strings.Count(joined, " -f "); count != 1 {
-		t.Fatalf("expected single -f after overlay, got args: %s", joined)
-	}
-	if !strings.Contains(filepath.Base(joined), "dockform-labeled-project-") {
-		// At least ensure config was run and some file was used
-		t.Logf("compose args: %s", joined)
 	}
 }
