@@ -198,10 +198,10 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 		}
 	}
 	// Plan removals for labeled networks no longer needed (skip when targeting specific stacks).
-	// Compose-owned networks carry the identifier label but are managed by their
-	// stack's lifecycle, so they must not be reported as orphans (GH #54).
+	// Compose-owned networks carry the identifier label but belong to their
+	// stack, so they are only removed once that stack is gone (GH #54, dockform-x59).
 	if !cfg.Targeted {
-		var composeOwnedNetworks map[string]struct{}
+		var composeOwnedNetworks map[string]string
 		if client != nil {
 			owned, err := p.getComposeOwnedNetworks(ctx, client)
 			if err != nil {
@@ -209,7 +209,7 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 			}
 			composeOwnedNetworks = owned
 		}
-		for _, name := range orphanNetworks(existingNetworks, desiredNetworks, composeOwnedNetworks) {
+		for _, name := range orphanNetworks(existingNetworks, desiredNetworks, composeOwnedNetworks, desiredComposeProjects(contextStacks)) {
 			resourcePlan.Networks = append(resourcePlan.Networks,
 				NewResource(ResourceNetwork, name, ActionDelete, ""))
 		}
