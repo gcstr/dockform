@@ -69,6 +69,9 @@ func Args(ep Endpoint, localSock, remoteSock string) []string {
 		"-o", "ServerAliveInterval=15",
 		"-o", "ServerAliveCountMax=3",
 		"-o", "ConnectTimeout=30",
+		// Forward failures are logged at INFO. Command-line -o beats the user's
+		// config, so a LogLevel ERROR/QUIET there cannot hide them.
+		"-o", "LogLevel=INFO",
 	}
 	if ep.Port != "" {
 		args = append(args, "-p", ep.Port)
@@ -234,4 +237,25 @@ func (b *syncBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+// Reason turns ssh's stderr into a short plain-language cause, or "" when it
+// does not recognise the output. Patterns come from real OpenSSH output.
+func Reason(stderr string) string {
+	switch {
+	case strings.Contains(stderr, "Permission denied"):
+		return "SSH authentication failed (check your key or ssh-agent)"
+	case strings.Contains(stderr, "Could not resolve hostname"):
+		return "the host name could not be resolved"
+	case strings.Contains(stderr, "Host key verification failed"):
+		return "the host key could not be verified (check known_hosts)"
+	case strings.Contains(stderr, "Connection refused"):
+		return "nothing is accepting SSH connections on that host and port"
+	case strings.Contains(stderr, "Operation timed out"),
+		strings.Contains(stderr, "Connection timed out"),
+		strings.Contains(stderr, "No route to host"),
+		strings.Contains(stderr, "Network is unreachable"):
+		return "the host is unreachable"
+	}
+	return ""
 }

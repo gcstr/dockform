@@ -195,3 +195,38 @@ func TestOpen_FailureReturnsSSHStderr(t *testing.T) {
 		t.Errorf("no socket should be left after a failed open")
 	}
 }
+
+// ssh logs forward failures ("channel N: open failed: ...") at INFO. A user
+// config with LogLevel ERROR or QUIET hides them, which would silently disable
+// the rootless fallback and the error classification. Command-line -o beats
+// the config file, so the tunnel forces INFO.
+func TestArgs_ForcesInfoLogLevel(t *testing.T) {
+	if !strings.Contains(strings.Join(Args(Endpoint{Dest: "h"}, "/a", "/b"), " "), "LogLevel=INFO") {
+		t.Error("tunnel ssh must force LogLevel=INFO")
+	}
+}
+
+// The stderr lines below were captured from real ssh (OpenSSH 10.3) runs.
+func TestReason(t *testing.T) {
+	cases := []struct{ stderr, want string }{
+		{"gustavocastro@127.0.0.1: Permission denied (publickey).", "SSH authentication failed"},
+		{"ssh: Could not resolve hostname dockform-no-such-host.invalid: nodename nor servname provided, or not known", "host name could not be resolved"},
+		{"ssh: connect to host 127.0.0.1 port 2293: Connection refused", "nothing is accepting SSH connections"},
+		{"ssh: connect to host 10.255.255.1 port 22: Operation timed out", "host is unreachable"},
+		{"ssh: connect to host h port 22: No route to host", "host is unreachable"},
+		{"Host key verification failed.", "host key could not be verified"},
+		{"something ssh has never said", ""},
+	}
+	for _, tc := range cases {
+		got := Reason(tc.stderr)
+		if tc.want == "" {
+			if got != "" {
+				t.Errorf("Reason(%q) = %q, want no classification", tc.stderr, got)
+			}
+			continue
+		}
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("Reason(%q) = %q, want it to mention %q", tc.stderr, got, tc.want)
+		}
+	}
+}
