@@ -21,12 +21,6 @@ func New() *cobra.Command {
 				return err
 			}
 
-			// Configure sequential processing if requested (default is parallel)
-			sequential, _ := cmd.Flags().GetBool("sequential")
-			if sequential {
-				ctx.Planner = ctx.Planner.WithParallel(false)
-			}
-
 			long, _ := cmd.Flags().GetBool("long")
 			renderOpts := planner.PlanRenderOptions{Full: long}
 
@@ -71,7 +65,9 @@ func New() *cobra.Command {
 	}
 
 	// Add sequential flag
-	cmd.Flags().Bool("sequential", false, "Use sequential processing instead of the default parallel processing (slower but uses less CPU and Docker daemon resources)")
+	cmd.Flags().Int("parallel", common.DefaultParallel, "How many docker operations to run at once against each remote host. Lower it for small servers; 1 runs everything one at a time. It does not limit how many containers compose starts at once within a single stack")
+	cmd.Flags().Bool("sequential", false, "Deprecated: use --parallel 1")
+	_ = cmd.Flags().MarkDeprecated("sequential", "use --parallel 1 instead")
 
 	// Add long flag
 	cmd.Flags().Bool("long", false, "Show the full plan including unchanged resources")

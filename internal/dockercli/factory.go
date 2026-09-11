@@ -19,8 +19,9 @@ type ClientFactory interface {
 // DefaultClientFactory is the standard implementation of ClientFactory.
 // It caches clients per context+identifier combination for efficient reuse.
 type DefaultClientFactory struct {
-	clients map[string]*Client
-	mu      sync.RWMutex
+	clients       map[string]*Client
+	mu            sync.RWMutex
+	maxConcurrent int // per-remote-host cap for clients it builds; 0 means MaxConcurrentSSH
 }
 
 // NewClientFactory creates a new DefaultClientFactory.
@@ -28,6 +29,23 @@ func NewClientFactory() *DefaultClientFactory {
 	return &DefaultClientFactory{
 		clients: make(map[string]*Client),
 	}
+}
+
+// WithMaxConcurrent sets how many docker operations each client built by the
+// factory may run at once against its remote host (--parallel). Values below
+// 1 keep the default. It must be set before any client is created.
+func (f *DefaultClientFactory) WithMaxConcurrent(n int) *DefaultClientFactory {
+	if n >= 1 {
+		f.maxConcurrent = n
+	}
+	return f
+}
+
+func (f *DefaultClientFactory) limit() int {
+	if f.maxConcurrent >= 1 {
+		return f.maxConcurrent
+	}
+	return MaxConcurrentSSH
 }
 
 // cacheKey generates a unique key for the client cache.
@@ -57,7 +75,7 @@ func (f *DefaultClientFactory) GetClient(contextName, identifier string) *Client
 		return client
 	}
 
-	client := New(contextName).WithIdentifier(identifier)
+	client := newClient(contextName, "", f.limit()).WithIdentifier(identifier)
 	f.clients[key] = client
 	return client
 }
@@ -94,7 +112,7 @@ func (f *DefaultClientFactory) getOrCreateClientWithHost(contextName, identifier
 		return client
 	}
 
-	client := NewWithHost(contextName, host).WithIdentifier(identifier)
+	client := newClient(contextName, host, f.limit()).WithIdentifier(identifier)
 	f.clients[key] = client
 	return client
 }

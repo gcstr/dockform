@@ -46,6 +46,10 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	for _, w := range warnings {
 		pr.Warn("%s", w)
 	}
+	parallel, err := ResolveParallel(cmd)
+	if err != nil {
+		return nil, err
+	}
 
 	// Load configuration with warnings
 	cfg, err := LoadConfigWithWarnings(cmd, pr)
@@ -77,7 +81,7 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	}
 
 	// Create client factory for multi-context support
-	factory := CreateClientFactory()
+	factory := CreateClientFactory().WithMaxConcurrent(parallel)
 
 	// Fail fast (bounded) if any selected context's daemon is unreachable, before
 	// validation does any unbounded per-context daemon work.
@@ -98,6 +102,9 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 
 	// Create planner with factory
 	plan := CreatePlannerWithFactory(factory, pr)
+	if parallel == 1 {
+		plan = plan.WithParallel(false)
+	}
 
 	return &CLIContext{
 		Ctx:     cmd.Context(),
