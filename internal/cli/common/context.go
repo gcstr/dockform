@@ -31,7 +31,7 @@ func (c *CLIContext) WithRunContext(runCtx context.Context, fn func() error) err
 // GetDefaultClient returns a Docker client for the first context (for single-context operations).
 func (ctx *CLIContext) GetDefaultClient() *dockercli.Client {
 	name, _ := GetFirstDaemon(ctx.Config)
-	return ctx.Factory.GetClient(name, ctx.Config.Identifier)
+	return ctx.Factory.GetClientForContext(name, ctx.Config)
 }
 
 // SetupCLIContext performs the standard CLI setup: load config, create client factory, validate, and create planner.
@@ -66,6 +66,15 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 
 	// Display context info
 	DisplayDaemonInfo(pr, cfg)
+
+	// Open SSH tunnels before any docker client exists, so every client for an
+	// ssh:// context is built against its tunnel socket.
+	transport = EffectiveSSHTransport(cmd, transport)
+	if transport == SSHTransportTunnel {
+		if err := ActivateSSHTunnels(cmd, cfg); err != nil {
+			return nil, err
+		}
+	}
 
 	// Create client factory for multi-context support
 	factory := CreateClientFactory()

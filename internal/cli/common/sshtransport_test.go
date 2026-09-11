@@ -26,11 +26,11 @@ func TestResolveSSHTransport(t *testing.T) {
 		wantErr  bool
 		wantWarn bool
 	}{
-		{name: "default is mux", want: SSHTransportMux},
+		{name: "default is tunnel", want: SSHTransportTunnel},
 		{name: "flag direct", flags: map[string]string{"ssh-transport": "direct"}, want: SSHTransportDirect},
 		{name: "flag is case-insensitive and trimmed", flags: map[string]string{"ssh-transport": " MUX "}, want: SSHTransportMux},
 		{name: "flag rejects unknown value", flags: map[string]string{"ssh-transport": "bogus"}, wantErr: true},
-		{name: "flag rejects tunnel until it exists", flags: map[string]string{"ssh-transport": "tunnel"}, wantErr: true},
+		{name: "flag tunnel", flags: map[string]string{"ssh-transport": "tunnel"}, want: SSHTransportTunnel},
 		{name: "legacy flag false means direct", flags: map[string]string{"ssh-multiplex": "false"}, want: SSHTransportDirect},
 		{name: "legacy flag true means mux", flags: map[string]string{"ssh-multiplex": "true"}, want: SSHTransportMux},
 		{name: "both flags agreeing is fine", flags: map[string]string{"ssh-transport": "direct", "ssh-multiplex": "false"}, want: SSHTransportDirect},
@@ -38,7 +38,7 @@ func TestResolveSSHTransport(t *testing.T) {
 		{name: "env transport", env: map[string]string{"DOCKFORM_SSH_TRANSPORT": "direct"}, want: SSHTransportDirect},
 		{name: "env transport rejects unknown value", env: map[string]string{"DOCKFORM_SSH_TRANSPORT": "bogus"}, wantErr: true},
 		{name: "legacy env false means direct and warns", env: map[string]string{"DOCKFORM_SSH_MULTIPLEX": "false"}, want: SSHTransportDirect, wantWarn: true},
-		{name: "legacy env unparseable is ignored with a warning", env: map[string]string{"DOCKFORM_SSH_MULTIPLEX": "garbage"}, want: SSHTransportMux, wantWarn: true},
+		{name: "legacy env unparseable is ignored with a warning", env: map[string]string{"DOCKFORM_SSH_MULTIPLEX": "garbage"}, want: SSHTransportTunnel, wantWarn: true},
 		{name: "both envs disagreeing is an error", env: map[string]string{"DOCKFORM_SSH_TRANSPORT": "mux", "DOCKFORM_SSH_MULTIPLEX": "false"}, wantErr: true},
 		{name: "flag beats env", flags: map[string]string{"ssh-transport": "mux"}, env: map[string]string{"DOCKFORM_SSH_TRANSPORT": "direct"}, want: SSHTransportMux},
 		{name: "legacy flag beats new env", flags: map[string]string{"ssh-multiplex": "false"}, env: map[string]string{"DOCKFORM_SSH_TRANSPORT": "mux"}, want: SSHTransportDirect},
@@ -90,8 +90,8 @@ func TestResolveSSHTransport_FlagsNotRegistered(t *testing.T) {
 	t.Setenv("DOCKFORM_SSH_TRANSPORT", "")
 	t.Setenv("DOCKFORM_SSH_MULTIPLEX", "")
 	got, _, err := ResolveSSHTransport(&cobra.Command{})
-	if err != nil || got != SSHTransportMux {
-		t.Fatalf("got %q, %v; want mux, nil", got, err)
+	if err != nil || got != SSHTransportTunnel {
+		t.Fatalf("got %q, %v; want tunnel, nil", got, err)
 	}
 }
 
@@ -109,5 +109,19 @@ func TestActivateSSHMux_DirectDoesNotInstall(t *testing.T) {
 
 	if v := root.Context().Value(sshMuxKey{}); v != nil {
 		t.Fatal("direct transport must not install SSH multiplexing")
+	}
+}
+
+// The dashboard is a long-running TUI and keeps the self-healing multiplexer.
+func TestEffectiveSSHTransport_DashboardNeverTunnels(t *testing.T) {
+	dash := &cobra.Command{Use: "dashboard", Annotations: map[string]string{AnnotationSSHTunnel: "off"}}
+	if got := EffectiveSSHTransport(dash, SSHTransportTunnel); got != SSHTransportMux {
+		t.Errorf("dashboard + tunnel = %q, want mux", got)
+	}
+	if got := EffectiveSSHTransport(dash, SSHTransportDirect); got != SSHTransportDirect {
+		t.Errorf("dashboard + direct = %q, want direct (still honoured)", got)
+	}
+	if got := EffectiveSSHTransport(&cobra.Command{Use: "plan"}, SSHTransportTunnel); got != SSHTransportTunnel {
+		t.Errorf("plan + tunnel = %q, want tunnel", got)
 	}
 }

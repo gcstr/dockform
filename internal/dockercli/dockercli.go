@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gcstr/dockform/internal/sshtunnel"
 	"io"
 	"path"
 	"strconv"
@@ -66,7 +67,8 @@ func newSystemExec(contextName, hostOverride string) SystemExec {
 }
 
 func isRemoteContext(contextName, hostOverride string) bool {
-	if strings.HasPrefix(hostOverride, "ssh://") {
+	// A tunnel socket is a local file with a remote daemon behind it.
+	if strings.HasPrefix(hostOverride, "ssh://") || strings.HasSuffix(hostOverride, sshtunnel.SocketSuffix) {
 		return true
 	}
 	return contextName != "" && contextName != "default"

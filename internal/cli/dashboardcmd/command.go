@@ -18,6 +18,9 @@ func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dashboard",
 		Short: "Launch the Dockform dashboard (fullscreen TUI)",
+		// The dashboard runs for as long as it is open, so it stays on the
+		// multiplexed transport, which re-dials if the connection drops.
+		Annotations: map[string]string{common.AnnotationSSHTunnel: "off"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cliCtx, err := common.SetupCLIContext(cmd)
 			if err != nil {

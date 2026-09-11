@@ -14,6 +14,9 @@ import (
 type SSHTransport string
 
 const (
+	// SSHTransportTunnel forwards the remote Docker socket over one SSH
+	// connection per host (see package sshtunnel). Immune to sshd MaxSessions.
+	SSHTransportTunnel SSHTransport = "tunnel"
 	// SSHTransportMux reuses one ControlMaster connection per host for the run.
 	SSHTransportMux SSHTransport = "mux"
 	// SSHTransportDirect opens a new SSH connection for every docker call. Kept
@@ -23,7 +26,7 @@ const (
 
 // DefaultSSHTransport applies when neither a flag nor an environment variable
 // selects a transport.
-const DefaultSSHTransport = SSHTransportMux
+const DefaultSSHTransport = SSHTransportTunnel
 
 const (
 	envSSHTransport = "DOCKFORM_SSH_TRANSPORT"
@@ -87,10 +90,10 @@ func ResolveSSHTransport(cmd *cobra.Command) (SSHTransport, []string, error) {
 
 func parseSSHTransport(source, raw string) (SSHTransport, error) {
 	switch t := SSHTransport(strings.ToLower(strings.TrimSpace(raw))); t {
-	case SSHTransportMux, SSHTransportDirect:
+	case SSHTransportTunnel, SSHTransportMux, SSHTransportDirect:
 		return t, nil
 	}
-	return "", apperr.New("common.ResolveSSHTransport", apperr.InvalidInput, "invalid %s %q: must be one of mux, direct", source, raw)
+	return "", apperr.New("common.ResolveSSHTransport", apperr.InvalidInput, "invalid %s %q: must be one of tunnel, mux, direct", source, raw)
 }
 
 func transportForMultiplex(on bool) SSHTransport {
