@@ -8,6 +8,7 @@ import (
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/secrets"
 )
@@ -265,7 +266,11 @@ func (d *ServiceStateDetector) DetectAllServicesState(ctx context.Context, stack
 		if stack.Project != nil {
 			proj = stack.Project.Name
 		}
-		if hashes, err := d.docker.ComposeConfigHashes(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, plannedServices, identifier, inline); err == nil {
+		hashes, err := d.docker.ComposeConfigHashes(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, plannedServices, identifier, inline)
+		if err != nil {
+			// Correct when degraded: each service's hash is then computed on its own.
+			logger.FromContext(ctx).Debug("config_hashes_batch_failed", "stack", stackName, "error", err)
+		} else {
 			desiredHashes = hashes
 		}
 	}
@@ -281,7 +286,11 @@ func (d *ServiceStateDetector) DetectAllServicesState(ctx context.Context, stack
 		if identifier != "" {
 			keys = append(keys, "io.dockform.identifier")
 		}
-		if got, err := d.docker.InspectMultipleContainerLabels(ctx, names, keys); err == nil && got != nil {
+		got, err := d.docker.InspectMultipleContainerLabels(ctx, names, keys)
+		if err != nil {
+			// Correct when degraded: each container's labels are then inspected on their own.
+			logger.FromContext(ctx).Debug("container_labels_batch_failed", "stack", stackName, "error", err)
+		} else if got != nil {
 			labelsByContainer = got
 		}
 	}
