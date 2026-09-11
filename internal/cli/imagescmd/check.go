@@ -134,7 +134,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	err = common.SpinnerOperation(pr, "Checking images...", func() error {
 		// Pre-fetch local digests sequentially — exec.Command over SSH contexts is
 		// unreliable when concurrent, so this must stay sequential.
-		localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory))
+		localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory, projectsByStack(inputs)))
 
 		results, err = images.Check(cmd.Context(), inputs, reg, func(_ context.Context, stackKey, service, _ string) (string, error) {
 			return localDigests[stackKey+"|"+service], nil
@@ -225,6 +225,7 @@ func buildCheckInputs(ctx context.Context, cfg *manifest.Config, getClient clien
 
 		inputs = append(inputs, images.CheckInput{
 			StackKey: stackKey,
+			Project:  composeProject(stack, doc),
 			Services: services,
 		})
 	}
@@ -248,7 +249,8 @@ func buildCheckInputs(ctx context.Context, cfg *manifest.Config, getClient clien
 // Everything is cached in the closure; calls must be sequential (see
 // prefetchLocalDigests). Failures are best-effort: an empty digest makes the
 // image appear stale, which is safe.
-func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientFactory) images.LocalDigestFunc {
+// projects maps stack keys to their compose project (see projectsByStack).
+func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientFactory, projects map[string]string) images.LocalDigestFunc {
 	type ctxCache struct {
 		containerImageID map[string]string // "project|service" → full image ID
 		imageDigest      map[string]string // full image ID → repo digest (sha256:…)
@@ -310,9 +312,7 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 		}
 
 		// Look up the running container's digest for this (stack, service).
-		allStacks := cfg.GetAllStacks()
-		stack := allStacks[stackKey]
-		proj := effectiveProjectName(stack)
+		proj := projects[stackKey]
 
 		if imageID := cc.containerImageID[proj+"|"+service]; imageID != "" {
 			if digest := cc.imageDigest[imageID]; digest != "" {
@@ -339,14 +339,28 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 	}
 }
 
-// effectiveProjectName returns the Docker Compose project name for a stack.
-// When no explicit override is set, Compose defaults to the lowercase basename
-// of the working directory.
-func effectiveProjectName(stack manifest.Stack) string {
+// composeProject returns the compose project a stack runs under, which is what
+// its containers carry in com.docker.compose.project: the manifest's project name
+// when set (dockform passes it as -p), else the name compose resolved from
+// COMPOSE_PROJECT_NAME, a top-level name:, or the directory. Only a compose too
+// old to report a name falls back to the lowercased directory name.
+func composeProject(stack manifest.Stack, doc dockercli.ComposeConfigDoc) string {
 	if stack.Project != nil && stack.Project.Name != "" {
 		return strings.ToLower(stack.Project.Name)
 	}
+	if doc.Name != "" {
+		return doc.Name
+	}
 	return strings.ToLower(filepath.Base(stack.RootAbs))
+}
+
+// projectsByStack maps each input's stack key to its compose project.
+func projectsByStack(inputs []images.CheckInput) map[string]string {
+	out := make(map[string]string, len(inputs))
+	for _, in := range inputs {
+		out[in.StackKey] = in.Project
+	}
+	return out
 }
 
 // prefetchLocalDigests calls localDigestFn sequentially for every (stack, service)

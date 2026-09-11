@@ -86,7 +86,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// Run the check inside the spinner so the user sees feedback immediately.
 	var results []images.ImageStatus
 	err = common.SpinnerOperation(pr, "Checking images...", func() error {
-		localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory))
+		localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory, projectsByStack(inputs)))
 		results, err = images.Check(cmd.Context(), inputs, reg, func(_ context.Context, stackKey, service, _ string) (string, error) {
 			return localDigests[stackKey+"|"+service], nil
 		})

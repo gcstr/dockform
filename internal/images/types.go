@@ -17,6 +17,7 @@ type ImageStatus struct {
 // CheckInput bundles everything needed to check images for a stack.
 type CheckInput struct {
 	StackKey string                 // Stack key (e.g., "hetzner/traefik")
+	Project  string                 // compose project the stack runs under, to find its running containers
 	Services map[string]ServiceSpec // service name -> image + per-service tag pattern
 }
 
