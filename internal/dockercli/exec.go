@@ -27,11 +27,12 @@ type Exec interface {
 	RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error)
 }
 
-// MaxConcurrentSSH is the maximum number of concurrent docker CLI invocations
-// allowed against a single remote (SSH-based) Docker context. SSH daemons have
-// a MaxStartups threshold (default 10:30:100) that randomly drops connections
-// when too many arrive at once. Keeping this well below 10 avoids transient
-// "Connection reset by peer" failures during parallel plan building.
+// MaxConcurrentSSH is the default per-host cap on concurrent docker CLI
+// invocations against a remote Docker context (ssh://, named non-default
+// contexts and SSH tunnel sockets); --parallel overrides it. It bounds how many
+// docker calls dockform runs at once against one host, not how many connections
+// a single call opens (compose fans out internally), so it is a load control.
+// Keeping a large stack under sshd's MaxSessions is the tunnel transport's job.
 const MaxConcurrentSSH = 2
 
 // sshMaxRetries and sshRetryBaseDelay are vars (not consts) so tests can shrink
