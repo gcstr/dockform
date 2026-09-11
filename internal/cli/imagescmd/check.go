@@ -13,6 +13,7 @@ import (
 	"github.com/gcstr/dockform/internal/cli/common"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/images"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 	"github.com/gcstr/dockform/internal/registry"
 	"github.com/gcstr/dockform/internal/ui"
@@ -255,9 +256,11 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 	cache := make(map[string]*ctxCache) // contextName → populated on first use
 
 	return func(ctx context.Context, stackKey, service, imageRef string) (string, error) {
+		log := logger.FromContext(ctx).With("component", "images", "stack", stackKey, "service", service)
 		ctxName, _, err := manifest.ParseStackKey(stackKey)
 		if err != nil {
-			return "", nil //nolint:nilerr // best-effort
+			log.Debug("local_digest_skipped", "error", err)
+			return "", nil //nolint:nilerr // best-effort, logged
 		}
 		client := factory.GetClientForContext(ctxName, cfg)
 
@@ -270,7 +273,13 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 			}
 
 			// One docker ps call for all compose containers on this daemon.
-			containerMap, _ := client.ComposeContainerImageMap(ctx) //nolint:nilerr // best-effort
+			// Best-effort: on failure every image on this context looks stale, so
+			// say so rather than let a broken connection pass for real drift.
+			containerMap, err := client.ComposeContainerImageMap(ctx)
+			if err != nil {
+				log.Warn("running_image_digests_unavailable", "context", ctxName, "error", err,
+					"impact", "images on this context may be reported as stale")
+			}
 			if containerMap != nil {
 				cc.containerImageID = containerMap
 
@@ -287,7 +296,11 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 					}
 				}
 				if len(imageIDs) > 0 {
-					digestMap, _ := client.ImageRepoDigestMap(ctx, imageIDs) //nolint:nilerr // best-effort
+					digestMap, err := client.ImageRepoDigestMap(ctx, imageIDs)
+					if err != nil {
+						log.Warn("running_image_digests_unavailable", "context", ctxName, "error", err,
+							"impact", "images on this context may be reported as stale")
+					}
 					if digestMap != nil {
 						cc.imageDigest = digestMap
 					}
@@ -309,8 +322,13 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 
 		// Fallback: stored image digest (for services with no running container).
 		out, err := client.ImageInspectRepoDigests(ctx, imageRef)
-		if err != nil || len(out) == 0 {
-			return "", nil //nolint:nilerr // best-effort
+		if err != nil {
+			// Usually just an image that was never pulled here, so debug only.
+			log.Debug("stored_image_digest_unavailable", "image", imageRef, "error", err)
+			return "", nil //nolint:nilerr // best-effort, logged
+		}
+		if len(out) == 0 {
+			return "", nil
 		}
 		for _, rd := range out {
 			if idx := strings.LastIndex(rd, "@"); idx >= 0 {
