@@ -111,7 +111,9 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().String("log-format", "auto", "Log format: auto, pretty, json")
 	cmd.PersistentFlags().String("log-file", "", "Write logs to file using the format specified by --log-format (in addition to stderr)")
 	cmd.PersistentFlags().Bool("no-color", false, "Disable color in pretty logs")
-	cmd.PersistentFlags().Bool("ssh-multiplex", true, "Reuse one SSH connection per host for a run (ControlMaster); disable with --ssh-multiplex=false or DOCKFORM_SSH_MULTIPLEX=false")
+	cmd.PersistentFlags().String("ssh-transport", string(common.DefaultSSHTransport), "How to reach ssh:// Docker contexts: mux reuses one SSH connection per host (default); direct opens a new connection per docker call and is not recommended. Also settable with DOCKFORM_SSH_TRANSPORT")
+	cmd.PersistentFlags().Bool("ssh-multiplex", true, "Deprecated: use --ssh-transport")
+	_ = cmd.PersistentFlags().MarkDeprecated("ssh-multiplex", "use --ssh-transport=mux or --ssh-transport=direct instead")
 
 	cmd.AddCommand(initcmd.New())
 	cmd.AddCommand(plancmd.New())

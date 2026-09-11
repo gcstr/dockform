@@ -38,6 +38,15 @@ func (ctx *CLIContext) GetDefaultClient() *dockercli.Client {
 func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 
+	// Resolve the SSH transport first so a bad value fails before any work.
+	transport, warnings, err := ResolveSSHTransport(cmd)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range warnings {
+		pr.Warn("%s", w)
+	}
+
 	// Load configuration with warnings
 	cfg, err := LoadConfigWithWarnings(cmd, pr)
 	if err != nil {
@@ -68,7 +77,7 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	}
 
 	// Install run-scoped SSH multiplexing (best-effort) before any docker work.
-	ActivateSSHMux(cmd, cfg)
+	ActivateSSHMux(cmd, cfg, transport)
 
 	// Validate in spinner
 	err = SpinnerOperation(pr, "Validating...", func() error {
