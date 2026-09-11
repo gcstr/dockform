@@ -134,8 +134,8 @@ func (d *ServiceStateDetector) GetRunningServices(ctx context.Context, stack man
 
 	items, err := d.docker.ComposePs(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline)
 	if err != nil {
-		// Treat compose ps errors as "no running services" rather than hard error
-		return running, nil
+		// Never treat a failed ps as "nothing running": that plans creates for a live stack.
+		return nil, apperr.Wrap("servicestate.GetRunningServices", apperr.External, err, "list running containers for stack %s", stack.Root)
 	}
 
 	for _, item := range items {
@@ -182,9 +182,12 @@ func (d *ServiceStateDetector) detectServiceStateFast(ctx context.Context, servi
 		desiredHash = desiredHashes[serviceName]
 	}
 	if desiredHash == "" {
-		if dh, err := d.docker.ComposeConfigHash(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, serviceName, identifier, inline); err == nil {
-			desiredHash = dh
+		// Without a desired hash the drift check is skipped, hiding real drift.
+		dh, err := d.docker.ComposeConfigHash(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, serviceName, identifier, inline)
+		if err != nil {
+			return info, apperr.Wrap("servicestate.DetectServiceState", apperr.External, err, "compute desired config hash for service %s/%s", stackName, serviceName)
 		}
+		desiredHash = dh
 	}
 	info.DesiredHash = desiredHash
 
@@ -205,8 +208,8 @@ func (d *ServiceStateDetector) detectServiceStateFast(ctx context.Context, servi
 	if labels == nil {
 		labels, err = d.docker.InspectContainerLabels(ctx, info.Container.Name, keys)
 		if err != nil {
-			info.State = ServiceDrifted
-			return info, nil
+			// Reporting "drifted" here would plan a recreate on a transient failure.
+			return info, apperr.Wrap("servicestate.DetectServiceState", apperr.External, err, "inspect labels of container %s", info.Container.Name)
 		}
 	}
 
