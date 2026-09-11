@@ -2,6 +2,8 @@ package planner
 
 import (
 	"context"
+	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/dockercli"
@@ -137,7 +139,7 @@ func TestDestroy_ScopedToStack(t *testing.T) {
 			"services": {},
 		},
 		Stacks: map[string]manifest.Stack{
-			"services/nginx": {Context: "services"},
+			"services/nginx": {Context: "services", Root: filepath.Join(t.TempDir(), "nginx")},
 		},
 		DiscoveredFilesets: map[string]manifest.FilesetSpec{
 			"nginx-config": {TargetVolume: "nginx-config", Context: "services", Stack: "nginx"},
@@ -165,5 +167,64 @@ func TestDestroy_ScopedToStack(t *testing.T) {
 	// volumes must be left alone.
 	if got := mockCounter.removedVolumes; len(got) != 1 || got[0] != "nginx-config" {
 		t.Errorf("Expected only nginx-config volume removed, got %v", got)
+	}
+}
+
+// A targeted stack whose compose file sets name: (or COMPOSE_PROJECT_NAME) runs
+// under that project, so scoped destroy must match it rather than the stack name.
+func TestDestroy_ScopedToStack_UsesComposeProjectName(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "web")
+	mock := newMockDocker()
+	mock.composeProjectNames = map[string]string{root: "custom"}
+	mock.containers = []dockercli.PsBrief{
+		{Project: "custom", Service: "web", Name: "custom-web-1"},
+		{Project: "web", Service: "web", Name: "web-web-1"}, // another stack that happens to be named like the directory
+	}
+	cfg := manifest.Config{
+		Identifier: "test",
+		Targeted:   true,
+		Contexts:   map[string]manifest.ContextConfig{"services": {}},
+		Stacks:     map[string]manifest.Stack{"services/web": {Context: "services", Root: root}},
+	}
+	p := NewWithDocker(mock)
+
+	plan, err := p.BuildDestroyPlan(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("BuildDestroyPlan failed: %v", err)
+	}
+	if _, ok := plan.Resources.Stacks["services/custom"]; !ok || len(plan.Resources.Stacks) != 1 {
+		t.Errorf("destroy plan stacks = %v, want only services/custom", plan.Resources.Stacks)
+	}
+
+	if err := p.Destroy(context.Background(), cfg); err != nil {
+		t.Fatalf("Destroy failed: %v", err)
+	}
+	if got := mock.removedContainers; len(got) != 1 || got[0] != "custom-web-1" {
+		t.Errorf("removed containers = %v, want [custom-web-1]", got)
+	}
+}
+
+// If a targeted stack's project cannot be resolved, destroy fails loudly instead
+// of guessing and silently removing nothing (or the wrong thing).
+func TestDestroy_ScopedToStack_UnresolvedProjectFails(t *testing.T) {
+	mock := newMockDocker()
+	mock.composeConfigFullError = errors.New("compose config failed")
+	mock.containers = []dockercli.PsBrief{{Project: "web", Service: "web", Name: "web-web-1"}}
+	cfg := manifest.Config{
+		Identifier: "test",
+		Targeted:   true,
+		Contexts:   map[string]manifest.ContextConfig{"services": {}},
+		Stacks:     map[string]manifest.Stack{"services/web": {Context: "services", Root: filepath.Join(t.TempDir(), "web")}},
+	}
+	p := NewWithDocker(mock)
+
+	if _, err := p.BuildDestroyPlan(context.Background(), cfg); err == nil {
+		t.Error("BuildDestroyPlan: expected an error for an unresolvable project")
+	}
+	if err := p.Destroy(context.Background(), cfg); err == nil {
+		t.Error("Destroy: expected an error for an unresolvable project")
+	}
+	if got := mock.removedContainers; len(got) != 0 {
+		t.Errorf("removed containers = %v, want none", got)
 	}
 }
