@@ -22,27 +22,37 @@ func (c *Client) runInDirOptionalEnv(ctx context.Context, workingDir string, inl
 	return c.exec.RunInDir(ctx, workingDir, args...)
 }
 
+// runCompose runs a compose command. A non-nil doc is piped on stdin as the only
+// compose file (-f -): it is the labeled, fully interpolated project, which holds
+// SOPS-decrypted values, so it must never be written to disk. Passed as bytes it
+// can be replayed, so the SSH retry loop still applies.
+func (c *Client) runCompose(ctx context.Context, workingDir string, inlineEnv []string, doc []byte, args ...string) (string, error) {
+	if doc == nil {
+		return c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
+	}
+	res, err := c.exec.RunDetailed(ctx, Options{Dir: workingDir, Env: inlineEnv, StdinData: doc}, args...)
+	return res.Stdout, err
+}
+
 // ComposeUp runs docker compose up -d with the given parameters.
 // workingDir is where compose files and relative paths are resolved.
 func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string) (string, error) {
 	// Choose compose files (overlay or user files)
 	chosenFiles := files
+	var doc []byte
 	if c.identifier != "" {
-		// Without the overlay, compose would create containers missing the
+		// Without the labels, compose would create containers missing the
 		// identifier label, invisible to destroy and prune. Refuse instead.
-		pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier, inlineEnv)
+		d, err := c.buildLabeledProject(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier, inlineEnv)
 		if err != nil {
 			return "", apperr.Wrap("dockercli.ComposeUp", apperr.External, err, "add identifier labels to the stack in %s (compose up was not run)", workingDir)
 		}
-		if pth != "" {
-			defer func() { _ = os.Remove(pth) }()
-			chosenFiles = []string{pth}
-		}
+		doc, chosenFiles = d, []string{"-"}
 	}
 	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
 	args = append(args, "up", "-d")
 
-	return c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
+	return c.runCompose(ctx, workingDir, inlineEnv, doc, args...)
 }
 
 // ComposePull runs `docker compose pull [services...]` using the given compose
@@ -166,21 +176,19 @@ func parseComposeHashLines(out string) map[string]string {
 func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, service string, identifier string, inlineEnv []string) (string, error) {
 	// Choose compose files (overlay or user files)
 	chosenFiles := files
+	var doc []byte
 	if identifier != "" {
 		// Hashing the unlabeled files gives a hash that never matches the labeled
 		// containers, so every service would look drifted. Fail instead.
-		pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, identifier, inlineEnv)
+		d, err := c.buildLabeledProject(ctx, workingDir, files, profiles, envFiles, projectName, identifier, inlineEnv)
 		if err != nil {
 			return "", apperr.Wrap("dockercli.ComposeConfigHash", apperr.External, err, "add identifier labels before hashing service %s", service)
 		}
-		if pth != "" {
-			defer func() { _ = os.Remove(pth) }()
-			chosenFiles = []string{pth}
-		}
+		doc, chosenFiles = d, []string{"-"}
 	}
 	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
 	args = append(args, "config", "--hash", service)
-	out, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
+	out, err := c.runCompose(ctx, workingDir, inlineEnv, doc, args...)
 	if err != nil {
 		return "", err
 	}
@@ -202,17 +210,17 @@ func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files
 func (c *Client) ComposeConfigHashes(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, services []string, identifier string, inlineEnv []string) (map[string]string, error) {
 	// Choose compose files (overlay or user files)
 	chosenFiles := files
+	var doc []byte
 	if identifier != "" {
-		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, identifier, inlineEnv); err == nil && pth != "" {
-			defer func() { _ = os.Remove(pth) }()
-			chosenFiles = []string{pth}
-		} else if err != nil {
+		d, err := c.buildLabeledProject(ctx, workingDir, files, profiles, envFiles, projectName, identifier, inlineEnv)
+		if err != nil {
 			return nil, err
 		}
+		doc, chosenFiles = d, []string{"-"}
 	}
 	base := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
 	args := append(append([]string{}, base...), "config", "--hash", "*")
-	out, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
+	out, err := c.runCompose(ctx, workingDir, inlineEnv, doc, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -246,21 +254,24 @@ func (c *Client) composeCacheKey(workingDir string, files, profiles, envFiles []
 	return b.String()
 }
 
-// buildLabeledProjectTemp loads the effective compose yaml via `docker compose config`,
-// injects io.dockform.identifier=<identifier> label into all services, writes to a temp file, and returns its path.
-func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, identifier string, inlineEnv []string) (string, error) {
+// buildLabeledProject renders the effective project via `docker compose config`
+// and injects io.dockform.identifier=<identifier> into every service and network.
+// The result is fully interpolated, SOPS-decrypted values included, so callers
+// pipe it to compose on stdin (see runCompose) rather than writing it to disk.
+// It returns nil when identifier is empty.
+func (c *Client) buildLabeledProject(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, identifier string, inlineEnv []string) ([]byte, error) {
 	if identifier == "" {
-		return "", nil
+		return nil, nil
 	}
 	args := c.composeBaseArgs(files, profiles, envFiles, projectName)
 	args = append(args, "config")
 	out, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
-		return "", apperr.Wrap("dockercli.buildLabeledProjectTemp", apperr.Internal, err, "parse compose yaml")
+		return nil, apperr.Wrap("dockercli.buildLabeledProject", apperr.Internal, err, "parse compose yaml")
 	}
 	if doc == nil {
 		doc = map[string]any{}
@@ -306,24 +317,13 @@ func (c *Client) buildLabeledProjectTemp(ctx context.Context, workingDir string,
 
 	b, err := yaml.Marshal(doc)
 	if err != nil {
-		return "", apperr.Wrap("dockercli.buildLabeledProjectTemp", apperr.Internal, err, "marshal labeled yaml")
+		return nil, apperr.Wrap("dockercli.buildLabeledProject", apperr.Internal, err, "marshal labeled yaml")
 	}
-	f, err := os.CreateTemp("", "dockform-labeled-project-*.yml")
-	if err != nil {
-		return "", apperr.Wrap("dockercli.buildLabeledProjectTemp", apperr.Internal, err, "create temp project")
-	}
-	path := f.Name()
-	if _, err := f.Write(b); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return "", apperr.Wrap("dockercli.buildLabeledProjectTemp", apperr.Internal, err, "write temp project")
-	}
-	_ = f.Close()
 	if os.Getenv("DOCKFORM_PRINT_OVERLAY") == "1" || os.Getenv("DOCKFORM_DEBUG_OVERLAY") == "1" {
-		fmt.Fprintln(os.Stderr, "--- dockform labeled compose (merged) ---")
-		fmt.Fprintf(os.Stderr, "path: %s\n", path)
+		// Debug opt-in only: the document holds decrypted SOPS secrets in plain text.
+		fmt.Fprintln(os.Stderr, "--- dockform labeled compose (contains decrypted secrets) ---")
 		fmt.Fprintln(os.Stderr, string(b))
 		fmt.Fprintln(os.Stderr, "--- end labeled ---")
 	}
-	return path, nil
+	return b, nil
 }
