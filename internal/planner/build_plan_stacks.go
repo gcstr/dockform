@@ -204,16 +204,13 @@ func (p *Planner) buildStackResourcesParallelForContext(ctx context.Context, cfg
 	return nil
 }
 
-// collectDesiredServicesForContext returns the service names that should be
-// running on a context, and the compose projects they run under. The project
-// set is nil when any stack's project cannot be resolved, so callers keep every
-// compose-owned network rather than risk removing an active one.
-func (p *Planner) collectDesiredServicesForContext(ctx context.Context, cfg manifest.Config, contextName string, stacks map[string]manifest.Stack, client DockerClient) (map[string]struct{}, map[string]struct{}, error) {
-	desiredServices := map[string]struct{}{}
-	desiredProjects := map[string]struct{}{}
+// collectDesiredServicesForContext returns the services that should be running
+// on a context, grouped by the compose project each stack runs under.
+func (p *Planner) collectDesiredServicesForContext(ctx context.Context, cfg manifest.Config, contextName string, stacks map[string]manifest.Stack, client DockerClient) (*desiredStacks, error) {
+	desired := newDesiredStacks()
 
 	if client == nil {
-		return desiredServices, desiredProjects, nil
+		return desired, nil
 	}
 
 	detector := NewServiceStateDetector(client)
@@ -221,25 +218,19 @@ func (p *Planner) collectDesiredServicesForContext(ctx context.Context, cfg mani
 	for stackName, stack := range stacks {
 		inline, err := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		names, err := detector.GetPlannedServices(ctx, stack, inline)
 		if err != nil {
-			return nil, nil, apperr.Wrap("planner.collectDesiredServicesForContext", apperr.External, err, "list planned services for stack %s", stack.Root)
-		}
-		for _, name := range names {
-			desiredServices[name] = struct{}{}
+			return nil, apperr.Wrap("planner.collectDesiredServicesForContext", apperr.External, err, "list planned services for stack %s", stack.Root)
 		}
 		project, err := stackComposeProject(ctx, client, stack, inline)
 		if err != nil {
 			logger.FromContext(ctx).Warn("compose_project_unresolved", "context", contextName, "stack", stackName, "error", err)
-			desiredProjects = nil
-			continue
+			project = ""
 		}
-		if desiredProjects != nil {
-			desiredProjects[project] = struct{}{}
-		}
+		desired.add(project, names)
 	}
 
-	return desiredServices, desiredProjects, nil
+	return desired, nil
 }

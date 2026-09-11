@@ -93,6 +93,53 @@ func TestPlanner_Prune_RemovesOrphanedContainers(t *testing.T) {
 	}
 }
 
+// A removed stack whose service name matches an active stack's service must still
+// be pruned: containers are matched on project and service, not service alone.
+func TestPlanner_Prune_RemovesContainerOfRemovedStackWithCollidingService(t *testing.T) {
+	mock := newMockDocker() // a root named "website" resolves to project website, service nginx
+	mock.containers = []dockercli.PsBrief{
+		{Name: "website-nginx-1", Project: "website", Service: "nginx"},
+		{Name: "gone-nginx-1", Project: "gone", Service: "nginx"},
+	}
+	p := NewWithDocker(mock)
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks:     map[string]manifest.Stack{"default/website": {Root: filepath.Join(t.TempDir(), "website"), Files: []string{"compose.yml"}}},
+	}
+	if err := p.Prune(context.Background(), cfg); err != nil {
+		t.Fatalf("Prune failed: %v", err)
+	}
+	if want := []string{"gone-nginx-1"}; !reflect.DeepEqual(mock.removedContainers, want) {
+		t.Errorf("removed containers = %v, want %v", mock.removedContainers, want)
+	}
+}
+
+// When a stack's project cannot be resolved, prune falls back to matching on
+// service name alone, which only ever keeps more containers.
+func TestPlanner_Prune_UnresolvedProjectFallsBackToServiceName(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "website")
+	mock := newMockDocker()
+	mock.composeProjectNames = map[string]string{root: ""}
+	mock.containers = []dockercli.PsBrief{
+		{Name: "website-nginx-1", Project: "website", Service: "nginx"},
+		{Name: "gone-nginx-1", Project: "gone", Service: "nginx"},
+		{Name: "old-other-1", Project: "old", Service: "other"},
+	}
+	p := NewWithDocker(mock)
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks:     map[string]manifest.Stack{"default/website": {Root: root, Files: []string{"compose.yml"}}},
+	}
+	if err := p.Prune(context.Background(), cfg); err != nil {
+		t.Fatalf("Prune failed: %v", err)
+	}
+	if want := []string{"old-other-1"}; !reflect.DeepEqual(mock.removedContainers, want) {
+		t.Errorf("removed containers = %v, want %v", mock.removedContainers, want)
+	}
+}
+
 // TestPlanner_Prune_PreservesComposeOwnedNetworks verifies that networks created
 // by a compose stack (carrying the identifier label but managed by the stack) are
 // not pruned as orphans, while genuinely unmanaged networks still are. Regression

@@ -205,7 +205,7 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 	// Track services that should be removed (orphan detection)
 	// Skip when targeting specific stacks — we only have a partial view of desired state
 	if client != nil && !cfg.Targeted {
-		desiredServices, desiredProjects, err := p.collectDesiredServicesForContext(ctx, cfg, contextName, contextStacks, client)
+		desired, err := p.collectDesiredServicesForContext(ctx, cfg, contextName, contextStacks, client)
 		if err != nil {
 			return nil, err
 		}
@@ -216,14 +216,14 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 		if err != nil {
 			return nil, err
 		}
-		for _, name := range orphanNetworks(existingNetworks, desiredNetworks, composeOwnedNetworks, desiredProjects) {
+		for _, name := range orphanNetworks(existingNetworks, desiredNetworks, composeOwnedNetworks, desired.projects()) {
 			resourcePlan.Networks = append(resourcePlan.Networks,
 				NewResource(ResourceNetwork, name, ActionDelete, ""))
 		}
 		if all, err := client.ListComposeContainersAll(ctx); err == nil {
 			toDelete := map[string]map[string]struct{}{}
 			for _, it := range all {
-				if _, want := desiredServices[it.Service]; !want {
+				if !desired.wantsContainer(it.Project, it.Service) {
 					if toDelete[it.Project] == nil {
 						toDelete[it.Project] = map[string]struct{}{}
 					}

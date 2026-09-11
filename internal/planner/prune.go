@@ -50,11 +50,11 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 	contextStacks := cfg.GetStacksForContext(contextName)
 	contextFilesets := cfg.GetFilesetsForContext(contextName)
 
-	// Desired services and compose projects for this context. desiredProjects
-	// becomes nil if any stack's project cannot be resolved, which keeps every
-	// compose-owned network rather than risk removing an active one.
-	desiredServices := map[string]struct{}{}
-	desiredProjects := map[string]struct{}{}
+	// What should be running on this context, grouped by compose project. If a
+	// stack's project cannot be resolved, prune keeps every compose-owned network
+	// and matches containers on service name alone, rather than risk removing an
+	// active stack's resources.
+	desired := newDesiredStacks()
 	var errs []error
 	canPruneContainers := true
 
@@ -63,31 +63,28 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 		contextCtx = plan.ExecutionContext.ByContext[contextName]
 	}
 	for stackName, stack := range contextStacks {
-		var inline []string
+		var names, inline []string
 		if execData := stackExecData(contextCtx, stackName); execData != nil && execData.Services != nil {
 			for _, svc := range execData.Services {
-				desiredServices[svc.Name] = struct{}{}
+				names = append(names, svc.Name)
 			}
 			inline = execData.InlineEnv
 		} else {
-			in, err := collectDesiredServicesForStack(ctx, client, stack, cfg.Sops, desiredServices)
+			n, in, err := desiredServicesForStack(ctx, client, stack, cfg.Sops)
 			if err != nil {
 				canPruneContainers = false
 				errs = append(errs, err)
-				desiredProjects = nil
+				desired.add("", nil)
 				continue
 			}
-			inline = in
+			names, inline = n, in
 		}
 		project, err := stackComposeProject(ctx, client, stack, inline)
 		if err != nil {
 			logger.FromContext(ctx).Warn("compose_project_unresolved", "context", contextName, "stack", stackName, "error", err)
-			desiredProjects = nil
-			continue
+			project = ""
 		}
-		if desiredProjects != nil {
-			desiredProjects[project] = struct{}{}
-		}
+		desired.add(project, names)
 	}
 
 	// Remove labeled containers not in desired set
@@ -97,7 +94,7 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 			errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "list managed containers for context %s", contextName))
 		} else {
 			for _, it := range all {
-				if _, want := desiredServices[it.Service]; !want {
+				if !desired.wantsContainer(it.Project, it.Service) {
 					if err := client.RemoveContainer(ctx, it.Name, true); err != nil {
 						errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "remove unmanaged container %s in context %s", it.Name, contextName))
 					}
@@ -152,7 +149,7 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 		for _, n := range nets {
 			existing[n] = struct{}{}
 		}
-		for _, n := range orphanNetworks(existing, desiredNetworks, composeOwned, desiredProjects) {
+		for _, n := range orphanNetworks(existing, desiredNetworks, composeOwned, desired.projects()) {
 			if err := client.RemoveNetwork(ctx, n); err != nil {
 				errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "remove unmanaged network %s in context %s", n, contextName))
 			}
@@ -170,20 +167,17 @@ func stackExecData(contextCtx *ContextExecutionContext, stackName string) *Stack
 	return contextCtx.Stacks[stackName]
 }
 
-// collectDesiredServicesForStack collects service names for a single stack by
-// querying compose config, and returns the inline environment it built.
-func collectDesiredServicesForStack(ctx context.Context, client DockerClient, stack manifest.Stack, sopsConfig *manifest.SopsConfig, desiredServices map[string]struct{}) ([]string, error) {
+// desiredServicesForStack lists a single stack's service names by querying
+// compose config, and returns the inline environment it built for that.
+func desiredServicesForStack(ctx context.Context, client DockerClient, stack manifest.Stack, sopsConfig *manifest.SopsConfig) ([]string, []string, error) {
 	detector := NewServiceStateDetector(client)
 	inline, err := detector.BuildInlineEnv(ctx, stack, sopsConfig)
 	if err != nil {
-		return nil, apperr.Wrap("planner.collectDesiredServicesForStack", apperr.External, err, "build inline env for stack %s", stack.Root)
+		return nil, nil, apperr.Wrap("planner.desiredServicesForStack", apperr.External, err, "build inline env for stack %s", stack.Root)
 	}
 	names, err := detector.GetPlannedServices(ctx, stack, inline)
 	if err != nil {
-		return nil, apperr.Wrap("planner.collectDesiredServicesForStack", apperr.External, err, "list planned services for stack %s", stack.Root)
+		return nil, nil, apperr.Wrap("planner.desiredServicesForStack", apperr.External, err, "list planned services for stack %s", stack.Root)
 	}
-	for _, name := range names {
-		desiredServices[name] = struct{}{}
-	}
-	return inline, nil
+	return names, inline, nil
 }
