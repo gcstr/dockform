@@ -23,12 +23,14 @@ func (c *Client) ListNetworks(ctx context.Context) ([]string, error) {
 	return util.SplitNonEmptyLines(out), nil
 }
 
-// ListComposeNetworks returns names of identifier-labeled networks that are owned
-// by a compose stack. Compose stamps the com.docker.compose.project label onto
-// networks it creates; dockform's own CreateNetwork does not. The label filters
-// are ANDed, so this returns only networks managed by a compose project.
-func (c *Client) ListComposeNetworks(ctx context.Context) ([]string, error) {
-	args := []string{"network", "ls", "--format", "{{.Name}}"}
+// ListComposeNetworks maps each identifier-labeled network owned by a compose
+// stack to its owning compose project. Compose stamps the
+// com.docker.compose.project label onto networks it creates; dockform's own
+// CreateNetwork does not. The project lets pruning tell an active stack's
+// network from one whose stack has been removed.
+func (c *Client) ListComposeNetworks(ctx context.Context) (map[string]string, error) {
+	// "|" cannot appear in a network name or a compose project name.
+	args := []string{"network", "ls", "--format", `{{.Name}}|{{.Label "com.docker.compose.project"}}`}
 	if c.identifier != "" {
 		args = append(args, "--filter", "label=io.dockform.identifier="+c.identifier)
 	}
@@ -37,7 +39,14 @@ func (c *Client) ListComposeNetworks(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return util.SplitNonEmptyLines(out), nil
+	owned := map[string]string{}
+	for _, line := range util.SplitNonEmptyLines(out) {
+		name, project, _ := strings.Cut(line, "|")
+		if name = strings.TrimSpace(name); name != "" {
+			owned[name] = strings.TrimSpace(project)
+		}
+	}
+	return owned, nil
 }
 
 // NetworkSummary contains key metadata about a network for dashboard display.

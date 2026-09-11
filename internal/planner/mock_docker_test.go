@@ -14,7 +14,7 @@ type mockDockerClient struct {
 	volumes         []string
 	allVolumes      []string
 	networks        []string
-	composeNetworks []string // subset of networks owned by a compose stack
+	composeNetworks map[string]string // subset of networks owned by a compose stack
 	containers      []dockercli.PsBrief
 	composePsItems  []dockercli.ComposePsItem
 	volumeFiles     map[string]string            // volumeName -> file content
@@ -180,7 +180,7 @@ func (m *mockDockerClient) ListNetworks(ctx context.Context) ([]string, error) {
 	return m.networks, nil
 }
 
-func (m *mockDockerClient) ListComposeNetworks(ctx context.Context) ([]string, error) {
+func (m *mockDockerClient) ListComposeNetworks(ctx context.Context) (map[string]string, error) {
 	if m.listNetworksError != nil {
 		return nil, m.listNetworksError
 	}

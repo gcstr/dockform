@@ -146,7 +146,7 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 		for _, n := range nets {
 			existing[n] = struct{}{}
 		}
-		for _, n := range orphanNetworks(existing, desiredNetworks, composeOwned) {
+		for _, n := range orphanNetworks(existing, desiredNetworks, composeOwned, desiredComposeProjects(contextStacks)) {
 			if err := client.RemoveNetwork(ctx, n); err != nil {
 				errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "remove unmanaged network %s in context %s", n, contextName))
 			}
