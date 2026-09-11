@@ -19,6 +19,9 @@ type mockDockerClient struct {
 	// root -> project name compose resolves (default: lowercased directory name)
 	composeProjectNames    map[string]string
 	composeConfigFullError error
+	composePsError         error
+	composeConfigHashError error
+	inspectLabelsError     error
 	containers      []dockercli.PsBrief
 	composePsItems  []dockercli.ComposePsItem
 	volumeFiles     map[string]string            // volumeName -> file content
@@ -295,6 +298,9 @@ func (m *mockDockerClient) UpdateContainerLabels(ctx context.Context, containerN
 }
 
 func (m *mockDockerClient) InspectContainerLabels(ctx context.Context, containerName string, keys []string) (map[string]string, error) {
+	if m.inspectLabelsError != nil {
+		return nil, m.inspectLabelsError
+	}
 	result := make(map[string]string)
 	if containerLabels, exists := m.containerLabels[containerName]; exists {
 		for _, key := range keys {
@@ -333,10 +339,16 @@ func (m *mockDockerClient) ComposeConfigServices(ctx context.Context, root strin
 }
 
 func (m *mockDockerClient) ComposeConfigHash(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project, serviceName, identifier string, inline []string) (string, error) {
+	if m.composeConfigHashError != nil {
+		return "", m.composeConfigHashError
+	}
 	return "mock-hash", nil
 }
 
 func (m *mockDockerClient) ComposePs(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string) ([]dockercli.ComposePsItem, error) {
+	if m.composePsError != nil {
+		return nil, m.composePsError
+	}
 	return m.composePsItems, nil
 }
 

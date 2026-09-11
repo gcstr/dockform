@@ -130,6 +130,8 @@ case "$cmd" in
   network)
     if [ "$1" = "ls" ]; then echo ""; exit 0; fi ;;
   compose)
+    # config hash matches the running container's label
+    for a in "$@"; do [ "$a" = "--hash" ] && { echo "nginx deadbeef"; exit 0; }; done
     # config json
     for a in "$@"; do [ "$a" = "config" ] && saw_config=1; [ "$a" = "--format" ] && saw_format=1; [ "$a" = "json" ] && jsonfmt=1; done
     if [ "$saw_config" = "1" ] && [ "$saw_format" = "1" ] && [ "$jsonfmt" = "1" ]; then echo '{"services":{"nginx":{}}}'; exit 0; fi

@@ -30,6 +30,7 @@ case "$cmd" in
       [ "$a" = "json" ] && jsonfmt=1
       [ "$a" = "ps" ] && saw_ps=1
       [ "$a" = "up" ] && saw_up=1
+      [ "$a" = "--hash" ] && { printf 'a h1\nb h2\nc h3\n'; exit 0; }
     done
     if [ $saw_up -eq 1 ]; then
       echo "mux_client_request_session: session request failed: Session open refused by peer" 1>&2
@@ -97,9 +98,14 @@ func TestApply_SSHSessionLimit_OnComposePs_NamesServiceCount(t *testing.T) {
 		"  volume) [ \"$1\" = \"ls\" ] && { echo \"\"; exit 0; } ;;\n" +
 		"  network) [ \"$1\" = \"ls\" ] && { echo \"\"; exit 0; } ;;\n" +
 		"  compose)\n" +
-		"    for a in \"$@\"; do [ \"$a\" = \"config\" ] && sc=1; [ \"$a\" = \"json\" ] && sj=1; [ \"$a\" = \"ps\" ] && sp=1; done\n" +
+		"    for a in \"$@\"; do [ \"$a\" = \"config\" ] && sc=1; [ \"$a\" = \"json\" ] && sj=1; [ \"$a\" = \"ps\" ] && sp=1; [ \"$a\" = \"--hash\" ] && shh=1; [ \"$a\" = \"up\" ] && su=1; done\n" +
+		"    if [ \"$shh\" = \"1\" ]; then printf 'a h1\\nb h2\\nc h3\\n'; exit 0; fi\n" +
+		// Only the label verification after `up` hits the session limit, as on a
+		// real host; the plan-phase ps sees an empty stack.
+		"    if [ \"$su\" = \"1\" ]; then touch \"$0.up\"; exit 0; fi\n" +
 		"    if [ \"$sc\" = \"1\" ] && [ \"$sj\" = \"1\" ]; then echo '{\"services\":{\"a\":{},\"b\":{},\"c\":{}}}'; exit 0; fi\n" +
-		"    if [ \"$sp\" = \"1\" ]; then echo \"mux_client_request_session: session request failed: Session open refused by peer\" 1>&2; exit 1; fi\n" +
+		"    if [ \"$sp\" = \"1\" ] && [ -f \"$0.up\" ]; then echo \"mux_client_request_session: session request failed: Session open refused by peer\" 1>&2; exit 1; fi\n" +
+		"    if [ \"$sp\" = \"1\" ]; then echo '[]'; exit 0; fi\n" +
 		"    exit 0 ;;\n" +
 		"  inspect) echo '{}'; exit 0 ;;\n" +
 		"  ps) echo \"\"; exit 0 ;;\n" +

@@ -43,7 +43,7 @@ case "$cmd" in
     if [ "$sub" = "ls" ]; then exit 0; fi ;;
   compose)
     for a in "$@"; do [ "$a" = "--services" ] && { echo "nginx"; exit 0; }; done
-    if [ "$1" = "config" ] && [ "$2" = "--hash" ]; then svc="$3"; echo "$svc deadbeef"; exit 0; fi
+    for a in "$@"; do [ "$a" = "--hash" ] && { echo "nginx deadbeef"; exit 0; }; done
     if [ "$1" = "ps" ] && [ "$2" = "--format" ] && [ "$3" = "json" ]; then echo "[]"; exit 0; fi
     if [ "$1" = "up" ] && [ "$2" = "-d" ]; then exit 0; fi
     exit 0 ;;

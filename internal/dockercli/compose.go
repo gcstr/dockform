@@ -28,7 +28,13 @@ func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profil
 	// Choose compose files (overlay or user files)
 	chosenFiles := files
 	if c.identifier != "" {
-		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier, inlineEnv); err == nil && pth != "" {
+		// Without the overlay, compose would create containers missing the
+		// identifier label, invisible to destroy and prune. Refuse instead.
+		pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier, inlineEnv)
+		if err != nil {
+			return "", apperr.Wrap("dockercli.ComposeUp", apperr.External, err, "add identifier labels to the stack in %s (compose up was not run)", workingDir)
+		}
+		if pth != "" {
 			defer func() { _ = os.Remove(pth) }()
 			chosenFiles = []string{pth}
 		}
@@ -110,6 +116,10 @@ func (c *Client) ComposePs(ctx context.Context, workingDir string, files, profil
 	if err != nil {
 		return nil, err
 	}
+	// compose prints nothing at all for a project with no containers.
+	if strings.TrimSpace(out) == "" {
+		return nil, nil
+	}
 	// Try array first
 	var items []ComposePsItem
 	if err := json.Unmarshal([]byte(out), &items); err == nil {
@@ -157,7 +167,13 @@ func (c *Client) ComposeConfigHash(ctx context.Context, workingDir string, files
 	// Choose compose files (overlay or user files)
 	chosenFiles := files
 	if identifier != "" {
-		if pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, identifier, inlineEnv); err == nil && pth != "" {
+		// Hashing the unlabeled files gives a hash that never matches the labeled
+		// containers, so every service would look drifted. Fail instead.
+		pth, err := c.buildLabeledProjectTemp(ctx, workingDir, files, profiles, envFiles, projectName, identifier, inlineEnv)
+		if err != nil {
+			return "", apperr.Wrap("dockercli.ComposeConfigHash", apperr.External, err, "add identifier labels before hashing service %s", service)
+		}
+		if pth != "" {
 			defer func() { _ = os.Remove(pth) }()
 			chosenFiles = []string{pth}
 		}
