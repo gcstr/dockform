@@ -134,6 +134,12 @@ func TestActivateSSHTunnels_OpenFailureNamesContextAndCleansUp(t *testing.T) {
 	if !strings.Contains(err.Error(), "remote") || !strings.Contains(err.Error(), "Permission denied") {
 		t.Errorf("error should name the context and carry ssh's reason, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "SSH authentication failed") {
+		t.Errorf("error should classify the failure in plain words, got: %v", err)
+	}
+	if !errors.Is(err, ErrSSHTunnel) {
+		t.Error("tunnel failures must be marked ErrSSHTunnel so the CLI skips the docker hint")
+	}
 	if cfg.Contexts["remote"].Host != "" {
 		t.Errorf("host must not be rewritten after a failure, got %q", cfg.Contexts["remote"].Host)
 	}
@@ -188,5 +194,34 @@ func TestActivateSSHTunnels_NoSSHContextsInstallsNothing(t *testing.T) {
 	}
 	if v := root.Context().Value(sshTunnelKey{}); v != nil {
 		t.Error("no manager should be installed when there is nothing to tunnel")
+	}
+}
+
+// Measured: a server with AllowStreamLocalForwarding=no and a server with no
+// socket at the path both report "open failed: connect failed". If the host's
+// own docker says its socket IS at the default path, dockform cannot tell the
+// two apart and must name both causes rather than surface a bare docker EOF.
+func TestActivateSSHTunnels_ForwardingRefusedNamesBothCauses(t *testing.T) {
+	calls := stubTunnelDeps(t, map[string]string{"remote": "ssh://remote"}, nil,
+		func(string) string { return "channel 2: open failed: connect failed: open failed\n" },
+		func(context.Context, string, string) error { return errors.New("error during connect: EOF") },
+		sshtunnel.DefaultRemoteSocket)
+	root, leaf := newTunnelCmd(t)
+	cfg := &manifest.Config{Contexts: map[string]manifest.ContextConfig{"remote": {}}}
+	defer TeardownSSHTransport(root)
+
+	err := ActivateSSHTunnels(leaf, cfg)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "AllowStreamLocalForwarding") || !strings.Contains(msg, "Docker") {
+		t.Errorf("error should name both causes (forwarding disallowed, Docker not listening), got: %v", err)
+	}
+	if strings.Contains(msg, "EOF") {
+		t.Errorf("the bare docker EOF is not a useful reason here, got: %v", err)
+	}
+	if len(*calls) != 1 {
+		t.Errorf("no reopen when the host reports the default socket, got %d opens", len(*calls))
 	}
 }

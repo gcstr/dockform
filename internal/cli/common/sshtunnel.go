@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"sort"
@@ -20,6 +21,10 @@ import (
 // The dashboard uses it: it runs for as long as it is open, so it stays on the
 // multiplexer, which re-dials on its own if the connection drops.
 const AnnotationSSHTunnel = "dockform.ssh-tunnel"
+
+// ErrSSHTunnel marks errors from opening SSH tunnels, so the CLI can give an
+// SSH hint instead of a Docker daemon one.
+var ErrSSHTunnel = errors.New("ssh tunnel")
 
 // tunnelReadyTimeout bounds how long ssh gets to authenticate and bind.
 var tunnelReadyTimeout = 30 * time.Second
@@ -107,7 +112,7 @@ func ActivateSSHTunnels(cmd *cobra.Command, cfg *manifest.Config) error {
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				failed = append(failed, fmt.Sprintf("  • %s (%s): %v", name, ep.Dest, err))
+				failed = append(failed, describeTunnelFailure(name, ep, err))
 				return
 			}
 			sockets[name] = local
@@ -118,8 +123,8 @@ func ActivateSSHTunnels(cmd *cobra.Command, cfg *manifest.Config) error {
 	if len(failed) > 0 {
 		m.Close()
 		sort.Strings(failed)
-		return apperr.New("common.ActivateSSHTunnels", apperr.Unavailable,
-			"could not open an SSH tunnel:\n%s\nTo connect without a tunnel, use --ssh-transport=mux.", strings.Join(failed, "\n"))
+		return apperr.Wrap("common.ActivateSSHTunnels", apperr.Unavailable, ErrSSHTunnel,
+			"could not open an SSH tunnel:\n%s", strings.Join(failed, "\n"))
 	}
 	for name, local := range sockets {
 		cc := cfg.Contexts[name]
@@ -151,18 +156,37 @@ func openChecked(ctx context.Context, m *sshtunnel.Manager, name string, ep ssht
 	if !awaitRemoteSocketMissing(tun) {
 		return checkErr
 	}
+	// ssh reports the same "open failed: connect failed" whether sshd forbids
+	// socket forwarding or nothing listens at the path (measured), so ask the
+	// host's own docker where its socket is before deciding which.
 	tun.Close()
 	remote, err := queryRemoteSocket(ctx, ep)
-	if err != nil {
-		return fmt.Errorf("docker is not listening at %s on the host, and its socket path could not be looked up: %w", sshtunnel.DefaultRemoteSocket, err)
-	}
-	if remote == sshtunnel.DefaultRemoteSocket {
-		return checkErr
+	if err != nil || remote == sshtunnel.DefaultRemoteSocket {
+		return errForwardRefused(sshtunnel.DefaultRemoteSocket)
 	}
 	if _, err := openTunnel(ctx, m, ep, local, remote); err != nil {
 		return err
 	}
-	return checkTunnel(ctx, name, local)
+	if err := checkTunnel(ctx, name, local); err != nil {
+		return errForwardRefused(remote)
+	}
+	return nil
+}
+
+// errForwardRefused names both causes of a refused forward, which ssh cannot
+// tell apart from the client side.
+func errForwardRefused(path string) error {
+	return fmt.Errorf("the host refused to connect the tunnel to %s: either sshd disallows socket forwarding (AllowStreamLocalForwarding no) or Docker is not listening there", path)
+}
+
+// describeTunnelFailure renders one failed context: a plain-language reason
+// when ssh's output is recognised, followed by the raw detail.
+func describeTunnelFailure(name string, ep sshtunnel.Endpoint, err error) string {
+	detail := err.Error()
+	if reason := sshtunnel.Reason(detail); reason != "" {
+		return fmt.Sprintf("  • %s (%s): %s\n      %s", name, ep.Dest, reason, detail)
+	}
+	return fmt.Sprintf("  • %s (%s): %s", name, ep.Dest, detail)
 }
 
 // awaitRemoteSocketMissing gives ssh a moment to report a refused forward,

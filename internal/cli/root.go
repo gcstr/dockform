@@ -26,6 +26,7 @@ import (
 	"github.com/gcstr/dockform/internal/cli/versioncmd"
 	"github.com/gcstr/dockform/internal/cli/volumecmd"
 	"github.com/gcstr/dockform/internal/logger"
+	"github.com/gcstr/dockform/internal/sshtunnel"
 	"github.com/spf13/cobra"
 )
 
@@ -200,6 +201,22 @@ func provideExternalErrorHints(err error) {
 // <image:tag> not found" style message emitted by docker/compose pulls.
 var imageRefPattern = regexp.MustCompile(`(?i)manifest for (\S+) not found`)
 
+// isTunnelSocketFailure reports a connection-level failure on a dockform tunnel
+// socket. Docker only prints the daemon address on connection errors, so gating
+// on the socket suffix keeps this off ordinary daemon errors and off the local
+// docker socket.
+func isTunnelSocketFailure(msg string) bool {
+	if !strings.Contains(msg, sshtunnel.SocketSuffix) {
+		return false
+	}
+	for _, sig := range []string{"EOF", "Cannot connect to the Docker daemon", "connection refused", "broken pipe", "connection reset"} {
+		if strings.Contains(msg, sig) {
+			return true
+		}
+	}
+	return false
+}
+
 // isSSHTransportRefusal reports whether stderr carries one of the signatures ssh
 // emits when the far end drops or refuses the connection outright. These are
 // ambiguous by nature: a host that is down and a host shedding connections look
@@ -230,6 +247,9 @@ func composeStderrHint(msg string) string {
 	lower := strings.ToLower(msg)
 
 	switch {
+	// A dockform tunnel dying mid-run is the most specific case, so it wins.
+	case isTunnelSocketFailure(msg):
+		return "The SSH tunnel to this host closed during the run, so it may be partially applied. Re-run to converge; if it keeps closing, check the connection or use --ssh-transport=mux."
 	// SSH transport limits are checked first: their stderr can also contain
 	// words like "denied" from the surrounding docker error, and a registry
 	// hint here would be actively misleading.
@@ -265,6 +285,12 @@ func composeStderrHint(msg string) string {
 	default:
 		return ""
 	}
+}
+
+// provideSSHTunnelHints points at the escape hatch when a tunnel cannot open.
+// A tunnel failure is an SSH problem, so Docker daemon hints would mislead.
+func provideSSHTunnelHints() {
+	fmt.Fprintln(os.Stderr, "\nHint: To connect without a tunnel, use --ssh-transport=mux (or DOCKFORM_SSH_TRANSPORT=mux)")
 }
 
 func provideDockerTroubleshootingHints(err error) {
@@ -324,7 +350,9 @@ func printUserFriendly(err error) {
 			fmt.Fprintln(os.Stderr, "Detail:", err)
 		}
 		// Contextual hints
-		if apperr.IsKind(err, apperr.Unavailable) {
+		if errors.Is(err, common.ErrSSHTunnel) {
+			provideSSHTunnelHints()
+		} else if apperr.IsKind(err, apperr.Unavailable) {
 			provideDockerTroubleshootingHints(err)
 		} else if apperr.IsKind(err, apperr.External) {
 			var multi *apperr.MultiError
