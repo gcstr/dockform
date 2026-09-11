@@ -22,10 +22,10 @@ type mockDockerClient struct {
 	composePsError         error
 	composeConfigHashError error
 	inspectLabelsError     error
-	containers      []dockercli.PsBrief
-	composePsItems  []dockercli.ComposePsItem
-	volumeFiles     map[string]string            // volumeName -> file content
-	containerLabels map[string]map[string]string // containerName -> labels
+	containers             []dockercli.PsBrief
+	composePsItems         []dockercli.ComposePsItem
+	volumeFiles            map[string]string            // volumeName -> file content
+	containerLabels        map[string]map[string]string // containerName -> labels
 
 	// Track operations performed
 	createdVolumes      []string
