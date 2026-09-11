@@ -31,29 +31,40 @@ func (s destroyScope) allowsStack(contextName, project string) bool {
 	if project == "" {
 		return false // orphan containers belong to no targeted stack
 	}
-	return s.projects[manifest.MakeStackKey(contextName, project)]
+	return s.projects[manifest.MakeStackKey(contextName, normalizeComposeProject(project))]
 }
 
 // newDestroyScope computes the destroy scope from a (possibly targeted) config.
 // The targeted config's Stacks/DiscoveredStacks have already been filtered by
-// ResolveTargets, so they describe exactly the stacks in scope.
-func newDestroyScope(cfg *manifest.Config) destroyScope {
+// ResolveTargets, so they describe exactly the stacks in scope. Each targeted
+// stack is matched on the compose project it actually runs under (see
+// stackComposeProject). If that cannot be resolved, destroy fails rather than
+// guess: a wrong guess removes nothing, or another stack's containers.
+func (p *Planner) newDestroyScope(ctx context.Context, cfg *manifest.Config) (destroyScope, error) {
 	if !cfg.Targeted {
-		return destroyScope{targeted: false}
+		return destroyScope{targeted: false}, nil
 	}
 	projects := make(map[string]bool)
 	for key, stack := range cfg.GetAllStacks() {
-		context, stackName, err := manifest.ParseStackKey(key)
+		contextName, _, err := manifest.ParseStackKey(key)
 		if err != nil {
 			continue
 		}
-		proj := stackName
-		if stack.Project != nil && stack.Project.Name != "" {
-			proj = stack.Project.Name
+		client := p.getClientForContext(contextName, cfg)
+		if client == nil {
+			return destroyScope{}, apperr.New("planner.newDestroyScope", apperr.Precondition, "docker client not available for context %s", contextName)
 		}
-		projects[manifest.MakeStackKey(context, proj)] = true
+		inline, err := NewServiceStateDetector(client).BuildInlineEnv(ctx, stack, cfg.Sops)
+		if err != nil {
+			return destroyScope{}, apperr.Wrap("planner.newDestroyScope", apperr.External, err, "build inline env for stack %s", key)
+		}
+		project, err := stackComposeProject(ctx, client, stack, inline)
+		if err != nil {
+			return destroyScope{}, apperr.Wrap("planner.newDestroyScope", apperr.External, err, "cannot scope destroy to stack %s: its compose project could not be resolved", key)
+		}
+		projects[manifest.MakeStackKey(contextName, project)] = true
 	}
-	return destroyScope{targeted: true, projects: projects}
+	return destroyScope{targeted: true, projects: projects}, nil
 }
 
 // BuildDestroyPlan creates a plan to destroy all managed resources.
@@ -73,14 +84,17 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 	for fsName, fs := range allFilesets {
 		volumeToFileset[fs.TargetVolume] = fsName
 	}
-	scope := newDestroyScope(&cfg)
+	scope, err := p.newDestroyScope(ctx, &cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	var mu sync.Mutex
 
 	// BuildDestroyPlan only discovers/lists resources (no mutation), so it is
 	// safe to fail fast: canceling a sibling's in-flight discovery call loses
 	// nothing.
-	err := p.ExecuteAcrossContextsMode(ctx, &cfg, FailFast, func(ctx context.Context, contextName string) error {
+	err = p.ExecuteAcrossContextsMode(ctx, &cfg, FailFast, func(ctx context.Context, contextName string) error {
 		client := p.getClientForContext(contextName, &cfg)
 		if client == nil {
 			return apperr.New("planner.BuildDestroyPlan", apperr.Precondition, "docker client not available for context %s", contextName)
@@ -209,12 +223,15 @@ func (p *Planner) DestroyWithOptions(ctx context.Context, cfg manifest.Config, o
 	for fsName, fs := range allFilesets {
 		volumeToFileset[fs.TargetVolume] = fsName
 	}
-	scope := newDestroyScope(&cfg)
+	scope, err := p.newDestroyScope(ctx, &cfg)
+	if err != nil {
+		return err
+	}
 
 	// Destroy mutates state (removes containers/networks/volumes), so contexts
 	// always run to completion: a failure on one host must never cancel
 	// in-flight teardown work on another host.
-	err := p.ExecuteAcrossContextsMode(ctx, &cfg, RunToCompletion, func(ctx context.Context, contextName string) error {
+	err = p.ExecuteAcrossContextsMode(ctx, &cfg, RunToCompletion, func(ctx context.Context, contextName string) error {
 		client := p.getClientForContext(contextName, &cfg)
 		if client == nil {
 			return apperr.New("planner.Destroy", apperr.Precondition, "docker client not available for context %s", contextName)
