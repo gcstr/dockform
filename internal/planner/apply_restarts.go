@@ -17,12 +17,12 @@ type RestartManager struct {
 
 // NewRestartManager creates a new restart manager.
 func NewRestartManager(docker DockerClient, printer ui.Printer, progress ProgressReporter) *RestartManager {
-	return &RestartManager{docker: docker, printer: printer, progress: progress}
+	return &RestartManager{docker: docker, printer: printer, progress: orNop(progress)}
 }
 
 // NewRestartManagerWithClient creates a new restart manager with a specific client.
 func NewRestartManagerWithClient(client DockerClient, printer ui.Printer, progress ProgressReporter) *RestartManager {
-	return &RestartManager{docker: client, printer: printer, progress: progress}
+	return &RestartManager{docker: client, printer: printer, progress: orNop(progress)}
 }
 
 // RestartPendingServices restarts all services queued for restart after fileset updates.
@@ -54,13 +54,20 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 				st := logger.StartStep(log, "service_restart", svc, "resource_kind", "service", "container", it.Name)
 				pr.Info("restarting service %s...", svc)
 
-				if rm.progress != nil {
-					rm.progress.SetAction("restarting service " + svc)
-				}
+				// NOTE: contextName is not in scope here — RestartPendingServices
+				// takes no contextName parameter, and apply_restarts_test.go calls
+				// it directly, so adding one is out of this task's declared scope.
+				// This ResourceRef is built with an empty Context; see
+				// task-1-report.md for the concern this raises.
+				ref := ResourceRef{Type: ResourceService, Name: svc}
+				rm.progress.Start(ref, "restarting")
 
 				if err := rm.docker.RestartContainer(ctx, it.Name); err != nil {
-					return st.Fail(apperr.Wrap("restartmanager.RestartPendingServices", apperr.External, err, "restart service %s", svc))
+					wrapped := apperr.Wrap("restartmanager.RestartPendingServices", apperr.External, err, "restart service %s", svc)
+					rm.progress.Fail(ref, wrapped)
+					return st.Fail(wrapped)
 				}
+				rm.progress.Finish(ref, "restarted")
 
 				st.OK(true)
 				break
