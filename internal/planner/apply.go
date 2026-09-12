@@ -33,6 +33,28 @@ func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *
 		"stacks", len(allStacks),
 		"filesets", len(allFilesets))
 
+	// Seed the progress view with every line the approved plan contains, across
+	// all contexts, before any work starts. Apply (the no-plan entry point)
+	// seeds nothing, so its lines arrive as discovered refs instead.
+	reporter := orNop(p.reporter)
+	if plan != nil {
+		contextNames := make([]string, 0, len(plan.ByContext))
+		for name := range plan.ByContext {
+			contextNames = append(contextNames, name)
+		}
+		sort.Strings(contextNames)
+
+		var refs []ResourceRef
+		for _, name := range contextNames {
+			cp := plan.ByContext[name]
+			if cp == nil {
+				continue
+			}
+			refs = append(refs, SeedRefs(name, cp.Resources)...)
+		}
+		reporter.Seed(refs)
+	}
+
 	// Process each context (parallel by default, sequential with --sequential).
 	// Apply mutates state (compose up, volume/network creation), so contexts
 	// always run to completion: a failure on one host must never cancel an
