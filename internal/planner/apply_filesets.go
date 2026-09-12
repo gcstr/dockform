@@ -197,7 +197,7 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 		}
 
 		// Apply ownership if configured
-		if err := fm.applyOwnership(ctx, name, fileset, diff); err != nil {
+		if err := fm.applyOwnership(ctx, contextName, name, fileset, diff); err != nil {
 			wrapped := restartColdContainersOnFailure(err)
 			fm.progress.Fail(ref, wrapped)
 			return nil, st.Fail(wrapped)

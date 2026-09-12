@@ -123,7 +123,7 @@ func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, context
 
 	// Restart services that need it
 	restartManager := NewRestartManagerWithClient(client, p.pr, progress)
-	if err := restartManager.RestartPendingServices(ctx, restartPending); err != nil {
+	if err := restartManager.RestartPendingServices(ctx, contextName, restartPending); err != nil {
 		return st.Fail(err)
 	}
 
