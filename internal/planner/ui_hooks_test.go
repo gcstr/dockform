@@ -15,13 +15,15 @@ type recordedEvent struct {
 }
 
 type recordingReporter struct {
-	mu     sync.Mutex
-	events []recordedEvent
+	mu        sync.Mutex
+	events    []recordedEvent
+	seedCalls int // number of times Seed was invoked, regardless of item count
 }
 
 func (r *recordingReporter) Seed(items []ResourceRef) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.seedCalls++
 	for _, it := range items {
 		r.events = append(r.events, recordedEvent{Kind: "seed", Ref: it})
 	}
