@@ -65,23 +65,47 @@ func TestFileLevelIndependentOfConsoleLevel(t *testing.T) {
 }
 
 func TestFileLevelDefaultsToConsoleLevel(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "run.log")
+	t.Run("debug console level lets a debug record reach the file", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "run.log")
 
-	l, closer, err := New(Options{Out: io.Discard, Level: "error", Format: "json", LogFile: path})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	l.Debug("should_not_appear")
-	if closer != nil {
-		_ = closer.Close()
-	}
+		l, closer, err := New(Options{Out: io.Discard, Level: "debug", Format: "json", LogFile: path})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		l.Debug("should_appear")
+		if closer != nil {
+			_ = closer.Close()
+		}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read log: %v", err)
-	}
-	if strings.Contains(string(data), "should_not_appear") {
-		t.Fatal("FileLevel default changed existing --log-file behaviour")
-	}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read log: %v", err)
+		}
+		if !strings.Contains(string(data), "should_appear") {
+			t.Fatalf("FileLevel did not fall back to the debug console level:\n%s", data)
+		}
+	})
+
+	t.Run("error console level keeps a debug record out of the file", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "run.log")
+
+		l, closer, err := New(Options{Out: io.Discard, Level: "error", Format: "json", LogFile: path})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		l.Debug("should_not_appear")
+		if closer != nil {
+			_ = closer.Close()
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read log: %v", err)
+		}
+		if strings.Contains(string(data), "should_not_appear") {
+			t.Fatal("FileLevel default changed existing --log-file behaviour")
+		}
+	})
 }

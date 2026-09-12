@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gcstr/dockform/internal/logger"
@@ -16,6 +17,14 @@ import (
 
 // keepRuns is how many run logs survive a prune.
 const keepRuns = 10
+
+// runLogPrefix and runLogSuffix bound the filename shape Open generates
+// (e.g. "apply-20060102-150405.log"). prune only ever counts or deletes
+// entries matching this shape, so it never touches files it does not own.
+const (
+	runLogPrefix = "apply-"
+	runLogSuffix = ".log"
+)
 
 // Handle is an open run log.
 type Handle struct {
@@ -42,7 +51,7 @@ func (h *Handle) Close() error {
 // user state directory when that is not writable. It never returns an error for
 // a location problem — only for a failure to open any log at all.
 func Open(manifestDir string) (*Handle, error) {
-	name := fmt.Sprintf("apply-%s.log", time.Now().UTC().Format("20060102-150405"))
+	name := fmt.Sprintf("%s%s%s", runLogPrefix, time.Now().UTC().Format("20060102-150405"), runLogSuffix)
 
 	primary := filepath.Join(manifestDir, ".dockform", "logs")
 	if h, err := openIn(primary, name); err == nil {
@@ -65,7 +74,7 @@ func Open(manifestDir string) (*Handle, error) {
 }
 
 func openIn(dir, name string) (*Handle, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
 	path := filepath.Join(dir, name)
@@ -85,8 +94,12 @@ func openIn(dir, name string) (*Handle, error) {
 	return &Handle{path: path, log: l, closer: closer}, nil
 }
 
-// prune deletes all but the newest keep logs. Names embed a sortable UTC
-// timestamp, so lexicographic order is chronological.
+// prune deletes all but the newest keep run logs. Names embed a sortable UTC
+// timestamp, so lexicographic order is chronological. Only entries matching
+// the shape Open generates (runLogPrefix + ... + runLogSuffix) are counted
+// or deleted; anything else in the directory is left untouched, whether it
+// sorts before the keep window (and would otherwise be deleted) or after it
+// (and would otherwise occupy a keep slot).
 func prune(dir string, keep int) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -94,9 +107,14 @@ func prune(dir string, keep int) error {
 	}
 	var names []string
 	for _, e := range entries {
-		if !e.IsDir() {
-			names = append(names, e.Name())
+		if e.IsDir() {
+			continue
 		}
+		name := e.Name()
+		if !strings.HasPrefix(name, runLogPrefix) || !strings.HasSuffix(name, runLogSuffix) {
+			continue
+		}
+		names = append(names, name)
 	}
 	if len(names) <= keep {
 		return nil
