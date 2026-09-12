@@ -3,6 +3,10 @@ package logger
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -35,5 +39,49 @@ func TestJSONConsistency(t *testing.T) {
 		if _, ok := got[k]; !ok {
 			t.Fatalf("missing key %q in %v", k, got)
 		}
+	}
+}
+
+func TestFileLevelIndependentOfConsoleLevel(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "run.log")
+
+	l, closer, err := New(Options{Out: io.Discard, Level: "error", Format: "json", LogFile: path, FileLevel: "debug"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	l.Debug("ssh_retry", "attempt", 2)
+	if closer != nil {
+		_ = closer.Close()
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if !strings.Contains(string(data), "ssh_retry") {
+		t.Fatalf("debug record missing from file sink while console level was error:\n%s", data)
+	}
+}
+
+func TestFileLevelDefaultsToConsoleLevel(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "run.log")
+
+	l, closer, err := New(Options{Out: io.Discard, Level: "error", Format: "json", LogFile: path})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	l.Debug("should_not_appear")
+	if closer != nil {
+		_ = closer.Close()
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if strings.Contains(string(data), "should_not_appear") {
+		t.Fatal("FileLevel default changed existing --log-file behaviour")
 	}
 }

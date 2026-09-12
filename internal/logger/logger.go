@@ -37,6 +37,9 @@ type Options struct {
 	NoColor bool
 	// LogFile, when set, enables an additional JSON sink written to this path.
 	LogFile string
+	// FileLevel overrides the level of the file sink. Empty means "same as
+	// Level", which is the historical behaviour of --log-file.
+	FileLevel string
 	// ReportTimestamp toggles timestamps on the primary sink. Default: true.
 	ReportTimestamp *bool
 }
@@ -80,7 +83,11 @@ func New(opts Options) (Logger, io.Closer, error) {
 			return nil, nil, err
 		}
 		fl := clog.NewWithOptions(f, clog.Options{})
-		fl.SetLevel(parseLevel(opts.Level))
+		fileLevel := opts.FileLevel
+		if strings.TrimSpace(fileLevel) == "" {
+			fileLevel = opts.Level
+		}
+		fl.SetLevel(parseLevel(fileLevel))
 		fl.SetFormatter(chooseFormatter(f, opts.Format))
 		// File logs default to no timestamps for machine parsing (unless pretty format is explicitly requested)
 		fl.SetReportTimestamp(opts.Format == "pretty" || opts.Format == "text")
