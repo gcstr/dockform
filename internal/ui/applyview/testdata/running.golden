@@ -4,8 +4,8 @@ Applying 6 changes · 1 context
   ✔ Volumes           2 created        2.0s
   ⠋ Stacks
      ⠋ linkwarden             starting…
-       · postgres               pending
-       · linkwarden             pending
+       · postgres             pending
+       · linkwarden           pending
   ⠋ Filesets
      ⠋ web_config             8/23 files
 
