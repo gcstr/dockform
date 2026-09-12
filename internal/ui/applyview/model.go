@@ -284,7 +284,3 @@ func (m Model) elapsedFor(it *Item) time.Duration {
 	}
 	return m.now().Sub(it.started)
 }
-
-// View is a placeholder so Model satisfies tea.Model; the real renderer lands in
-// the next task, which replaces this wholesale.
-func (m Model) View() string { return "" }

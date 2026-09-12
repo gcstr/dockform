@@ -134,14 +134,74 @@ func TestFinishingAStackResolvesItsServices(t *testing.T) {
 func TestFailingAStackLeavesServicesPending(t *testing.T) {
 	stack := planner.ResourceRef{Context: "ctx", Type: planner.ResourceStack, Name: "linkwarden"}
 	svc := planner.ResourceRef{Context: "ctx", Type: planner.ResourceService, Name: "postgres", Parent: "linkwarden"}
+	failErr := errors.New("compose up failed")
 
 	m := apply(New(fixedClock(time.Second)),
 		SeedMsg{Items: []planner.ResourceRef{stack, svc}},
 		StartMsg{Ref: stack, Verb: "starting"},
-		FailMsg{Ref: stack, Err: errors.New("compose up failed")},
+		FailMsg{Ref: stack, Err: failErr},
 	)
 
 	if got := m.itemFor(svc).State; got != planner.StatePending {
 		t.Fatalf("service state = %v, want StatePending", got)
+	}
+
+	// The stack's OWN line must have actually transitioned to StateFailed and
+	// carry the error — without this assertion, the whole `case FailMsg:`
+	// branch in Update could be deleted and this test would still pass.
+	stackItem := m.itemFor(stack)
+	if stackItem.State != planner.StateFailed {
+		t.Fatalf("stack state = %v, want StateFailed", stackItem.State)
+	}
+	if stackItem.Err != failErr {
+		t.Fatalf("stack err = %v, want %v", stackItem.Err, failErr)
+	}
+}
+
+// TestFinishCascadeDoesNotCrossStackOrContextBoundary guards the Finish
+// cascade (Update's `case FinishMsg` for ResourceStack) against two distinct
+// collisions it must not resolve:
+//   - a different stack in the SAME context that happens to have a
+//     same-named service ("web" under both "alpha" and "beta" in "ctx1")
+//   - the SAME stack name running in a DIFFERENT context ("shared" in both
+//     "ctx1" and "ctx2")
+//
+// ResourceRef.Context plus the loop's Parent == stack name filter exist
+// precisely so neither collision resolves a service that does not belong to
+// the stack that finished.
+func TestFinishCascadeDoesNotCrossStackOrContextBoundary(t *testing.T) {
+	alphaStack := planner.ResourceRef{Context: "ctx1", Type: planner.ResourceStack, Name: "alpha"}
+	alphaWeb := planner.ResourceRef{Context: "ctx1", Type: planner.ResourceService, Name: "web", Parent: "alpha"}
+	betaStack := planner.ResourceRef{Context: "ctx1", Type: planner.ResourceStack, Name: "beta"}
+	betaWeb := planner.ResourceRef{Context: "ctx1", Type: planner.ResourceService, Name: "web", Parent: "beta"}
+	sharedStackCtx1 := planner.ResourceRef{Context: "ctx1", Type: planner.ResourceStack, Name: "shared"}
+	sharedAppCtx1 := planner.ResourceRef{Context: "ctx1", Type: planner.ResourceService, Name: "app", Parent: "shared"}
+	sharedStackCtx2 := planner.ResourceRef{Context: "ctx2", Type: planner.ResourceStack, Name: "shared"}
+	sharedAppCtx2 := planner.ResourceRef{Context: "ctx2", Type: planner.ResourceService, Name: "app", Parent: "shared"}
+
+	m := apply(New(fixedClock(time.Second)),
+		SeedMsg{Items: []planner.ResourceRef{
+			alphaStack, alphaWeb,
+			betaStack, betaWeb,
+			sharedStackCtx1, sharedAppCtx1,
+			sharedStackCtx2, sharedAppCtx2,
+		}},
+		StartMsg{Ref: alphaStack, Verb: "starting"},
+		FinishMsg{Ref: alphaStack, Result: "started"},
+	)
+
+	if got := m.itemFor(alphaWeb).State; got != planner.StateDone {
+		t.Fatalf("alpha's own service state = %v, want StateDone", got)
+	}
+
+	pending := map[string]planner.ResourceRef{
+		"ctx1/beta's web (same context, different stack, same service name)": betaWeb,
+		"ctx1/shared's app (unrelated stack)":                                sharedAppCtx1,
+		"ctx2/shared's app (same stack name, different context)":             sharedAppCtx2,
+	}
+	for desc, ref := range pending {
+		if got := m.itemFor(ref).State; got != planner.StatePending {
+			t.Fatalf("%s state = %v, want StatePending (finish cascade crossed a boundary)", desc, got)
+		}
 	}
 }
