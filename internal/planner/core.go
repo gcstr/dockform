@@ -18,6 +18,7 @@ type Planner struct {
 	pr            ui.Printer
 	spinner       *ui.Spinner
 	spinnerPrefix string // Prefix for dynamic spinner labels (e.g., "Applying", "Destroying")
+	reporter      ProgressReporter
 	parallel      bool
 }
 
@@ -40,6 +41,13 @@ func (p *Planner) WithPrinter(pr ui.Printer) *Planner {
 func (p *Planner) WithSpinner(s *ui.Spinner, prefix string) *Planner {
 	p.spinner = s
 	p.spinnerPrefix = prefix
+	return p
+}
+
+// WithProgressReporter sets the resource-keyed progress channel used by apply.
+// A nil reporter is valid and results in no progress events.
+func (p *Planner) WithProgressReporter(r ProgressReporter) *Planner {
+	p.reporter = r
 	return p
 }
 
