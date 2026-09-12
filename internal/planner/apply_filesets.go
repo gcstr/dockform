@@ -54,6 +54,11 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 		fileset := contextFilesets[name]
 		ref := ResourceRef{Context: contextName, Type: ResourceFileset, Name: name}
 
+		// Exactly one Start per fileset, emitted before any Detail or Fail on
+		// this ref can fire. Every exit path below must reach exactly one of
+		// Finish or Fail to close out this Start.
+		fm.progress.Start(ref, "syncing")
+
 		if fileset.SourceAbs == "" {
 			err := apperr.New("filesetmanager.SyncFilesetsForContext", apperr.InvalidInput, "fileset %s: resolved source path is empty", name)
 			fm.progress.Fail(ref, err)
@@ -103,6 +108,7 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 		if local.TreeHash == remote.TreeHash {
 			st := logger.StartStep(log, "fileset_sync", name, "resource_kind", "fileset", "target_volume", fileset.TargetVolume)
 			st.OK(false) // No changes needed
+			fm.progress.Finish(ref, "up to date")
 			continue
 		}
 
@@ -120,7 +126,7 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 		// For cold mode, stop targets (if any) before syncing
 		var stoppedContainers []string
 		if isCold && len(targetServices) > 0 {
-			fm.progress.Start(ref, "stopping services")
+			fm.progress.Detail(ref, "stopping services")
 			// Get all containers and find ones matching the target services
 			items, err := fm.docker.ListComposeContainersAll(ctx)
 			if err != nil {
@@ -249,7 +255,7 @@ func (fm *FilesetManager) syncFilesetFiles(ctx context.Context, ref ResourceRef,
 	// Deterministic order for tar emission
 	sort.Strings(paths)
 
-	fm.progress.Start(ref, "syncing")
+	fm.progress.Detail(ref, "uploading files")
 
 	var buf bytes.Buffer
 	if err := util.TarFilesToWriter(fileset.SourceAbs, paths, &buf); err != nil {
