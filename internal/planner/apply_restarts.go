@@ -26,7 +26,7 @@ func NewRestartManagerWithClient(client DockerClient, printer ui.Printer, progre
 }
 
 // RestartPendingServices restarts all services queued for restart after fileset updates.
-func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPending map[string]struct{}) error {
+func (rm *RestartManager) RestartPendingServices(ctx context.Context, contextName string, restartPending map[string]struct{}) error {
 	if len(restartPending) == 0 {
 		return nil
 	}
@@ -54,12 +54,7 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 				st := logger.StartStep(log, "service_restart", svc, "resource_kind", "service", "container", it.Name)
 				pr.Info("restarting service %s...", svc)
 
-				// NOTE: contextName is not in scope here — RestartPendingServices
-				// takes no contextName parameter, and apply_restarts_test.go calls
-				// it directly, so adding one is out of this task's declared scope.
-				// This ResourceRef is built with an empty Context; see
-				// task-1-report.md for the concern this raises.
-				ref := ResourceRef{Type: ResourceService, Name: svc}
+				ref := ResourceRef{Context: contextName, Type: ResourceService, Name: svc}
 				rm.progress.Start(ref, "restarting")
 
 				if err := rm.docker.RestartContainer(ctx, it.Name); err != nil {

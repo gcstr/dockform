@@ -79,7 +79,7 @@ func TestBuildOwnershipScript_PreserveExistingTargetsOnlyChangedPaths(t *testing
 func TestApplyOwnership_SkipsWhenOwnershipMissing(t *testing.T) {
 	mockDocker := newMockDocker()
 	fm := NewFilesetManager(mockDocker, nil)
-	err := fm.applyOwnership(context.Background(), "assets", manifest.FilesetSpec{
+	err := fm.applyOwnership(context.Background(), "test-context", "assets", manifest.FilesetSpec{
 		TargetVolume: "data",
 		TargetPath:   "/app",
 		Ownership:    nil,
@@ -95,7 +95,7 @@ func TestApplyOwnership_SkipsWhenOwnershipMissing(t *testing.T) {
 func TestApplyOwnership_ReturnsErrorWhenScriptBuildFails(t *testing.T) {
 	mockDocker := newMockDocker()
 	fm := NewFilesetManager(mockDocker, nil)
-	err := fm.applyOwnership(context.Background(), "assets", manifest.FilesetSpec{
+	err := fm.applyOwnership(context.Background(), "test-context", "assets", manifest.FilesetSpec{
 		TargetVolume: "data",
 		TargetPath:   "/",
 		Ownership:    &manifest.Ownership{User: "1000"},
@@ -115,7 +115,7 @@ func TestApplyOwnership_ReturnsErrorWhenScriptExecutionFails(t *testing.T) {
 	mockDocker := newMockDocker()
 	mockDocker.runVolumeScriptError = errors.New("script failed")
 	fm := NewFilesetManager(mockDocker, nil)
-	err := fm.applyOwnership(context.Background(), "assets", manifest.FilesetSpec{
+	err := fm.applyOwnership(context.Background(), "test-context", "assets", manifest.FilesetSpec{
 		TargetVolume: "data",
 		TargetPath:   "/app",
 		Ownership:    &manifest.Ownership{User: "1000"},
