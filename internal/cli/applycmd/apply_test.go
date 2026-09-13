@@ -2,6 +2,8 @@ package applycmd_test
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -339,5 +341,35 @@ exit 0
 	}
 	if !strings.Contains(err.Error(), "prune") {
 		t.Fatalf("expected prune-related error, got: %v", err)
+	}
+}
+
+// --log-file names the destination; it must not ALSO write the default run log.
+// Silently keeping two copies of every run, one at a path the user never chose,
+// is the behaviour this overrides.
+func TestApply_LogFileOverridesTheDefaultRunLog(t *testing.T) {
+	defer clitest.WithStubDocker(t)()
+
+	manifest := clitest.BasicConfigPath(t)
+	logFile := filepath.Join(t.TempDir(), "explicit.log")
+
+	root := cli.TestNewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"apply", "--skip-confirmation", "--manifest", manifest, "--log-file", logFile})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("apply with --log-file: %v", err)
+	}
+
+	if _, err := os.Stat(logFile); err != nil {
+		t.Fatalf("the log file named by --log-file was not written: %v", err)
+	}
+	dotDockform := filepath.Join(filepath.Dir(manifest), ".dockform")
+	if _, err := os.Stat(dotDockform); err == nil {
+		t.Fatalf("--log-file was given, but %s was created too — the run log should be overridden, not duplicated", dotDockform)
+	}
+	if got := out.String(); !strings.Contains(got, logFile) {
+		t.Errorf("expected the reported log path to be the one given to --log-file; got: %s", got)
 	}
 }
