@@ -158,38 +158,48 @@ const statusColumn = len(itemIndent) + 1 /* marker */ + 1 /* space */ + itemName
 // separation stays unambiguous, which is what actually matters.
 const minStatusWidth = 14
 
-func (m Model) View() string {
-	var b strings.Builder
+// bodyLine is one rendered line of the resource list, tagged with whether it
+// belongs to work that is currently running. The height window centres on the
+// active region, so a long run shows what is happening rather than the top of a
+// list that may be a hundred lines long.
+type bodyLine struct {
+	text   string
+	active bool
+}
 
-	done, total := m.Counts()
-
-	if m.state == stateRunning {
-		contexts := m.contextCount()
-		fmt.Fprintf(&b, "Applying %d %s · %d %s\n\n",
-			total, plural(total, "change", "changes"), contexts, plural(contexts, "context", "contexts"))
-	} else {
-		fmt.Fprintf(&b, "Applied %d/%d %s in %s", done, total, plural(total, "change", "changes"), formatDuration(m.totalElapsed()))
-		if n := len(m.Failures()); n > 0 {
-			fmt.Fprintf(&b, " · %d failed", n)
-		}
-		b.WriteString("\n\n")
-	}
-
+// bodyLines renders the context/group/item lines, without the header or footer.
+func (m Model) bodyLines() []bodyLine {
+	var out []bodyLine
 	lastContext := ""
 	for _, g := range m.groups {
+		running := false
+		for _, it := range g.items {
+			if it.State == planner.StateRunning {
+				running = true
+				break
+			}
+		}
+
 		if g.Context != lastContext {
-			b.WriteString(" " + g.Context + "\n")
+			out = append(out, bodyLine{text: " " + g.Context, active: running})
 			lastContext = g.Context
 		}
 
 		if g.collapsed() {
+			if !g.started() {
+				// Not started yet: there is no result to report and no duration
+				// to show, so say how much is waiting rather than pretend.
+				out = append(out, bodyLine{text: fmt.Sprintf("  %s %-16s %2d %-10s",
+					stylePending.Render("·"), g.Title, len(g.items), "pending")})
+				continue
+			}
 			count, result, groupTotal := g.summary()
-			fmt.Fprintf(&b, "  %s %-16s %2d %-10s %8s\n",
-				styleDone.Render("✔"), g.Title, count, result, formatDuration(groupTotal))
+			out = append(out, bodyLine{text: fmt.Sprintf("  %s %-16s %2d %-10s %8s",
+				styleDone.Render("✔"), g.Title, count, result, formatDuration(groupTotal))})
 			continue
 		}
 
-		fmt.Fprintf(&b, "  %s %s\n", m.groupMarker(g), g.Title)
+		out = append(out, bodyLine{text: fmt.Sprintf("  %s %s", m.groupMarker(g), g.Title), active: running})
 		for _, it := range g.items {
 			indent := itemIndent
 			if it.Ref.Parent != "" {
@@ -202,28 +212,155 @@ func (m Model) View() string {
 			prefix := padDisplay(indent+m.marker(it)+" "+name, statusColumn)
 			status := padDisplay(m.itemStatus(it), minStatusWidth)
 			line := prefix + status + "  " + styleDim.Render(formatDuration(it.elapsed))
-			b.WriteString(strings.TrimRight(line, " ") + "\n")
+			out = append(out, bodyLine{
+				text:   strings.TrimRight(line, " "),
+				active: it.State == planner.StateRunning,
+			})
 		}
 	}
+	return out
+}
 
-	b.WriteString("\n")
+// fitBody windows lines to budget, keeping the active region visible and saying
+// how much it dropped.
+//
+// This exists because Bubble Tea's renderer keeps only the LAST height lines of
+// whatever it is handed (standard_renderer.go), silently discarding everything
+// above — on a real manifest that is the header and the first hosts, for the whole
+// early phase of a run. It is the same failure mode that keeps the PLAN output off
+// the TUI entirely (see the comment in internal/cli/applycmd/new.go).
+func fitBody(lines []bodyLine, budget int) []string {
+	if budget <= 0 {
+		return nil
+	}
+	if len(lines) <= budget {
+		out := make([]string, 0, len(lines))
+		for _, l := range lines {
+			out = append(out, l.text)
+		}
+		return out
+	}
 
+	first, last := 0, 0
+	for i, l := range lines {
+		if l.active {
+			if first == 0 && !lines[0].active {
+				first = i
+			}
+			last = i
+		}
+	}
+	if last < first {
+		last = first
+	}
+
+	// Each marker costs a line of the budget, and whether we need one depends on
+	// where the window lands — so settle the two together.
+	window := budget
+	start := 0
+	for pass := 0; pass < 3; pass++ {
+		centre := (first + last) / 2
+		start = centre - window/2
+		if start+window > len(lines) {
+			start = len(lines) - window
+		}
+		if start < 0 {
+			start = 0
+		}
+		w := budget
+		if start > 0 {
+			w--
+		}
+		if start+window < len(lines) {
+			w--
+		}
+		if w < 1 {
+			w = 1
+		}
+		if w == window {
+			break
+		}
+		window = w
+	}
+	if start+window > len(lines) {
+		window = len(lines) - start
+	}
+
+	var out []string
+	if start > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("  ↑ %d more", start)))
+	}
+	for _, l := range lines[start : start+window] {
+		out = append(out, l.text)
+	}
+	if rest := len(lines) - (start + window); rest > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("  ↓ %d more", rest)))
+	}
+	return out
+}
+
+func (m Model) View() string {
+	var head, foot strings.Builder
+
+	done, total := m.Counts()
+
+	if m.state == stateRunning {
+		contexts := m.contextCount()
+		fmt.Fprintf(&head, "Applying %d %s · %d %s\n\n",
+			total, plural(total, "change", "changes"), contexts, plural(contexts, "context", "contexts"))
+	} else {
+		fmt.Fprintf(&head, "Applied %d/%d %s in %s", done, total, plural(total, "change", "changes"), formatDuration(m.totalElapsed()))
+		if n := len(m.Failures()); n > 0 {
+			fmt.Fprintf(&head, " · %d failed", n)
+		}
+		head.WriteString("\n\n")
+	}
+
+	foot.WriteString("\n")
 	if m.state == stateFinal {
 		if failures := m.Failures(); len(failures) > 0 {
 			for _, it := range failures {
-				fmt.Fprintf(&b, "  %s %s %s/%s  %s\n",
+				fmt.Fprintf(&foot, "  %s %s %s/%s  %s\n",
 					styleFail.Render("✖"), it.Ref.Context, groupTitle(it.Ref.Type), it.Ref.Name, it.status())
 			}
-			b.WriteString("\n")
+			foot.WriteString("\n")
 		}
 		if m.logPath != "" {
-			b.WriteString("  log: " + m.logPath + "\n")
+			foot.WriteString("  log: " + m.logPath + "\n")
 		}
 	} else {
-		fmt.Fprintf(&b, " %d/%d · %s\n", done, total, formatDuration(m.totalElapsed()))
+		fmt.Fprintf(&foot, " %d/%d · %s\n", done, total, formatDuration(m.totalElapsed()))
 	}
 
+	body := m.bodyLines()
+	// The header and footer are pinned: they carry the totals and the log path,
+	// which are the last things that should fall off the screen. Only the middle
+	// is windowed. height is 0 until the first WindowSizeMsg arrives, and that
+	// means "unknown", not "zero" — render everything.
+	if m.height > 0 {
+		budget := m.height - strings.Count(head.String(), "\n") - strings.Count(foot.String(), "\n")
+		body = linesOf(fitBody(body, budget))
+	}
+
+	var b strings.Builder
+	b.WriteString(head.String())
+	for _, l := range body {
+		b.WriteString(l.text)
+		b.WriteByte('\n')
+	}
+	b.WriteString(foot.String())
+
 	return m.truncated(b.String())
+}
+
+// linesOf re-wraps plain strings as bodyLines so View's writer loop stays one
+// shape whether or not the body was windowed.
+func linesOf(texts []string) []bodyLine {
+	out := make([]bodyLine, 0, len(texts))
+	for _, t := range texts {
+		out = append(out, bodyLine{text: t})
+	}
+	return out
 }
 
 // truncated applies the same width protection to every line this view emits,

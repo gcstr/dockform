@@ -84,13 +84,23 @@ func Run(ctx context.Context, logPath string, fn func(ctx context.Context, r pla
 
 	// Initialise the model with the real terminal width so truncation is
 	// correct from the very first render, before any WindowSizeMsg arrives.
-	width, _, err := term.GetSize(int(os.Stdout.Fd()))
+	width, height, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil || width <= 0 {
 		width = 80
+	}
+	if err != nil || height <= 0 {
+		// 0 means "unknown" to the view, which then renders everything. Better to
+		// assume a small terminal than to hand Bubble Tea a frame it will silently
+		// crop from the top.
+		height = 24
 	}
 
 	m := New(nil).WithCancel(cancelCh)
 	m.width = width
+	// Seed the height too, so the very FIRST frame is already bounded. Bubble Tea
+	// sends a WindowSizeMsg of its own, but not before the first paint — and the
+	// first paint of a large manifest is precisely the tall one.
+	m.height = height
 	p := tea.NewProgram(m, tea.WithOutput(os.Stdout))
 
 	var runErr error
