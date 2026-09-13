@@ -351,12 +351,34 @@ func fitBody(lines []bodyLine, budget int) []string {
 		last = first
 	}
 
+	centre := (first + last) / 2
+
+	// Below three lines the budget cannot hold both markers AND anything to look
+	// at, so drop the markers and keep the content: a marker describing what you
+	// cannot see is worth less than the one line you can. Without this the settle
+	// loop's w<1 clamp forces a one-line window that the markers then push over
+	// budget — emitting budget+2 lines, which is the overflow this whole function
+	// exists to prevent.
+	if budget < 3 {
+		start := centre - budget/2
+		if start+budget > len(lines) {
+			start = len(lines) - budget
+		}
+		if start < 0 {
+			start = 0
+		}
+		out := make([]string, 0, budget)
+		for _, l := range lines[start : start+budget] {
+			out = append(out, l.text)
+		}
+		return out
+	}
+
 	// Each marker costs a line of the budget, and whether we need one depends on
 	// where the window lands — so settle the two together.
 	window := budget
 	start := 0
 	for pass := 0; pass < 3; pass++ {
-		centre := (first + last) / 2
 		start = centre - window/2
 		if start+window > len(lines) {
 			start = len(lines) - window
