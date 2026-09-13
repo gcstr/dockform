@@ -358,6 +358,18 @@ func (m *Model) dropItem(it *Item) {
 			g.items = append(g.items[:i], g.items[i+1:]...)
 			break
 		}
+	} // Drop the group with its last item. A voided line is usually the ONLY line
+	// in its group — an unchanged fileset is started, then voided — and leaving
+	// the husk behind rendered a phantom "Filesets  0 pending" under a repeated
+	// context header, because the empty group had been appended at discovery
+	// time, after every seeded group.
+	if len(g.items) == 0 {
+		for i, x := range m.groups {
+			if x == g {
+				m.groups = append(m.groups[:i], m.groups[i+1:]...)
+				break
+			}
+		}
 	}
 }
 

@@ -2,11 +2,13 @@ package applyview
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gcstr/dockform/internal/planner"
+	"github.com/gcstr/dockform/internal/ui"
 )
 
 // fixedClock returns a clock that advances by step on every call.
@@ -291,5 +293,66 @@ func TestOutcomesAccountForEveryCountedChange(t *testing.T) {
 	// And the failed stack is reported, without being one of the four.
 	if len(m.Failures()) != 1 {
 		t.Fatalf("expected the failed stack to still be reported, got %d failures", len(m.Failures()))
+	}
+}
+
+// Found on a real three-host apply, not by any test: unchanged filesets are
+// Started (creating a group and a discovered item) and then voided with
+// Finish(ref, ""). Dropping only the item left an empty group behind, which
+// rendered as a phantom "Filesets  0 pending" under a SECOND copy of its context
+// header — the empty group had been appended at discovery time, after every
+// seeded group, so the context's block was split in two.
+func TestVoidedLineLeavesNoEmptyGroupOrRepeatedContext(t *testing.T) {
+	var seeded []planner.ResourceRef
+	for _, c := range []string{"hetzner-one", "hetzner-three", "hetzner-two"} {
+		seeded = append(seeded, planner.ResourceRef{Context: c, Type: planner.ResourceStack, Name: "app"})
+	}
+	m := apply(New(fixedClock(time.Second)),
+		tea.WindowSizeMsg{Width: 100, Height: 40},
+		SeedMsg{Items: seeded},
+	)
+	for _, c := range []string{"hetzner-one", "hetzner-three", "hetzner-two"} {
+		st := planner.ResourceRef{Context: c, Type: planner.ResourceStack, Name: "app"}
+		m = apply(m, StartMsg{Ref: st, Verb: "starting"}, FinishMsg{Ref: st, Result: "started"})
+	}
+	// Unchanged filesets: discovered, then voided.
+	for _, c := range []string{"hetzner-three", "hetzner-two"} {
+		fs := planner.ResourceRef{Context: c, Type: planner.ResourceFileset, Name: "cfg"}
+		m = apply(m, StartMsg{Ref: fs, Verb: "syncing"}, FinishMsg{Ref: fs, Result: ""})
+	}
+
+	for _, g := range m.groups {
+		if len(g.items) == 0 {
+			t.Errorf("empty group left behind: context=%q title=%q", g.Context, g.Title)
+		}
+	}
+	out := ui.StripANSI(m.View())
+	if strings.Contains(out, "0 pending") {
+		t.Errorf("phantom empty group rendered:\n%s", out)
+	}
+	for _, c := range []string{"hetzner-one", "hetzner-three", "hetzner-two"} {
+		if n := strings.Count(out, " "+c+"\n"); n != 1 {
+			t.Errorf("context %q header appears %d times, want exactly 1:\n%s", c, n, out)
+		}
+	}
+}
+
+// A group discovered late for a context that already has one must join that
+// context's block rather than repeating its header lower down — which is what
+// a restarted service will do.
+func TestLateGroupJoinsItsContextBlock(t *testing.T) {
+	vol := planner.ResourceRef{Context: "alpha", Type: planner.ResourceVolume, Name: "data"}
+	other := planner.ResourceRef{Context: "beta", Type: planner.ResourceVolume, Name: "data"}
+	m := apply(New(fixedClock(time.Second)),
+		tea.WindowSizeMsg{Width: 100, Height: 40},
+		SeedMsg{Items: []planner.ResourceRef{vol, other}},
+	)
+	// A restart discovered on alpha AFTER beta's group exists.
+	late := planner.ResourceRef{Context: "alpha", Type: planner.ResourceService, Name: "web"}
+	m = apply(m, StartMsg{Ref: late, Verb: "restarting"})
+
+	out := ui.StripANSI(m.View())
+	if n := strings.Count(out, " alpha\n"); n != 1 {
+		t.Fatalf("context alpha header appears %d times, want 1:\n%s", n, out)
 	}
 }
