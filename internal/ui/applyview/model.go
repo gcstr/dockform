@@ -59,9 +59,33 @@ func (g *Group) anyFailed() bool {
 	return false
 }
 
-// collapsed reports whether the group renders as a single summary line. A group
-// holding a failure never collapses, so a failure cannot hide behind a summary.
-func (g *Group) collapsed() bool { return g.terminal() && !g.anyFailed() }
+// started reports whether any line in the group has left StatePending.
+func (g *Group) started() bool {
+	for _, it := range g.items {
+		if it.State != planner.StatePending {
+			return true
+		}
+	}
+	return false
+}
+
+// collapsed reports whether the group renders as a single summary line.
+//
+// A group collapses at BOTH ends of its life: before anything in it has started,
+// and once everything has finished. The spec's own mock shows the first case
+// (". Filesets  3 pending") and it is what keeps the frame inside the terminal —
+// with only the finished case, every group of every context is fully expanded at
+// seed time, which on a real manifest is ~92 lines against a 24-line terminal, and
+// Bubble Tea keeps only the LAST height lines.
+//
+// A group holding a failure never collapses at either end, so a failure cannot
+// hide behind a summary.
+func (g *Group) collapsed() bool {
+	if g.anyFailed() {
+		return false
+	}
+	return !g.started() || g.terminal()
+}
 
 type viewState int
 
@@ -73,6 +97,7 @@ const (
 // Model is the apply view. It is a Bubble Tea model rendered inline.
 type Model struct {
 	width    int
+	height   int
 	groups   []*Group
 	index    map[planner.ResourceRef]*Item
 	frame    int
@@ -203,6 +228,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
 		return m, nil
 
 	case SeedMsg:
