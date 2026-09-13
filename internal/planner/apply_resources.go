@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"sort"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/logger"
@@ -72,8 +73,14 @@ func (rm *ResourceManager) EnsureVolumesExistForContext(ctx context.Context, cfg
 		return nil, apperr.Wrap("resourcemanager.EnsureVolumesExistForContext", apperr.External, err, "list all volumes")
 	}
 
-	// Create missing volumes
+	// Create missing volumes in deterministic order.
+	volumeNames := make([]string, 0, len(desiredVolumes))
 	for name := range desiredVolumes {
+		volumeNames = append(volumeNames, name)
+	}
+	sort.Strings(volumeNames)
+
+	for _, name := range volumeNames {
 		if _, unlabeled := unlabeledVolumes[name]; unlabeled {
 			log.Warn("volume_exists_unlabeled", "volume", name)
 			st := logger.StartStep(log, "volume_ensure", name, "resource_kind", "volume")
@@ -119,8 +126,14 @@ func (rm *ResourceManager) EnsureNetworksExistForContext(ctx context.Context, cf
 		return nil
 	}
 
-	// Get desired networks for this context
+	// Get desired networks for this context, in deterministic order.
+	netNames := make([]string, 0, len(contextConfig.Networks))
 	for netName := range contextConfig.Networks {
+		netNames = append(netNames, netName)
+	}
+	sort.Strings(netNames)
+
+	for _, netName := range netNames {
 		if _, exists := existingNetworks[netName]; exists {
 			continue // Already exists
 		}

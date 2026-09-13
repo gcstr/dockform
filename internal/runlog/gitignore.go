@@ -20,7 +20,11 @@ func EnsureGitignored(dir string) (bool, error) {
 		return false, err
 	}
 	for _, line := range strings.Split(string(existing), "\n") {
-		if strings.TrimSpace(line) == entry {
+		// Git strips only TRAILING whitespace from a gitignore line, not
+		// leading: a hand-indented "  .dockform/" does not ignore anything to
+		// git, so TrimSpace here would wrongly treat it as a match, decline to
+		// append a working entry, and leave the directory genuinely unignored.
+		if strings.TrimRight(line, " \t\r") == entry {
 			return false, nil
 		}
 	}

@@ -49,9 +49,19 @@ func (m Model) marker(it *Item) string {
 	}
 }
 
+// formatDuration renders elapsed time for a line. Anything under 50ms is
+// dropped entirely rather than shown: at that resolution it is noise, not
+// information, and a bare "0ms" would read no better than the "0.0s" this
+// exists to avoid. Between 50ms and 1s it renders in whole milliseconds
+// (e.g. "40ms") since a tenth-of-a-second reading has no useful precision
+// there. Both applyview's own renderer and Plain (which reuses this func)
+// share the same thresholds, so the two never disagree on the same run.
 func formatDuration(d time.Duration) string {
-	if d <= 0 {
+	if d < 50*time.Millisecond {
 		return ""
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
 	}
 	if d < time.Minute {
 		return fmt.Sprintf("%.1fs", d.Seconds())
@@ -469,9 +479,13 @@ func (m Model) truncated(out string) string {
 	if m.width > 1 {
 		lines := strings.Split(out, "\n")
 		for i, line := range lines {
+			// The tail is "…" rather than "" so a cut line is visibly cut — an
+			// empty tail just stops mid-word (e.g. a failure cause truncated to
+			// "...image pull fa") with nothing to tell the reader more was there.
 			// No line in this view is meant to end in a space; when truncation
-			// lands inside a column's padding it otherwise leaves one behind.
-			lines[i] = strings.TrimRight(ansi.Truncate(line, m.width-1, ""), " ")
+			// lands inside a column's padding it otherwise leaves one behind
+			// before the ellipsis.
+			lines[i] = strings.TrimRight(ansi.Truncate(line, m.width-1, "…"), " ")
 		}
 		out = strings.Join(lines, "\n")
 	}
