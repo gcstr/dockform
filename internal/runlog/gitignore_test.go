@@ -115,6 +115,42 @@ func TestIsIgnoredInWorkTreeWithEntry(t *testing.T) {
 	}
 }
 
+// TestEnsureGitignoredLeadingWhitespaceIsNotAMatch pins the fix for a
+// caller-facing bug: git strips only TRAILING whitespace from a gitignore
+// line, not leading, so a hand-indented "  .dockform/" does not ignore
+// anything to git. Before the fix, strings.TrimSpace made EnsureGitignored
+// think such a line already covered the entry, so it declined to append a
+// working one and the directory was left genuinely unignored.
+func TestEnsureGitignoredLeadingWhitespaceIsNotAMatch(t *testing.T) {
+	requireGit(t)
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-q")
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("node_modules\n  .dockform/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	added, err := EnsureGitignored(dir)
+	if err != nil {
+		t.Fatalf("EnsureGitignored: %v", err)
+	}
+	if !added {
+		t.Fatal("expected a real entry to be appended: the existing line is indented and does not match git's own semantics")
+	}
+
+	ignored, err := IsIgnored(dir)
+	if err != nil {
+		t.Fatalf("IsIgnored: %v", err)
+	}
+	if !ignored {
+		t.Fatal("expected the directory to actually be ignored after EnsureGitignored appended a working entry")
+	}
+
+	cmd := exec.Command("git", "-C", dir, "check-ignore", "-q", ".dockform/")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git check-ignore reports .dockform/ is NOT ignored despite the appended entry: %v", err)
+	}
+}
+
 func requireGit(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {

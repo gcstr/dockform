@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"sort"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/logger"
@@ -45,8 +46,16 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, contextNam
 		pr = ui.NoopPrinter{}
 	}
 
-	// Restart each pending service
+	// Restart each pending service in deterministic order: restartPending is a
+	// map, and iterating it directly would make restart lines appear in a
+	// different order every run.
+	svcNames := make([]string, 0, len(restartPending))
 	for svc := range restartPending {
+		svcNames = append(svcNames, svc)
+	}
+	sort.Strings(svcNames)
+
+	for _, svc := range svcNames {
 		found := false
 		for _, it := range items {
 			if it.Service == svc {

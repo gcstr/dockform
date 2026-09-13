@@ -36,7 +36,7 @@ func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *
 	// Seed the progress view with every line the approved plan contains, across
 	// all contexts, before any work starts. Apply (the no-plan entry point)
 	// seeds nothing, so its lines arrive as discovered refs instead.
-	reporter := orNop(p.reporter)
+	progress := orNop(p.reporter)
 	if plan != nil {
 		contextNames := make([]string, 0, len(plan.ByContext))
 		for name := range plan.ByContext {
@@ -52,7 +52,7 @@ func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *
 			}
 			refs = append(refs, SeedRefs(name, cp.Resources)...)
 		}
-		reporter.Seed(refs)
+		progress.Seed(refs)
 	}
 
 	// Process each context (parallel by default, sequential with --sequential).

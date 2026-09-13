@@ -3,12 +3,12 @@ Applied 3/6 changes in 8.0s · 1 failed
  hetzner-two
   ✔ Volumes          2 created       3.0s
   ✖ Stacks
-     ✖ linkwarden             compose up linkwarden: image pull failed
+     ✖ linkwarden             compose up linkwarden: image pull failed…
        · postgres             pending
        · linkwarden           pending
   ■ Filesets
      ■ web_config             interrupted
 
-  ✖ hetzner-two Stacks/linkwarden  compose up linkwarden: image pull fa
+  ✖ hetzner-two Stacks/linkwarden  compose up linkwarden: image pull f…
 
   log: .dockform/logs/apply-20260912-180000.log
