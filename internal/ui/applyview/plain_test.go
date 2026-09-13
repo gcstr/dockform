@@ -194,3 +194,14 @@ func TestPlainSuccessfulStackResolvesItsServices(t *testing.T) {
 		t.Errorf("completion count wrong; want 3 of 4:\n%s", out)
 	}
 }
+
+// Found by a live apply, not by a test: the TTY header pluralised but the plain
+// renderer's seed line said "Applying 1 changes".
+func TestPlainSeedPluralisesOneChange(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewPlain(&buf, fixedClock(time.Second))
+	p.Seed([]planner.ResourceRef{{Context: "c", Type: planner.ResourceVolume, Name: "only"}})
+	if got := buf.String(); !strings.Contains(got, "Applying 1 change\n") {
+		t.Fatalf("want \"Applying 1 change\", got: %q", got)
+	}
+}

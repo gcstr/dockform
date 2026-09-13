@@ -77,7 +77,7 @@ func TestRunOrPlainUsesPlainPathWhenRequested(t *testing.T) {
 	// Regression guard for Finding I7: the plain path must write to the
 	// caller's writer, not a hardcoded os.Stdout — otherwise output silently
 	// bypasses whatever buffer a caller (e.g. a CLI test) is watching.
-	if !strings.Contains(buf.String(), "Applying 1 changes") {
+	if !strings.Contains(buf.String(), "Applying 1 change") {
 		t.Fatalf("expected plain output on the caller's writer, got: %q", buf.String())
 	}
 }
