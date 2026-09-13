@@ -225,7 +225,7 @@ func TestApply_SkipConfirmation_BypassesPrompt(t *testing.T) {
 	// hardcoded os.Stdout, so this text never showed up in `out` even though
 	// apply had genuinely run and finished — precisely how a stack reporting
 	// its services as "not applied" shipped invisible to the test suite.
-	if !strings.Contains(got, "Applying") || !strings.Contains(got, "changes applied") {
+	if !strings.Contains(got, "Applying") || !strings.Contains(got, "resources applied") {
 		t.Fatalf("expected apply's progress output on the command's writer; got: %s", got)
 	}
 }

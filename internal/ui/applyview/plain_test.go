@@ -156,7 +156,7 @@ func TestPlainDiscoveredNoOpDoesNotInflateTotals(t *testing.T) {
 	if !strings.Contains(out, "\nc fileset unchanged: syncing\n") {
 		t.Fatalf("expected the Start line for the discovered ref to still print — reading its state is real work:\n%s", out)
 	}
-	if !strings.Contains(out, "1 of 1 changes applied, 0 failed") {
+	if !strings.Contains(out, "1 of 1 resource applied, 0 failed") {
 		t.Fatalf("a discovered no-op inflated the summary totals:\n%s", out)
 	}
 	if strings.Contains(out, "not applied") || strings.Contains(out, "interrupted") {
@@ -190,18 +190,18 @@ func TestPlainSuccessfulStackResolvesItsServices(t *testing.T) {
 	if !strings.Contains(out, "not applied hetzner-two service authelia/postgres") {
 		t.Errorf("a same-named service under another stack should NOT have resolved:\n%s", out)
 	}
-	if !strings.Contains(out, "3 of 4 changes applied, 0 failed") {
+	if !strings.Contains(out, "3 of 4 resources applied, 0 failed") {
 		t.Errorf("completion count wrong; want 3 of 4:\n%s", out)
 	}
 }
 
 // Found by a live apply, not by a test: the TTY header pluralised but the plain
-// renderer's seed line said "Applying 1 changes".
-func TestPlainSeedPluralisesOneChange(t *testing.T) {
+// renderer's seed line said "Applying 1 resources".
+func TestPlainSeedPluralisesOneResource(t *testing.T) {
 	var buf bytes.Buffer
 	p := NewPlain(&buf, fixedClock(time.Second))
 	p.Seed([]planner.ResourceRef{{Context: "c", Type: planner.ResourceVolume, Name: "only"}})
-	if got := buf.String(); !strings.Contains(got, "Applying 1 change\n") {
-		t.Fatalf("want \"Applying 1 change\", got: %q", got)
+	if got := buf.String(); !strings.Contains(got, "Applying 1 resource\n") {
+		t.Fatalf("want \"Applying 1 resource\", got: %q", got)
 	}
 }

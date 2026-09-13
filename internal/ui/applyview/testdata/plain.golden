@@ -1,4 +1,4 @@
-Applying 5 changes
+Applying 5 resources
 hetzner-one fileset web_config: syncing
 hetzner-two volume data: creating
 hetzner-two fileset web_config: syncing
@@ -11,7 +11,7 @@ hetzner-two fileset web_config: synced 40 files (4.0s)
 hetzner-one network proxy: starting
 hetzner-two stack linkwarden: FAILED: compose up linkwarden: image pull failed (3.0s)
 
-3 of 5 changes applied, 1 failed
+3 of 5 resources applied, 1 failed
   FAILED hetzner-two stack linkwarden: compose up linkwarden: image pull failed
   interrupted hetzner-one network proxy
   log: .dockform/logs/apply-20260912-180000.log

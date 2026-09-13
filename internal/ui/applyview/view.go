@@ -418,6 +418,13 @@ func fitBody(lines []bodyLine, budget int) []string {
 	return out
 }
 
+// The view counts RESOURCES, deliberately not the "changes" the plan footer
+// counts. A fileset is one line here — 40 changed files sync as a single tar
+// extract, so there is no state where "12 of 40 files are applied" — while the
+// plan counts each file, which is the right answer to "what will change" before
+// you approve it. The two numbers measure different things on purpose; naming
+// them differently is what stops "Plan: 46 to create" / "Applying 7 changes"
+// from reading as a bug.
 func (m Model) View() string {
 	var head, foot strings.Builder
 
@@ -426,9 +433,9 @@ func (m Model) View() string {
 	if m.state == stateRunning {
 		contexts := m.contextCount()
 		fmt.Fprintf(&head, "Applying %d %s · %d %s\n\n",
-			total, plural(total, "change", "changes"), contexts, plural(contexts, "context", "contexts"))
+			total, plural(total, "resource", "resources"), contexts, plural(contexts, "context", "contexts"))
 	} else {
-		fmt.Fprintf(&head, "Applied %d/%d %s in %s", done, total, plural(total, "change", "changes"), formatDuration(m.totalElapsed()))
+		fmt.Fprintf(&head, "Applied %d/%d %s in %s", done, total, plural(total, "resource", "resources"), formatDuration(m.totalElapsed()))
 		if n := len(m.Failures()); n > 0 {
 			fmt.Fprintf(&head, " · %d failed", n)
 		}
