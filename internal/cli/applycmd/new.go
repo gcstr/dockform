@@ -2,9 +2,15 @@ package applycmd
 
 import (
 	"context"
+	"os"
+	"strings"
 
 	"github.com/gcstr/dockform/internal/cli/common"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/planner"
+	"github.com/gcstr/dockform/internal/runlog"
+	"github.com/gcstr/dockform/internal/ui/applyview"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +26,43 @@ func New() *cobra.Command {
 			ctx, err := common.SetupCLIContext(cmd)
 			if err != nil {
 				return err
+			}
+
+			// Write a full run log: after a failure there is no second chance to
+			// ask for one. Fan it into the context logger so everything apply logs —
+			// BuildPlan below included — lands in the file, on top of whatever the
+			// console sink is already doing.
+			//
+			// --log-file OVERRIDES this rather than adding to it. Naming a path means
+			// "put the log there"; writing a second copy the user never asked for, at
+			// a path they have to discover, would duplicate every run forever. The
+			// root command already wires --log-file into the logger, so when it is set
+			// we stand aside and simply report that path.
+			logFileFlag, _ := cmd.Flags().GetString("log-file")
+			runLogPath := strings.TrimSpace(logFileFlag)
+			if runLogPath == "" {
+				rl, rlErr := runlog.Open(ctx.Config.BaseDir)
+				if rlErr != nil {
+					ctx.Printer.Warn("could not open a run log: %v", rlErr)
+				} else {
+					defer func() { _ = rl.Close() }()
+					runLogPath = rl.Path()
+					if w := rl.Warning(); w != "" {
+						ctx.Printer.Warn("%s", w)
+					} else if ignored, err := runlog.IsIgnored(ctx.Config.BaseDir); err == nil && !ignored {
+						// Only warn when the log actually landed under the manifest
+						// directory; rl.Warning() above means it went to the fallback
+						// dir instead, so nothing here is at risk of being committed.
+						ctx.Printer.Warn("%s", ".dockform/ is not gitignored; run logs may be committed. Add .dockform/ to .gitignore")
+					}
+					ctx.Ctx = logger.WithContext(ctx.Ctx, logger.Fanout(logger.FromContext(ctx.Ctx), rl.Logger()))
+					// cmd.Context() is what every RunWithRollingOrDirect/RunOrPlain
+					// call below threads through as runCtx, and WithRunContext then
+					// swaps it into ctx.Ctx for the call's duration — so the fan-out
+					// above only takes effect once it is also the command's own
+					// context, not just this CLIContext's copy of it.
+					cmd.SetContext(ctx.Ctx)
+				}
 			}
 
 			// Build the plan with rolling logs (or direct when verbose). The rolling
@@ -74,13 +117,22 @@ func New() *cobra.Command {
 				return nil
 			}
 
-			// Apply + Prune with rolling logs (or direct when verbose)
+			// Apply + Prune, showing the per-resource status view inline (or the
+			// plain non-interactive path when stdout isn't a terminal, or
+			// --verbose was passed). Mirrors RunWithRollingOrDirect's own TTY
+			// check, since this no longer goes through it.
+			useTUI := false
+			if f, ok := cmd.OutOrStdout().(*os.File); ok && isatty.IsTerminal(f.Fd()) {
+				useTUI = true
+			}
+			plain := !useTUI || verbose
+
 			strictPrune, _ := cmd.Flags().GetBool("strict-prune")
 			verbosePruneErrors, _ := cmd.Flags().GetBool("verbose-prune-errors")
-			_, _, err = common.RunWithRollingOrDirect(cmd, verbose, func(runCtx context.Context) (string, error) {
-				err := ctx.WithRunContext(runCtx, func() error {
+			err = applyview.RunOrPlain(cmd.Context(), cmd.OutOrStdout(), plain, runLogPath, func(runCtx context.Context, reporter planner.ProgressReporter) error {
+				return ctx.WithRunContext(runCtx, func() error {
 					// Pass the pre-built plan to avoid redundant state detection
-					if err := ctx.ApplyPlanWithContext(builtPlan); err != nil {
+					if err := ctx.ApplyPlanWithReporter(builtPlan, reporter); err != nil {
 						return err
 					}
 					// Also pass the plan to prune to reuse execution context
@@ -89,10 +141,6 @@ func New() *cobra.Command {
 						VerboseErrors: verbosePruneErrors,
 					})
 				})
-				if err != nil {
-					return "", err
-				}
-				return "│ Done.", nil
 			})
 			if err != nil {
 				return err

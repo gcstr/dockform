@@ -133,7 +133,7 @@ func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
 
 			restartManager := NewRestartManager(mockDocker, nil, nil)
 
-			err := restartManager.RestartPendingServices(context.Background(), tt.pendingServices)
+			err := restartManager.RestartPendingServices(context.Background(), "test-context", tt.pendingServices)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

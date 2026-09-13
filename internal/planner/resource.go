@@ -28,6 +28,7 @@ const (
 	ResourceContainer ResourceType = "container"
 	ResourceFileset   ResourceType = "fileset"
 	ResourceFile      ResourceType = "file" // Individual file in a fileset
+	ResourceStack     ResourceType = "stack"
 )
 
 // Resource represents a single infrastructure resource with its planned action

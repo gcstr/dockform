@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/runlog"
 	"github.com/spf13/cobra"
 )
 
@@ -49,6 +50,19 @@ The generated file contains examples and comments explaining all available confi
 			// Write template to file
 			if err := os.WriteFile(configPath, []byte(dockformTemplate), 0644); err != nil {
 				return apperr.Wrap("cli.init", apperr.Internal, err, "write dockform.yml")
+			}
+
+			// Keep the always-on apply run log (internal/runlog) out of git by
+			// default: a secret that slips past redaction and into the log file
+			// should not also end up committed.
+			if added, err := runlog.EnsureGitignored(targetDir); err != nil {
+				if _, werr := fmt.Fprintf(cmd.ErrOrStderr(), "warn: could not update .gitignore: %v\n", err); werr != nil {
+					return werr
+				}
+			} else if added {
+				if _, werr := fmt.Fprintln(cmd.OutOrStdout(), "Added .dockform/ to .gitignore"); werr != nil {
+					return werr
+				}
 			}
 
 			// Success message

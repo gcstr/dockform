@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"sort"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/logger"
@@ -17,16 +18,16 @@ type RestartManager struct {
 
 // NewRestartManager creates a new restart manager.
 func NewRestartManager(docker DockerClient, printer ui.Printer, progress ProgressReporter) *RestartManager {
-	return &RestartManager{docker: docker, printer: printer, progress: progress}
+	return &RestartManager{docker: docker, printer: printer, progress: orNop(progress)}
 }
 
 // NewRestartManagerWithClient creates a new restart manager with a specific client.
 func NewRestartManagerWithClient(client DockerClient, printer ui.Printer, progress ProgressReporter) *RestartManager {
-	return &RestartManager{docker: client, printer: printer, progress: progress}
+	return &RestartManager{docker: client, printer: printer, progress: orNop(progress)}
 }
 
 // RestartPendingServices restarts all services queued for restart after fileset updates.
-func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPending map[string]struct{}) error {
+func (rm *RestartManager) RestartPendingServices(ctx context.Context, contextName string, restartPending map[string]struct{}) error {
 	if len(restartPending) == 0 {
 		return nil
 	}
@@ -45,8 +46,16 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 		pr = ui.NoopPrinter{}
 	}
 
-	// Restart each pending service
+	// Restart each pending service in deterministic order: restartPending is a
+	// map, and iterating it directly would make restart lines appear in a
+	// different order every run.
+	svcNames := make([]string, 0, len(restartPending))
 	for svc := range restartPending {
+		svcNames = append(svcNames, svc)
+	}
+	sort.Strings(svcNames)
+
+	for _, svc := range svcNames {
 		found := false
 		for _, it := range items {
 			if it.Service == svc {
@@ -54,13 +63,15 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, restartPen
 				st := logger.StartStep(log, "service_restart", svc, "resource_kind", "service", "container", it.Name)
 				pr.Info("restarting service %s...", svc)
 
-				if rm.progress != nil {
-					rm.progress.SetAction("restarting service " + svc)
-				}
+				ref := ResourceRef{Context: contextName, Type: ResourceService, Name: svc}
+				rm.progress.Start(ref, "restarting")
 
 				if err := rm.docker.RestartContainer(ctx, it.Name); err != nil {
-					return st.Fail(apperr.Wrap("restartmanager.RestartPendingServices", apperr.External, err, "restart service %s", svc))
+					wrapped := apperr.Wrap("restartmanager.RestartPendingServices", apperr.External, err, "restart service %s", svc)
+					rm.progress.Fail(ref, wrapped)
+					return st.Fail(wrapped)
 				}
+				rm.progress.Finish(ref, "restarted")
 
 				st.OK(true)
 				break
