@@ -145,3 +145,62 @@ func TestInitCmd_NonExistentDirectory(t *testing.T) {
 		t.Fatalf("expected 'does not exist' error message, got err: %q, errOut: %q", errStr, errOutput)
 	}
 }
+
+func TestInitCmd_AddsGitignoreEntry(t *testing.T) {
+	tempDir := t.TempDir()
+
+	root := cli.TestNewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"init", tempDir})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("init command failed: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "Added .dockform/ to .gitignore") {
+		t.Fatalf("expected a message about the added .gitignore entry, got: %q", out.String())
+	}
+
+	data, err := os.ReadFile(filepath.Join(tempDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	if !strings.Contains(string(data), ".dockform/") {
+		t.Fatalf(".gitignore missing the entry:\n%s", data)
+	}
+}
+
+func TestInitCmd_PreservesExistingGitignore(t *testing.T) {
+	tempDir := t.TempDir()
+	gitignorePath := filepath.Join(tempDir, ".gitignore")
+	if err := os.WriteFile(gitignorePath, []byte("node_modules"), 0o644); err != nil {
+		t.Fatalf("seed .gitignore: %v", err)
+	}
+
+	root := cli.TestNewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"init", tempDir})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("init command failed: %v", err)
+	}
+
+	data, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "node_modules\n") {
+		t.Fatalf("existing entry was corrupted:\n%q", content)
+	}
+	if !strings.Contains(content, ".dockform/") {
+		t.Fatalf("missing the new entry:\n%q", content)
+	}
+	if strings.Contains(content, "node_modules.dockform") {
+		t.Fatalf("entries were joined:\n%q", content)
+	}
+}

@@ -40,6 +40,11 @@ func New() *cobra.Command {
 				runLogPath = rl.Path()
 				if w := rl.Warning(); w != "" {
 					ctx.Printer.Warn("%s", w)
+				} else if ignored, err := runlog.IsIgnored(ctx.Config.BaseDir); err == nil && !ignored {
+					// Only warn when the log actually landed under the manifest
+					// directory; rl.Warning() above means it went to the fallback
+					// dir instead, so nothing here is at risk of being committed.
+					ctx.Printer.Warn("%s", ".dockform/ is not gitignored; run logs may be committed. Add .dockform/ to .gitignore")
 				}
 				ctx.Ctx = logger.WithContext(ctx.Ctx, logger.Fanout(logger.FromContext(ctx.Ctx), rl.Logger()))
 				// cmd.Context() is what every RunWithRollingOrDirect/RunOrPlain
