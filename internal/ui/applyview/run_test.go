@@ -3,6 +3,7 @@ package applyview
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"sync"
 	"testing"
 
@@ -80,5 +81,88 @@ func TestRunOrPlainPropagatesError(t *testing.T) {
 	})
 	if !errors.Is(err, want) {
 		t.Fatalf("got %v, want %v", err, want)
+	}
+}
+
+// resolveRunError picks what Run returns when the work finishes, mirroring
+// ui.RunWithRollingLog's precedence: a cancelled context always wins, because
+// the work's own error on a cancelled run is usually an opaque "signal:
+// killed" *exec.ExitError from a subprocess SIGKILLed by exec.CommandContext
+// (see internal/planner/orchestrate.go's classifyAborted doc), which carries
+// no context.Canceled anywhere in its chain. Returning that verbatim would
+// defeat root.Execute's errors.Is(err, context.Canceled) check.
+func TestResolveRunError(t *testing.T) {
+	ctxErr := context.Canceled
+	killedErr := &exec.ExitError{}
+	plainKilled := errors.New("signal: killed")
+	progErr := errors.New("program error")
+
+	tests := []struct {
+		name    string
+		ctxErr  error
+		workErr error
+		runErr  error
+		want    error
+	}{
+		{
+			name:    "cancelled context with exec.ExitError work error",
+			ctxErr:  ctxErr,
+			workErr: killedErr,
+			runErr:  nil,
+			want:    ctxErr,
+		},
+		{
+			name:    "cancelled context with plain signal-killed work error",
+			ctxErr:  ctxErr,
+			workErr: plainKilled,
+			runErr:  nil,
+			want:    ctxErr,
+		},
+		{
+			name:    "cancelled context with nil work error",
+			ctxErr:  ctxErr,
+			workErr: nil,
+			runErr:  nil,
+			want:    ctxErr,
+		},
+		{
+			name:    "no cancellation, work error returned verbatim",
+			ctxErr:  nil,
+			workErr: progErr,
+			runErr:  nil,
+			want:    progErr,
+		},
+		{
+			name:    "no cancellation, no work error, program error returned",
+			ctxErr:  nil,
+			workErr: nil,
+			runErr:  progErr,
+			want:    progErr,
+		},
+		{
+			name:    "all nil",
+			ctxErr:  nil,
+			workErr: nil,
+			runErr:  nil,
+			want:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveRunError(tt.ctxErr, tt.workErr, tt.runErr)
+			if !errors.Is(got, tt.want) {
+				t.Fatalf("resolveRunError(%v, %v, %v) = %v, want %v", tt.ctxErr, tt.workErr, tt.runErr, got, tt.want)
+			}
+		})
+	}
+
+	// Pin the actual property root.Execute depends on: when the context was
+	// cancelled, the result must satisfy errors.Is(result, context.Canceled)
+	// even though the work error is an opaque killed-subprocess error with no
+	// context.Canceled in its chain.
+	got := resolveRunError(context.Canceled, killedErr, nil)
+	if !errors.Is(got, context.Canceled) {
+		t.Fatalf("errors.Is(resolveRunError(...), context.Canceled) = false, want true; got %v", got)
 	}
 }

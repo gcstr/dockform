@@ -55,8 +55,14 @@ func (r *reporter) Fail(ref planner.ResourceRef, err error) {
 //     (see internal/ui/ui.go and internal/ui/spinner.go);
 //   - Ctrl+C cancels the work's context rather than killing the UI, so the
 //     program gets to render the interrupted state before exiting;
-//   - DoneMsg is sent before waiting for the program to finish, exactly like
-//     RunWithRollingLog's trailing done{}.
+//   - DoneMsg is always sent before waiting for the program to finish —
+//     unlike RunWithRollingLog, which skips its trailing done{} on
+//     cancellation, Run sends DoneMsg even then, so the renderer still gets
+//     to switch to the final "■ interrupted" frame instead of leaving live
+//     spinners on screen;
+//   - a cancelled context wins over fn's returned error when choosing what
+//     to return, exactly like RunWithRollingLog's ctx.Err() check — see
+//     resolveRunError.
 func Run(ctx context.Context, logPath string, fn func(ctx context.Context, r planner.ProgressReporter) error) error {
 	// Non-TTY: there is no program to render against. Hand fn a reporter with
 	// nowhere to send so it still works, just without a view.
@@ -107,10 +113,27 @@ func Run(ctx context.Context, logPath string, fn func(ctx context.Context, r pla
 
 	// Tell the view the run is over before waiting for it to quit, exactly
 	// like RunWithRollingLog's trailing done{} — the program always gets to
-	// render the final frame even though workErr may be non-nil.
+	// render the final frame even though workErr may be non-nil. Unlike
+	// RunWithRollingLog, DoneMsg is sent even when ctx was cancelled: the
+	// renderer needs it to switch to the final frame where unfinished items
+	// render as "■ interrupted" (see TestInterruptedItemDoesNotAnimate)
+	// instead of leaving live spinners on screen for work that has stopped.
 	p.Send(DoneMsg{LogPath: logPath})
 	<-doneCh
 
+	return resolveRunError(ctx.Err(), workErr, runErr)
+}
+
+// resolveRunError picks what Run returns. A cancelled context wins over both
+// other errors: the work's error on a cancelled run is usually a subprocess
+// killed by the signal (an *exec.ExitError carrying no context.Canceled), so
+// returning it verbatim would defeat root.Execute's errors.Is(err,
+// context.Canceled) check and exit with the wrong code. Mirrors
+// ui.RunWithRollingLog.
+func resolveRunError(ctxErr, workErr, runErr error) error {
+	if ctxErr != nil {
+		return ctxErr
+	}
 	if workErr != nil {
 		return workErr
 	}
