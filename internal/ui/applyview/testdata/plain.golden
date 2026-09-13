@@ -1,0 +1,12 @@
+Applying 3 changes
+volume data: creating
+volume data: created (1.0s)
+fileset web_config: syncing
+fileset web_config: 8/23 files
+fileset web_config: synced 23 files (1.0s)
+stack linkwarden: starting
+stack linkwarden: FAILED: compose up linkwarden: image pull failed (1.0s)
+
+2 of 3 changes applied, 1 failed
+  FAILED hetzner-two stack linkwarden: compose up linkwarden: image pull failed
+  log: .dockform/logs/apply-20260912-180000.log
