@@ -128,3 +128,34 @@ func TestPlainFinishAtSameInstantOmitsEmptyParens(t *testing.T) {
 		t.Fatalf("unexpected output:\n got: %q\nwant: %q", buf.String(), want)
 	}
 }
+
+// A SUCCESSFUL stack must resolve its services. The other golden's only stack
+// FAILS, where leaving children pending is correct — which is exactly why this
+// bug (every service of a healthy stack reported "not applied" in CI) survived
+// until a whole-branch review measured real output.
+func TestPlainSuccessfulStackResolvesItsServices(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewPlain(&buf, fixedClock(time.Second))
+
+	stack := planner.ResourceRef{Context: "hetzner-two", Type: planner.ResourceStack, Name: "linkwarden"}
+	pg := planner.ResourceRef{Context: "hetzner-two", Type: planner.ResourceService, Name: "postgres", Parent: "linkwarden"}
+	app := planner.ResourceRef{Context: "hetzner-two", Type: planner.ResourceService, Name: "linkwarden", Parent: "linkwarden"}
+	// Same service name under a DIFFERENT stack: it must not be swept up.
+	other := planner.ResourceRef{Context: "hetzner-two", Type: planner.ResourceService, Name: "postgres", Parent: "authelia"}
+
+	p.Seed([]planner.ResourceRef{stack, pg, app, other})
+	p.Start(stack, "starting")
+	p.Finish(stack, "started")
+	p.Summarize("")
+
+	out := buf.String()
+	if strings.Contains(out, "not applied hetzner-two service linkwarden/postgres") {
+		t.Errorf("a successful stack's service was reported not applied:\n%s", out)
+	}
+	if !strings.Contains(out, "not applied hetzner-two service authelia/postgres") {
+		t.Errorf("a same-named service under another stack should NOT have resolved:\n%s", out)
+	}
+	if !strings.Contains(out, "3 of 4 changes applied, 0 failed") {
+		t.Errorf("completion count wrong; want 3 of 4:\n%s", out)
+	}
+}
