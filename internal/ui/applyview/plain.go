@@ -70,7 +70,7 @@ func (p *Plain) Seed(items []planner.ResourceRef) {
 		p.seeded[ref] = true
 		p.state[ref] = planner.StatePending
 	}
-	_, _ = fmt.Fprintf(p.w, "Applying %d %s\n", len(items), plural(len(items), "change", "changes"))
+	_, _ = fmt.Fprintf(p.w, "Applying %d %s\n", len(items), plural(len(items), "resource", "resources"))
 }
 
 func (p *Plain) Start(ref planner.ResourceRef, verb string) {
@@ -98,7 +98,7 @@ func (p *Plain) Finish(ref planner.ResourceRef, result string) {
 		// Start line already printed above stays — reading its remote index was
 		// real, possibly slow, work, and a failure there must stay attributable
 		// — but voiding the ref here keeps it out of Summarize's totals, so a
-		// run of unchanged filesets doesn't inflate "N of M changes applied"
+		// run of unchanged filesets doesn't inflate "N of M resources applied"
 		// with phantom work that never existed.
 		p.forget(ref)
 		return
@@ -189,7 +189,7 @@ func (p *Plain) Summarize(logPath string) {
 	}
 
 	done := len(p.order) - len(failed) - len(interrupted) - len(unfinished)
-	_, _ = fmt.Fprintf(p.w, "\n%d of %d changes applied, %d failed\n", done, len(p.order), len(failed))
+	_, _ = fmt.Fprintf(p.w, "\n%d of %d %s applied, %d failed\n", done, len(p.order), plural(len(p.order), "resource", "resources"), len(failed))
 	for _, ref := range failed {
 		_, _ = fmt.Fprintf(p.w, "  FAILED %s %s: %s\n", ref.Context, label(ref), p.causes[ref])
 	}
