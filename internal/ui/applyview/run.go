@@ -64,11 +64,10 @@ func (r *reporter) Fail(ref planner.ResourceRef, err error) {
 //     to return, exactly like RunWithRollingLog's ctx.Err() check — see
 //     resolveRunError.
 func Run(ctx context.Context, logPath string, fn func(ctx context.Context, r planner.ProgressReporter) error) error {
-	// Non-TTY: there is no program to render against. Hand fn a reporter with
-	// nowhere to send so it still works, just without a view.
-	// Task 6 replaces this with the plain reporter.
+	// Non-TTY: there is no program to render against. Route through the plain
+	// reporter so piped and CI runs still get one line per transition.
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		return fn(ctx, NewReporter(nil))
+		return RunPlain(ctx, os.Stdout, logPath, fn)
 	}
 
 	// Signal to other UI helpers (Spinner, StdPrinter) to suppress direct
@@ -142,16 +141,11 @@ func resolveRunError(ctxErr, workErr, runErr error) error {
 
 // RunOrPlain runs fn through the inline apply view, unless plain is true — for
 // a non-TTY stdout, or when the caller asked for uncolored/non-interactive
-// output (e.g. --verbose) — in which case it runs fn directly against a
-// reporter that discards every event.
-//
-// Task 6 replaces the plain branch with a dedicated plain-text renderer; for
-// now the events are simply dropped so apply still works end to end without
-// a view.
+// output (e.g. --verbose) — in which case it runs fn through the plain
+// reporter, which writes one line per transition with no ANSI.
 func RunOrPlain(ctx context.Context, plain bool, logPath string, fn func(ctx context.Context, r planner.ProgressReporter) error) error {
 	if plain {
-		// Task 6 replaces this with the plain reporter.
-		return fn(ctx, NewReporter(nil))
+		return RunPlain(ctx, os.Stdout, logPath, fn)
 	}
 	return Run(ctx, logPath, fn)
 }
