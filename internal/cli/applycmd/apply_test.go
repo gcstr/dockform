@@ -217,6 +217,15 @@ func TestApply_SkipConfirmation_BypassesPrompt(t *testing.T) {
 	if strings.Contains(got, "canceled") {
 		t.Fatalf("did not expect apply to be canceled when skipping confirmation; got: %s", got)
 	}
+	// Regression guard for Finding I7: the apply progress view (plain here,
+	// since root.SetOut gives cmd.OutOrStdout() a non-TTY *bytes.Buffer) must
+	// actually reach the command's writer. Before the fix, RunOrPlain/RunPlain
+	// hardcoded os.Stdout, so this text never showed up in `out` even though
+	// apply had genuinely run and finished — precisely how a stack reporting
+	// its services as "not applied" shipped invisible to the test suite.
+	if !strings.Contains(got, "Applying") || !strings.Contains(got, "changes applied") {
+		t.Fatalf("expected apply's progress output on the command's writer; got: %s", got)
+	}
 }
 
 func TestApply_PruneErrors_NonStrictByDefault(t *testing.T) {

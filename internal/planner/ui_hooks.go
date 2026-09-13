@@ -31,7 +31,12 @@ type ProgressReporter interface {
 	Start(ref ResourceRef, verb string)
 	// Detail replaces a running line's sub-status, e.g. "8/23 files".
 	Detail(ref ResourceRef, text string)
-	// Finish moves a line to StateDone. result is past tense: "created".
+	// Finish moves a line to StateDone. result is past tense: "created". An
+	// empty result is a distinct "found nothing to do" signal for a ref that
+	// was only ever reported via Start, never seeded: both renderers treat it
+	// as void — dropping the line entirely rather than counting it — so
+	// discovering that a resource needed no work does not inflate the run's
+	// totals. Never pass "" for a ref that Seed already declared.
 	Finish(ref ResourceRef, result string)
 	// Fail moves a line to StateFailed and records the cause.
 	Fail(ref ResourceRef, err error)

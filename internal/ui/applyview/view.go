@@ -2,6 +2,7 @@ package applyview
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -92,17 +93,84 @@ func (m Model) itemStatus(it *Item) string {
 	return it.status()
 }
 
-// summary renders a collapsed group: how many lines, the shared result verb, and
-// the wall time the group took.
-func (g *Group) summary() (count int, result string, total time.Duration) {
+// depthZeroCount returns how many depth-0 (top-level) lines a group holds. A
+// service nested under a stack (Ref.Parent set) shares its parent stack's own
+// result and timing — it never gets an independent Start — so counting it
+// separately would double-count the same unit of work. For a Stacks group this
+// means the count reflects how many STACKS were touched, not stacks-plus-
+// services; the pending and done branches of a collapsed group both call this
+// so they can never disagree with each other the way "9 pending" vs. "3
+// stacks" once did.
+func (g *Group) depthZeroCount() int {
+	n := 0
 	for _, it := range g.items {
-		count++
-		total += it.elapsed
-		if result == "" && it.Result != "" {
-			result = it.Result
+		if it.Ref.Parent == "" {
+			n++
 		}
 	}
-	return count, result, total
+	return n
+}
+
+// summary renders a collapsed, finished group: a breakdown of its depth-0
+// lines by result verb — the dominant one first, with any remainder called
+// out (e.g. "9 started, 2 up to date") rather than silently reporting the
+// count under whichever verb happened to belong to the first item — and the
+// wall-clock span that work actually took, computed as max(end)-min(start)
+// across those same lines rather than a sum of their individual elapsed
+// times. Apply runs contexts, and the items within one group, in parallel; a
+// sum overstates the group's real duration, often by a lot, once any two
+// items overlap.
+//
+// Only depth-0 items participate, for the same reason depthZeroCount only
+// counts them: a nested service's Result and elapsed are inherited from its
+// stack's own Finish, so folding it in here would both double-count the verb
+// and widen the time window with a duplicate of an interval already counted.
+func (g *Group) summary() (breakdown string, total time.Duration) {
+	counts := map[string]int{}
+	var order []string
+	var minStart, maxEnd time.Time
+	for _, it := range g.items {
+		if it.Ref.Parent != "" {
+			continue
+		}
+		verb := it.Result
+		if verb != "" {
+			if counts[verb] == 0 {
+				order = append(order, verb)
+			}
+			counts[verb]++
+		}
+		if it.started.IsZero() {
+			continue
+		}
+		if minStart.IsZero() || it.started.Before(minStart) {
+			minStart = it.started
+		}
+		if end := it.started.Add(it.elapsed); end.After(maxEnd) {
+			maxEnd = end
+		}
+	}
+	if !minStart.IsZero() {
+		total = maxEnd.Sub(minStart)
+	}
+	return renderBreakdown(order, counts), total
+}
+
+// renderBreakdown turns a verb histogram into "<n> <verb>[, <n> <verb>...]",
+// ranked by count so the dominant result leads and the remainder trails —
+// order is a tie-breaker only (first-seen order among equally common verbs),
+// never the primary sort key the old first-non-empty-Result logic used.
+func renderBreakdown(order []string, counts map[string]int) string {
+	if len(order) == 0 {
+		return ""
+	}
+	sorted := append([]string(nil), order...)
+	sort.SliceStable(sorted, func(i, j int) bool { return counts[sorted[i]] > counts[sorted[j]] })
+	parts := make([]string, 0, len(sorted))
+	for _, verb := range sorted {
+		parts = append(parts, fmt.Sprintf("%d %s", counts[verb], verb))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // plural picks singular or plural based on n, so counts next to a word never
@@ -124,6 +192,22 @@ func padDisplay(s string, width int) string {
 		return s + strings.Repeat(" ", width-w)
 	}
 	return s
+}
+
+// padDisplayGap is padDisplay's counterpart for a boundary that must always
+// carry visible separation on the far side, even once s has already reached
+// or exceeded width. It exists for the item line's name/status boundary:
+// dockform resource names routinely run past itemNameWidth (22 cells), and
+// padDisplay's "already at width, leave it alone" rule then left the status
+// text butted directly against the name with no space at all, e.g.
+// "twentythree_chars_long1syncing…". Every other padDisplay call site already
+// has a literal separator after it regardless of width, so only this one
+// needs the guarantee.
+func padDisplayGap(s string, width int) string {
+	if w := ansi.StringWidth(s); w < width {
+		return s + strings.Repeat(" ", width-w)
+	}
+	return s + " "
 }
 
 // itemIndent is the left margin for a depth-0 item line: a top-level resource
@@ -188,14 +272,17 @@ func (m Model) bodyLines() []bodyLine {
 		if g.collapsed() {
 			if !g.started() {
 				// Not started yet: there is no result to report and no duration
-				// to show, so say how much is waiting rather than pretend.
-				out = append(out, bodyLine{text: fmt.Sprintf("  %s %-16s %2d %-10s",
-					stylePending.Render("·"), g.Title, len(g.items), "pending")})
+				// to show, so say how much is waiting rather than pretend. Counts
+				// depth-0 lines only, so this agrees with the done branch below —
+				// a Stacks group of 3 stacks (each with 2 services) says "3
+				// pending", never "9 pending".
+				out = append(out, bodyLine{text: fmt.Sprintf("  %s %-16s %s",
+					stylePending.Render("·"), g.Title, fmt.Sprintf("%d pending", g.depthZeroCount()))})
 				continue
 			}
-			count, result, groupTotal := g.summary()
-			out = append(out, bodyLine{text: fmt.Sprintf("  %s %-16s %2d %-10s %8s",
-				styleDone.Render("✔"), g.Title, count, result, formatDuration(groupTotal))})
+			breakdown, groupTotal := g.summary()
+			out = append(out, bodyLine{text: strings.TrimRight(fmt.Sprintf("  %s %-16s %s  %s",
+				styleDone.Render("✔"), g.Title, padDisplay(breakdown, minStatusWidth), formatDuration(groupTotal)), " ")})
 			continue
 		}
 
@@ -209,7 +296,7 @@ func (m Model) bodyLines() []bodyLine {
 			if it.Discovered {
 				name += " (discovered)"
 			}
-			prefix := padDisplay(indent+m.marker(it)+" "+name, statusColumn)
+			prefix := padDisplayGap(indent+m.marker(it)+" "+name, statusColumn)
 			status := padDisplay(m.itemStatus(it), minStatusWidth)
 			line := prefix + status + "  " + styleDim.Render(formatDuration(it.elapsed))
 			out = append(out, bodyLine{

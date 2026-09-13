@@ -129,6 +129,41 @@ func TestPlainFinishAtSameInstantOmitsEmptyParens(t *testing.T) {
 	}
 }
 
+// TestPlainDiscoveredNoOpDoesNotInflateTotals proves Finding I5 on the plain
+// (non-TTY) renderer: a ref the plan never seeded, which apply discovers
+// needs no work at all (an empty Finish result), must not appear in
+// Summarize's totals or its unfinished/interrupted listings. The Start line
+// still prints — reading remote state ahead of the no-op decision is real,
+// possibly slow, work, and a failure there must stay attributable — but the
+// ref itself must otherwise behave as though it was never tracked.
+func TestPlainDiscoveredNoOpDoesNotInflateTotals(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewPlain(&buf, fixedClock(time.Second))
+
+	real := planner.ResourceRef{Context: "c", Type: planner.ResourceVolume, Name: "real"}
+	discovered := planner.ResourceRef{Context: "c", Type: planner.ResourceFileset, Name: "unchanged"}
+
+	p.Seed([]planner.ResourceRef{real})
+	p.Start(real, "creating")
+	p.Finish(real, "created")
+
+	p.Start(discovered, "syncing")
+	p.Finish(discovered, "")
+
+	p.Summarize("")
+
+	out := buf.String()
+	if !strings.Contains(out, "\nc fileset unchanged: syncing\n") {
+		t.Fatalf("expected the Start line for the discovered ref to still print — reading its state is real work:\n%s", out)
+	}
+	if !strings.Contains(out, "1 of 1 changes applied, 0 failed") {
+		t.Fatalf("a discovered no-op inflated the summary totals:\n%s", out)
+	}
+	if strings.Contains(out, "not applied") || strings.Contains(out, "interrupted") {
+		t.Fatalf("a discovered no-op must not appear in the unfinished/interrupted listings:\n%s", out)
+	}
+}
+
 // A SUCCESSFUL stack must resolve its services. The other golden's only stack
 // FAILS, where leaving children pending is correct — which is exactly why this
 // bug (every service of a healthy stack reported "not applied" in CI) survived

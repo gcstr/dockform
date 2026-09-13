@@ -20,6 +20,7 @@ type Plain struct {
 	order   []planner.ResourceRef
 	state   map[planner.ResourceRef]planner.ResourceState
 	causes  map[planner.ResourceRef]string
+	seeded  map[planner.ResourceRef]bool
 }
 
 // NewPlain creates a plain reporter writing to w. now is injected for tests.
@@ -33,6 +34,7 @@ func NewPlain(w io.Writer, now func() time.Time) *Plain {
 		started: map[planner.ResourceRef]time.Time{},
 		state:   map[planner.ResourceRef]planner.ResourceState{},
 		causes:  map[planner.ResourceRef]string{},
+		seeded:  map[planner.ResourceRef]bool{},
 	}
 }
 
@@ -65,6 +67,7 @@ func (p *Plain) Seed(items []planner.ResourceRef) {
 	defer p.mu.Unlock()
 	for _, ref := range items {
 		p.track(ref)
+		p.seeded[ref] = true
 		p.state[ref] = planner.StatePending
 	}
 	_, _ = fmt.Fprintf(p.w, "Applying %d changes\n", len(items))
@@ -89,6 +92,17 @@ func (p *Plain) Detail(ref planner.ResourceRef, text string) {
 func (p *Plain) Finish(ref planner.ResourceRef, result string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if result == "" && !p.seeded[ref] {
+		// Never in the plan's own seed, and apply reported nothing to do for it
+		// (e.g. a fileset whose tree hash still matched at apply time). The
+		// Start line already printed above stays — reading its remote index was
+		// real, possibly slow, work, and a failure there must stay attributable
+		// — but voiding the ref here keeps it out of Summarize's totals, so a
+		// run of unchanged filesets doesn't inflate "N of M changes applied"
+		// with phantom work that never existed.
+		p.forget(ref)
+		return
+	}
 	p.track(ref)
 	p.state[ref] = planner.StateDone
 	_, _ = fmt.Fprintf(p.w, "%s: %s%s\n", qualifiedLabel(ref), result, p.sinceSuffix(ref))
@@ -115,6 +129,21 @@ func (p *Plain) Fail(ref planner.ResourceRef, err error) {
 	}
 	p.causes[ref] = cause
 	_, _ = fmt.Fprintf(p.w, "%s: FAILED: %s%s\n", qualifiedLabel(ref), cause, p.sinceSuffix(ref))
+}
+
+// forget removes ref as though it had never been tracked at all — used only
+// when Finish reports an empty result for a ref that was never seeded, so it
+// must not count in Summarize's totals. Callers must hold p.mu.
+func (p *Plain) forget(ref planner.ResourceRef) {
+	delete(p.state, ref)
+	delete(p.started, ref)
+	delete(p.causes, ref)
+	for i, r := range p.order {
+		if r == ref {
+			p.order = append(p.order[:i], p.order[i+1:]...)
+			break
+		}
+	}
 }
 
 // sinceSuffix renders " (1.0s)" when the line has a start time, or "" when
