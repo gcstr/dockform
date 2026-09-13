@@ -43,6 +43,15 @@ func label(ref planner.ResourceRef) string {
 	return fmt.Sprintf("%s %s", ref.Type, ref.Name)
 }
 
+// qualifiedLabel prefixes label(ref) with its context, matching the ordering
+// the summary lines already use ("<context> <label>"). Apply processes
+// contexts in parallel and the same resource name routinely recurs across
+// hosts, so every line — not just the summary — must say which context it
+// belongs to.
+func qualifiedLabel(ref planner.ResourceRef) string {
+	return fmt.Sprintf("%s %s", ref.Context, label(ref))
+}
+
 // track records ref in display order the first time it is seen. Callers must
 // hold p.mu.
 func (p *Plain) track(ref planner.ResourceRef) {
@@ -67,14 +76,14 @@ func (p *Plain) Start(ref planner.ResourceRef, verb string) {
 	p.track(ref)
 	p.state[ref] = planner.StateRunning
 	p.started[ref] = p.now()
-	_, _ = fmt.Fprintf(p.w, "%s: %s\n", label(ref), verb)
+	_, _ = fmt.Fprintf(p.w, "%s: %s\n", qualifiedLabel(ref), verb)
 }
 
 func (p *Plain) Detail(ref planner.ResourceRef, text string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.track(ref)
-	_, _ = fmt.Fprintf(p.w, "%s: %s\n", label(ref), text)
+	_, _ = fmt.Fprintf(p.w, "%s: %s\n", qualifiedLabel(ref), text)
 }
 
 func (p *Plain) Finish(ref planner.ResourceRef, result string) {
@@ -82,7 +91,7 @@ func (p *Plain) Finish(ref planner.ResourceRef, result string) {
 	defer p.mu.Unlock()
 	p.track(ref)
 	p.state[ref] = planner.StateDone
-	_, _ = fmt.Fprintf(p.w, "%s: %s%s\n", label(ref), result, p.sinceSuffix(ref))
+	_, _ = fmt.Fprintf(p.w, "%s: %s%s\n", qualifiedLabel(ref), result, p.sinceSuffix(ref))
 }
 
 func (p *Plain) Fail(ref planner.ResourceRef, err error) {
@@ -95,41 +104,58 @@ func (p *Plain) Fail(ref planner.ResourceRef, err error) {
 		cause = err.Error()
 	}
 	p.causes[ref] = cause
-	_, _ = fmt.Fprintf(p.w, "%s: FAILED: %s%s\n", label(ref), cause, p.sinceSuffix(ref))
+	_, _ = fmt.Fprintf(p.w, "%s: FAILED: %s%s\n", qualifiedLabel(ref), cause, p.sinceSuffix(ref))
 }
 
-// sinceSuffix renders " (1.0s)" when the line has a start time. Callers must
-// already hold p.mu — it does not lock on its own.
+// sinceSuffix renders " (1.0s)" when the line has a start time, or "" when
+// there is no start time or the elapsed duration formats as empty (a Finish
+// landing at the same clock reading as its Start — formatDuration returns ""
+// for d <= 0). Callers must already hold p.mu — it does not lock on its own.
 func (p *Plain) sinceSuffix(ref planner.ResourceRef) string {
 	start, ok := p.started[ref]
 	if !ok {
 		return ""
 	}
-	return " (" + formatDuration(p.now().Sub(start)) + ")"
+	d := formatDuration(p.now().Sub(start))
+	if d == "" {
+		return ""
+	}
+	return " (" + d + ")"
 }
 
 // Summarize writes the closing block: a totals line, then every failure (with
-// its cause) and every line that was seeded but never finished, so a CI log
-// shows exactly what happened without needing the lines around it. Call this
-// exactly once, after the run is over.
+// its cause), every line that started but was cut off before it finished or
+// failed, and every line that was seeded but never started, so a CI log shows
+// exactly what happened without needing the lines around it. An interrupted
+// line (StateRunning) is reported distinctly from an untouched one
+// (StatePending): the run got partway through it — e.g. a fileset sync that
+// already wrote some files — which is a different truth than "nothing ever
+// touched this" and matters for anyone deciding whether state was left
+// half-applied. Call this exactly once, after the run is over.
 func (p *Plain) Summarize(logPath string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	var failed, unfinished []planner.ResourceRef
+	var failed, interrupted, unfinished []planner.ResourceRef
 	for _, ref := range p.order {
 		switch p.state[ref] {
 		case planner.StateFailed:
 			failed = append(failed, ref)
 		case planner.StateDone:
+		case planner.StateRunning:
+			interrupted = append(interrupted, ref)
 		default:
 			unfinished = append(unfinished, ref)
 		}
 	}
 
-	_, _ = fmt.Fprintf(p.w, "\n%d of %d changes applied, %d failed\n", len(p.order)-len(failed)-len(unfinished), len(p.order), len(failed))
+	done := len(p.order) - len(failed) - len(interrupted) - len(unfinished)
+	_, _ = fmt.Fprintf(p.w, "\n%d of %d changes applied, %d failed\n", done, len(p.order), len(failed))
 	for _, ref := range failed {
 		_, _ = fmt.Fprintf(p.w, "  FAILED %s %s: %s\n", ref.Context, label(ref), p.causes[ref])
+	}
+	for _, ref := range interrupted {
+		_, _ = fmt.Fprintf(p.w, "  interrupted %s %s\n", ref.Context, label(ref))
 	}
 	for _, ref := range unfinished {
 		_, _ = fmt.Fprintf(p.w, "  not applied %s %s\n", ref.Context, label(ref))
