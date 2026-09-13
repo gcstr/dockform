@@ -254,3 +254,42 @@ func TestFinishCascadeDoesNotCrossStackOrContextBoundary(t *testing.T) {
 		}
 	}
 }
+
+// The summary's parts must account for the whole. A reader given
+// "Applied 2/5 changes · 1 failed" reasonably tries 2 + 1 + something = 5 and
+// gets nowhere: the failed line is a stack, which Counts excludes as the coarse
+// view of its own services, and three lines were left unexplained. applied +
+// interrupted + notApplied is the split that actually reconciles.
+func TestOutcomesAccountForEveryCountedChange(t *testing.T) {
+	stack := planner.ResourceRef{Context: "ctx", Type: planner.ResourceStack, Name: "app"}
+	svcA := planner.ResourceRef{Context: "ctx", Type: planner.ResourceService, Name: "a", Parent: "app"}
+	svcB := planner.ResourceRef{Context: "ctx", Type: planner.ResourceService, Name: "b", Parent: "app"}
+	vol := planner.ResourceRef{Context: "ctx", Type: planner.ResourceVolume, Name: "data"}
+	fs := planner.ResourceRef{Context: "ctx", Type: planner.ResourceFileset, Name: "cfg"}
+
+	m := apply(New(fixedClock(time.Second)),
+		SeedMsg{Items: []planner.ResourceRef{vol, stack, svcA, svcB, fs}},
+		StartMsg{Ref: vol, Verb: "creating"},
+		FinishMsg{Ref: vol, Result: "created"},
+		StartMsg{Ref: fs, Verb: "syncing"}, // still running when the run ends
+		StartMsg{Ref: stack, Verb: "starting"},
+		FailMsg{Ref: stack, Err: errors.New("image pull failed")},
+		DoneMsg{},
+	)
+
+	_, total := m.Counts()
+	applied, interrupted, notApplied := m.Outcomes()
+	if applied+interrupted+notApplied != total {
+		t.Fatalf("outcomes do not account for the total: %d applied + %d interrupted + %d not applied != %d",
+			applied, interrupted, notApplied, total)
+	}
+	// The specific shape a reader would check by hand.
+	if applied != 1 || interrupted != 1 || notApplied != 2 || total != 4 {
+		t.Fatalf("got applied=%d interrupted=%d notApplied=%d total=%d; want 1/1/2 of 4",
+			applied, interrupted, notApplied, total)
+	}
+	// And the failed stack is reported, without being one of the four.
+	if len(m.Failures()) != 1 {
+		t.Fatalf("expected the failed stack to still be reported, got %d failures", len(m.Failures()))
+	}
+}
