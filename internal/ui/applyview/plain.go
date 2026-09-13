@@ -70,7 +70,7 @@ func (p *Plain) Seed(items []planner.ResourceRef) {
 		p.seeded[ref] = true
 		p.state[ref] = planner.StatePending
 	}
-	_, _ = fmt.Fprintf(p.w, "Applying %d changes\n", len(items))
+	_, _ = fmt.Fprintf(p.w, "Applying %d %s\n", len(items), plural(len(items), "change", "changes"))
 }
 
 func (p *Plain) Start(ref planner.ResourceRef, verb string) {
