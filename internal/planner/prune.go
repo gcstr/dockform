@@ -47,6 +47,14 @@ func (p *Planner) PruneWithPlanOptions(ctx context.Context, cfg manifest.Config,
 
 // pruneContext removes unmanaged resources for a single context.
 func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, contextName string, client DockerClient, plan *Plan) error {
+	// Resources the plan marked for deletion were seeded as pending lines in the
+	// apply view, but apply never removes them — prune does. Without reporting
+	// here they stayed pending forever: their group never collapsed, the footer
+	// never reached its total, and the plain summary called an approved, completed
+	// deletion "not applied".
+	progress := orNop(p.reporter)
+	deletes := plannedDeletes(plan, contextName)
+
 	contextStacks := cfg.GetStacksForContext(contextName)
 	contextFilesets := cfg.GetFilesetsForContext(contextName)
 
@@ -95,7 +103,15 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 		} else {
 			for _, it := range all {
 				if !desired.wantsContainer(it.Project, it.Service) {
-					if err := client.RemoveContainer(ctx, it.Name, true); err != nil {
+					// An orphan service is seeded by service name; a plan that
+					// enumerated the container itself is keyed by container name.
+					k := deleteKey{Type: ResourceService, Name: it.Service}
+					if _, seeded := deletes[k]; !seeded {
+						k = deleteKey{Type: ResourceContainer, Name: it.Name}
+					}
+					if err := reportRemoval(progress, deletes, k, func() error {
+						return client.RemoveContainer(ctx, it.Name, true)
+					}); err != nil {
 						errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "remove unmanaged container %s in context %s", it.Name, contextName))
 					}
 				}
@@ -120,7 +136,9 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 	} else {
 		for _, v := range vols {
 			if _, want := desiredVolumes[v]; !want {
-				if err := client.RemoveVolume(ctx, v); err != nil {
+				if err := reportRemoval(progress, deletes, deleteKey{Type: ResourceVolume, Name: v}, func() error {
+					return client.RemoveVolume(ctx, v)
+				}); err != nil {
 					errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "remove unmanaged volume %s in context %s", v, contextName))
 				}
 			}
@@ -150,7 +168,9 @@ func (p *Planner) pruneContext(ctx context.Context, cfg manifest.Config, context
 			existing[n] = struct{}{}
 		}
 		for _, n := range orphanNetworks(existing, desiredNetworks, composeOwned, desired.projects()) {
-			if err := client.RemoveNetwork(ctx, n); err != nil {
+			if err := reportRemoval(progress, deletes, deleteKey{Type: ResourceNetwork, Name: n}, func() error {
+				return client.RemoveNetwork(ctx, n)
+			}); err != nil {
 				errs = append(errs, apperr.Wrap("planner.pruneContext", apperr.External, err, "remove unmanaged network %s in context %s", n, contextName))
 			}
 		}

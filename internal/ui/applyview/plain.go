@@ -92,6 +92,16 @@ func (p *Plain) Finish(ref planner.ResourceRef, result string) {
 	p.track(ref)
 	p.state[ref] = planner.StateDone
 	_, _ = fmt.Fprintf(p.w, "%s: %s%s\n", qualifiedLabel(ref), result, p.sinceSuffix(ref))
+
+	// A stack is applied by one compose call, so its seeded services resolve with
+	// it — see stackResolves. Without this a fully successful stack reported every
+	// one of its services as "not applied" in the summary below.
+	for _, child := range p.order {
+		if stackResolves(ref, child) && p.state[child] != planner.StateFailed {
+			p.state[child] = planner.StateDone
+			_, _ = fmt.Fprintf(p.w, "%s: %s\n", qualifiedLabel(child), result)
+		}
+	}
 }
 
 func (p *Plain) Fail(ref planner.ResourceRef, err error) {
