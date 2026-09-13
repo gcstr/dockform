@@ -264,8 +264,35 @@ type bodyLine struct {
 // bodyLines renders the context/group/item lines, without the header or footer.
 func (m Model) bodyLines() []bodyLine {
 	var out []bodyLine
-	lastContext := ""
+	// Emit each context's groups together, so a group created LATE — a discovered
+	// restart, or a fileset that only announces itself once apply reaches it —
+	// joins its context's block instead of repeating the context header further
+	// down. Relying on m.groups being contiguous by context was what printed
+	// "hetzner-two" twice on a real three-host run.
+	seen := map[string]bool{}
+	var order []string
 	for _, g := range m.groups {
+		if !seen[g.Context] {
+			seen[g.Context] = true
+			order = append(order, g.Context)
+		}
+	}
+	ordered := make([]*Group, 0, len(m.groups))
+	for _, ctx := range order {
+		for _, g := range m.groups {
+			if g.Context == ctx {
+				ordered = append(ordered, g)
+			}
+		}
+	}
+
+	lastContext := ""
+	for _, g := range ordered {
+		// An empty group has nothing to say; dropItem removes them, this is the
+		// belt to that braces.
+		if len(g.items) == 0 {
+			continue
+		}
 		running := false
 		for _, it := range g.items {
 			if it.State == planner.StateRunning {
