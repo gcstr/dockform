@@ -163,6 +163,34 @@ func (m Model) Failures() []*Item {
 	return out
 }
 
+// Outcomes splits the counted changes into the three ways a run can leave one,
+// so the numbers a reader sees actually reconcile: applied + interrupted +
+// notApplied == total from Counts.
+//
+// Failures are NOT one of these buckets. A failed line is a stack, which Counts
+// deliberately excludes as the coarse view of its own services — so a failure is
+// the CAUSE of services sitting in notApplied, not a fourth category competing
+// with them. Reporting "2/5 applied · 1 failed" on its own invited exactly the
+// arithmetic that does not work (a reader tried it and got 4 of 5).
+func (m Model) Outcomes() (applied, interrupted, notApplied int) {
+	for _, g := range m.groups {
+		for _, it := range g.items {
+			if it.Ref.Type == planner.ResourceStack {
+				continue
+			}
+			switch it.State {
+			case planner.StateDone, planner.StateFailed:
+				applied++
+			case planner.StateRunning:
+				interrupted++
+			default:
+				notApplied++
+			}
+		}
+	}
+	return applied, interrupted, notApplied
+}
+
 func (m Model) itemFor(ref planner.ResourceRef) *Item { return m.index[ref] }
 
 // groupTitle maps a resource type to its section heading. Stacks and the

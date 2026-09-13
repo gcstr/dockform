@@ -11,4 +11,6 @@ Applied 2/5 changes in 8.0s · 1 failed
 
   ✖ hetzner-two Stacks/linkwarden  compose up linkwarden: image pull f…
 
+  2 not applied · 1 interrupted
+
   log: .dockform/logs/apply-20260912-180000.log

@@ -444,6 +444,22 @@ func (m Model) View() string {
 			}
 			foot.WriteString("\n")
 		}
+		// Spell out where the rest of the total went. Without this the header
+		// reads "Applied 2/5 changes · 1 failed" and leaves three lines
+		// unexplained, while the "1 failed" refers to a stack that is not one of
+		// the five — an invitation to arithmetic that does not work. These
+		// buckets DO sum to the total, and mirror what the plain renderer
+		// already prints, so the two views agree about the same run.
+		if _, interrupted, notApplied := m.Outcomes(); interrupted > 0 || notApplied > 0 {
+			var parts []string
+			if notApplied > 0 {
+				parts = append(parts, fmt.Sprintf("%d not applied", notApplied))
+			}
+			if interrupted > 0 {
+				parts = append(parts, fmt.Sprintf("%d interrupted", interrupted))
+			}
+			fmt.Fprintf(&foot, "  %s\n\n", styleDim.Render(strings.Join(parts, " · ")))
+		}
 		if m.logPath != "" {
 			foot.WriteString("  log: " + m.logPath + "\n")
 		}
