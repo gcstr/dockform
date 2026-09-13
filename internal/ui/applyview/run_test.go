@@ -1,9 +1,12 @@
 package applyview
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os/exec"
+	"strings"
 	"sync"
 	"testing"
 
@@ -56,7 +59,8 @@ func TestReporterToleratesNilSend(t *testing.T) {
 // Task 6's plain renderer exists.
 func TestRunOrPlainUsesPlainPathWhenRequested(t *testing.T) {
 	var gotReporter planner.ProgressReporter
-	err := RunOrPlain(context.Background(), true, "", func(_ context.Context, r planner.ProgressReporter) error {
+	var buf bytes.Buffer
+	err := RunOrPlain(context.Background(), &buf, true, "", func(_ context.Context, r planner.ProgressReporter) error {
 		gotReporter = r
 		// Must not panic even though nothing is listening.
 		r.Seed([]planner.ResourceRef{{Name: "x"}})
@@ -70,13 +74,19 @@ func TestRunOrPlainUsesPlainPathWhenRequested(t *testing.T) {
 	if gotReporter == nil {
 		t.Fatal("expected a non-nil reporter on the plain path")
 	}
+	// Regression guard for Finding I7: the plain path must write to the
+	// caller's writer, not a hardcoded os.Stdout — otherwise output silently
+	// bypasses whatever buffer a caller (e.g. a CLI test) is watching.
+	if !strings.Contains(buf.String(), "Applying 1 changes") {
+		t.Fatalf("expected plain output on the caller's writer, got: %q", buf.String())
+	}
 }
 
 // The plain path must propagate fn's error unchanged, since RunOrPlain is a
 // straight pass-through when plain is true.
 func TestRunOrPlainPropagatesError(t *testing.T) {
 	want := errors.New("boom")
-	err := RunOrPlain(context.Background(), true, "", func(context.Context, planner.ProgressReporter) error {
+	err := RunOrPlain(context.Background(), io.Discard, true, "", func(context.Context, planner.ProgressReporter) error {
 		return want
 	})
 	if !errors.Is(err, want) {

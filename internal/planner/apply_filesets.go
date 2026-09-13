@@ -104,11 +104,18 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 			diff = filesets.DiffIndexes(local, remote)
 		}
 
-		// If completely equal, skip this fileset
+		// If completely equal, skip this fileset. This fileset was never in the
+		// plan's own seed (SeedRefs omits no-op filesets), so an empty Finish
+		// result here is the "found nothing to do" signal both renderers treat
+		// as void-this-line: it keeps an unchanged fileset from becoming a
+		// permanent "(discovered)" line that inflates the running total, while
+		// the Start above — which stays, deliberately — still names the fileset
+		// if reading its remote index (a real, sometimes slow, docker call)
+		// fails.
 		if local.TreeHash == remote.TreeHash {
 			st := logger.StartStep(log, "fileset_sync", name, "resource_kind", "fileset", "target_volume", fileset.TargetVolume)
 			st.OK(false) // No changes needed
-			fm.progress.Finish(ref, "up to date")
+			fm.progress.Finish(ref, "")
 			continue
 		}
 

@@ -119,7 +119,7 @@ func New() *cobra.Command {
 
 			strictPrune, _ := cmd.Flags().GetBool("strict-prune")
 			verbosePruneErrors, _ := cmd.Flags().GetBool("verbose-prune-errors")
-			err = applyview.RunOrPlain(cmd.Context(), plain, runLogPath, func(runCtx context.Context, reporter planner.ProgressReporter) error {
+			err = applyview.RunOrPlain(cmd.Context(), cmd.OutOrStdout(), plain, runLogPath, func(runCtx context.Context, reporter planner.ProgressReporter) error {
 				return ctx.WithRunContext(runCtx, func() error {
 					// Pass the pre-built plan to avoid redundant state detection
 					if err := ctx.ApplyPlanWithReporter(builtPlan, reporter); err != nil {

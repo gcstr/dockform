@@ -2,6 +2,7 @@ package applyview
 
 import (
 	"context"
+	"io"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -63,11 +64,19 @@ func (r *reporter) Fail(ref planner.ResourceRef, err error) {
 //   - a cancelled context wins over fn's returned error when choosing what
 //     to return, exactly like RunWithRollingLog's ctx.Err() check — see
 //     resolveRunError.
-func Run(ctx context.Context, logPath string, fn func(ctx context.Context, r planner.ProgressReporter) error) error {
+func Run(ctx context.Context, w io.Writer, logPath string, fn func(ctx context.Context, r planner.ProgressReporter) error) error {
+	if w == nil {
+		w = os.Stdout
+	}
+
 	// Non-TTY: there is no program to render against. Route through the plain
-	// reporter so piped and CI runs still get one line per transition.
+	// reporter so piped and CI runs still get one line per transition. w, not
+	// os.Stdout: the caller's writer is what CLI tests actually watch, and it
+	// disagrees with the real os.Stdout every time output is redirected —
+	// which is every such test — so writing to os.Stdout here would silently
+	// bypass the buffer the test is asserting against (see RunOrPlain).
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		return RunPlain(ctx, os.Stdout, logPath, fn)
+		return RunPlain(ctx, w, logPath, fn)
 	}
 
 	// Signal to other UI helpers (Spinner, StdPrinter) to suppress direct
@@ -101,7 +110,7 @@ func Run(ctx context.Context, logPath string, fn func(ctx context.Context, r pla
 	// sends a WindowSizeMsg of its own, but not before the first paint — and the
 	// first paint of a large manifest is precisely the tall one.
 	m.height = height
-	p := tea.NewProgram(m, tea.WithOutput(os.Stdout))
+	p := tea.NewProgram(m, tea.WithOutput(w))
 
 	var runErr error
 	doneCh := make(chan struct{})
@@ -153,9 +162,16 @@ func resolveRunError(ctxErr, workErr, runErr error) error {
 // a non-TTY stdout, or when the caller asked for uncolored/non-interactive
 // output (e.g. --verbose) — in which case it runs fn through the plain
 // reporter, which writes one line per transition with no ANSI.
-func RunOrPlain(ctx context.Context, plain bool, logPath string, fn func(ctx context.Context, r planner.ProgressReporter) error) error {
+//
+// w is the writer both paths render to. The caller must pass cmd.OutOrStdout()
+// (or equivalent), not os.Stdout directly: the TTY decision that produced
+// plain is already made against that same writer one layer up (applycmd/new.go
+// checks cmd.OutOrStdout()), and hardcoding os.Stdout here would silently
+// diverge from it whenever the command's writer is redirected — which is every
+// CLI test — sending real progress output somewhere the test never looks.
+func RunOrPlain(ctx context.Context, w io.Writer, plain bool, logPath string, fn func(ctx context.Context, r planner.ProgressReporter) error) error {
 	if plain {
-		return RunPlain(ctx, os.Stdout, logPath, fn)
+		return RunPlain(ctx, w, logPath, fn)
 	}
-	return Run(ctx, logPath, fn)
+	return Run(ctx, w, logPath, fn)
 }

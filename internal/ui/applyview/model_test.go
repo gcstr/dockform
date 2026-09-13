@@ -169,6 +169,55 @@ func TestFailingAStackLeavesServicesPending(t *testing.T) {
 // ResourceRef.Context plus the loop's Parent == stack name filter exist
 // precisely so neither collision resolves a service that does not belong to
 // the stack that finished.
+// TestDiscoveredNoOpDoesNotInflateTotal proves Finding I5: a ref the plan
+// never seeded, which apply then discovers needs no work at all (an empty
+// Finish result), must not permanently grow the header's total. The early
+// Start is deliberate and must still create the line — reading remote state
+// is real work that can fail — but Finish("") for a Discovered item voids it
+// again rather than counting it.
+func TestDiscoveredNoOpDoesNotInflateTotal(t *testing.T) {
+	discovered := planner.ResourceRef{Context: "ctx", Type: planner.ResourceFileset, Name: "unchanged"}
+
+	m := apply(New(fixedClock(time.Second)), SeedMsg{Items: []planner.ResourceRef{volRef("real")}})
+	_, seededTotal := m.Counts()
+
+	m = apply(m,
+		StartMsg{Ref: discovered, Verb: "syncing"},
+		FinishMsg{Ref: discovered, Result: ""},
+	)
+	_, finalTotal := m.Counts()
+
+	if finalTotal != seededTotal {
+		t.Fatalf("total after a discovered no-op = %d, want it unchanged from the post-seed total %d", finalTotal, seededTotal)
+	}
+	if m.itemFor(discovered) != nil {
+		t.Fatal("a discovered no-op must be dropped entirely, not merely excluded from the count")
+	}
+}
+
+// TestDiscoveredRealWorkStillCounts guards the other side of the same fix: an
+// empty Finish result is the drop signal, but any non-empty result — even for
+// a Discovered item — must still be counted normally. Otherwise fixing I5
+// would risk swallowing genuinely discovered work.
+func TestDiscoveredRealWorkStillCounts(t *testing.T) {
+	discovered := planner.ResourceRef{Context: "ctx", Type: planner.ResourceService, Name: "web"}
+
+	m := apply(New(fixedClock(time.Second)),
+		SeedMsg{Items: []planner.ResourceRef{volRef("real")}},
+		StartMsg{Ref: discovered, Verb: "restarting"},
+		FinishMsg{Ref: discovered, Result: "restarted"},
+	)
+
+	_, total := m.Counts()
+	if total != 2 {
+		t.Fatalf("total = %d, want 2 (seeded + discovered-with-real-work)", total)
+	}
+	it := m.itemFor(discovered)
+	if it == nil || it.State != planner.StateDone || it.Result != "restarted" {
+		t.Fatalf("discovered item with a real result was dropped or mis-recorded: %+v", it)
+	}
+}
+
 func TestFinishCascadeDoesNotCrossStackOrContextBoundary(t *testing.T) {
 	alphaStack := planner.ResourceRef{Context: "ctx1", Type: planner.ResourceStack, Name: "alpha"}
 	alphaWeb := planner.ResourceRef{Context: "ctx1", Type: planner.ResourceService, Name: "web", Parent: "alpha"}

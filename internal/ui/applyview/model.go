@@ -257,6 +257,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case FinishMsg:
 		it := m.ensureItem(msg.Ref, true)
+		if msg.Result == "" && it.Discovered {
+			// apply reported this ref only via Start (e.g. a fileset whose tree
+			// hash still matched at apply time, so there was nothing to sync)
+			// and it was never in the plan's own seed. An empty Finish result is
+			// the "found nothing to do" signal: void the line entirely rather
+			// than count it, so the header total does not grow mid-run for work
+			// that never existed. See dropItem.
+			m.dropItem(it)
+			return m, nil
+		}
 		m.markDone(it, msg.Result)
 		// A stack is applied by a single compose call, so its seeded services
 		// resolve with it. See the Granularity section of the spec.
@@ -294,6 +304,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// dropItem removes it from the model as though it had never been reported:
+// used only for a discovered item (one Start created rather than Seed) whose
+// Finish carried an empty result, meaning apply found nothing to do for it.
+func (m *Model) dropItem(it *Item) {
+	delete(m.index, it.Ref)
+	g := m.groupFor(it.Ref)
+	if g == nil {
+		return
+	}
+	for i, x := range g.items {
+		if x == it {
+			g.items = append(g.items[:i], g.items[i+1:]...)
+			break
+		}
+	}
 }
 
 func (m Model) markDone(it *Item, result string) {
