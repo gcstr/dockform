@@ -2,12 +2,14 @@ package manifest
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/goccy/go-yaml"
 )
 
 // validateBindMountsInComposeFile checks for problematic bind mounts by parsing the raw compose file.
@@ -76,32 +78,88 @@ func validateBindMountsInComposeFile(stackKey string, stack Stack) error {
 	return apperr.New("manifest.validateBindMounts", apperr.InvalidInput, "%s", msg.String())
 }
 
-// detectBindMounts uses regex to find bind mount patterns in compose YAML.
-// This is a simple heuristic that catches common patterns like:
-//   - ./path:/container/path
-//   - ../path:/container/path
-//   - ~/path:/container/path (relative to home)
+// detectBindMounts returns the relative bind mount sources declared by any
+// service in a compose document.
+//
+// It parses the YAML rather than matching raw text: the same mount can be
+// written quoted, unquoted, or in long form, and a regex sees only one of
+// those. Both compose volume syntaxes are handled:
+//
+//   - ./path:/container/path          (short form, with optional :ro suffix)
+//   - {type: bind, source: ./path}    (long form)
+//
+// Only relative sources are reported. An absolute source is a path on the
+// daemon's filesystem, which is what a bind mount is supposed to be, so
+// /var/run/docker.sock and friends are left alone. Named volumes have no
+// leading ./, ../ or ~/ and are likewise ignored.
+//
+// A document that does not parse yields no mounts: compose itself rejects it
+// later with a better message than this validator could produce.
 func detectBindMounts(content string) []string {
+	var doc struct {
+		Services map[string]struct {
+			Volumes []any `yaml:"volumes"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		return nil
+	}
+
 	var mounts []string
 	seen := make(map[string]bool)
+	add := func(source string) {
+		if !isRelativeBindSource(source) || seen[source] {
+			return
+		}
+		seen[source] = true
+		mounts = append(mounts, source)
+	}
 
-	// Pattern matches:
-	// - ./something:/path
-	// - ../something:/path
-	// - ~/something:/path
-	// Excludes absolute paths (/something:/path) and named volumes (volumename:/path)
-	bindMountPattern := regexp.MustCompile(`(?m)^\s*-\s+(\.{1,2}/[^:\s]+|~/[^:\s]+):`)
-
-	matches := bindMountPattern.FindAllStringSubmatch(content, -1)
-	for _, match := range matches {
-		if len(match) > 1 {
-			mount := strings.TrimSpace(match[1])
-			if !seen[mount] {
-				mounts = append(mounts, mount)
-				seen[mount] = true
+	// Sorted so the reported order does not depend on Go's map iteration.
+	for _, name := range slices.Sorted(maps.Keys(doc.Services)) {
+		for _, entry := range doc.Services[name].Volumes {
+			switch v := entry.(type) {
+			case string:
+				add(shortFormSource(v))
+			case map[string]any:
+				add(longFormSource(v))
 			}
 		}
 	}
-
 	return mounts
+}
+
+// shortFormSource returns the host side of a "source:target[:mode]" entry.
+// An entry without a target mounts an anonymous volume at that path and never
+// touches the host, so it reports no source.
+func shortFormSource(entry string) string {
+	source, _, ok := strings.Cut(entry, ":")
+	if !ok {
+		return ""
+	}
+	return source
+}
+
+// longFormSource returns the source of a long-form entry, but only when it is
+// a bind. type: volume names a volume, not a host path.
+func longFormSource(entry map[string]any) string {
+	if t, _ := entry["type"].(string); t != "bind" {
+		return ""
+	}
+	source, _ := entry["source"].(string)
+	return source
+}
+
+// isRelativeBindSource reports whether a bind source is resolved against the
+// compose file's directory. Those are the ones that break on a remote context:
+// compose expands them to a path on the local machine, and the remote daemon
+// then creates that path as an empty directory.
+func isRelativeBindSource(source string) bool {
+	switch source {
+	case ".", "..", "~":
+		return true
+	}
+	return strings.HasPrefix(source, "./") ||
+		strings.HasPrefix(source, "../") ||
+		strings.HasPrefix(source, "~/")
 }
