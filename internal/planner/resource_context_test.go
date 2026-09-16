@@ -54,3 +54,31 @@ func TestRenderPlanByContext_SingleContextStillShowsHeader(t *testing.T) {
 		t.Errorf("single context must still render its header; got:\n%s", out)
 	}
 }
+
+// A fileset section title must not repeat the context header it nests under.
+// The map key is "context/stack/volume" for identity, but the displayed title
+// should read "traefik/config" (matching the bare stack title GetStacksForContext
+// already produces), not "hetzner-two/traefik/config".
+func TestRenderPlanByContext_FilesetTitleOmitsContext(t *testing.T) {
+	byContext := map[string]*ContextPlan{
+		"hetzner-two": {
+			ContextName: "hetzner-two",
+			Resources: &ResourcePlan{
+				Filesets: map[string][]Resource{
+					"hetzner-two/traefik/config": {
+						NewNestedResource(ResourceFile, "traefik.yml", "hetzner-two/traefik/config", ActionCreate, ""),
+					},
+				},
+			},
+		},
+	}
+
+	out := renderPlanByContext(byContext, PlanRenderOptions{Full: true})
+
+	if strings.Contains(out, "hetzner-two/traefik/config") {
+		t.Errorf("fileset title must not repeat the context prefix; got:\n%s", out)
+	}
+	if !strings.Contains(out, "traefik/config") {
+		t.Errorf("fileset title must show the stack/volume portion; got:\n%s", out)
+	}
+}

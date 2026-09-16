@@ -20,3 +20,18 @@ func stackResolves(stack, child planner.ResourceRef) bool {
 		child.Context == stack.Context &&
 		child.Parent == stack.Name
 }
+
+// displayName returns ref.Name as it should be printed. A fileset's Name is
+// keyed "context/stack/volume" for identity (see manifest.DiscoveredFilesets
+// and planner.FilesetDisplayName), but every line in both renderers already
+// shows its context once — as the group's context header here, as the
+// qualifiedLabel prefix in Plain — so printing the full key repeats it, e.g.
+// "hetzner-two/traefik/config" under a "hetzner-two" header. This lives here
+// rather than in view.go or plain.go so both stay in sync, the same reason
+// stackResolves does.
+func displayName(ref planner.ResourceRef) string {
+	if ref.Type == planner.ResourceFileset {
+		return planner.FilesetDisplayName(ref.Name)
+	}
+	return ref.Name
+}

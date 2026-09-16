@@ -205,3 +205,22 @@ func TestPlainSeedPluralisesOneResource(t *testing.T) {
 		t.Fatalf("want \"Applying 1 resource\", got: %q", got)
 	}
 }
+
+// A fileset's ResourceRef.Name is keyed "context/stack/volume" for identity
+// (see manifest.DiscoveredFilesets), but qualifiedLabel already prefixes every
+// line with its context. Printing the full key repeated the context, e.g.
+// "hetzner-two fileset hetzner-two/traefik/config: syncing".
+func TestPlainFilesetLabelOmitsContext(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewPlain(&buf, fixedClock(time.Second))
+	fs := planner.ResourceRef{Context: "hetzner-two", Type: planner.ResourceFileset, Name: "hetzner-two/traefik/config"}
+	p.Start(fs, "syncing")
+
+	out := buf.String()
+	if strings.Contains(out, "hetzner-two/traefik/config") {
+		t.Errorf("fileset label must not repeat the context; got: %q", out)
+	}
+	if !strings.Contains(out, "hetzner-two fileset traefik/config: syncing") {
+		t.Errorf("want context-qualified, context-stripped fileset label; got: %q", out)
+	}
+}

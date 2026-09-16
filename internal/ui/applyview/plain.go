@@ -39,10 +39,11 @@ func NewPlain(w io.Writer, now func() time.Time) *Plain {
 }
 
 func label(ref planner.ResourceRef) string {
+	name := displayName(ref)
 	if ref.Parent != "" {
-		return fmt.Sprintf("%s %s/%s", ref.Type, ref.Parent, ref.Name)
+		return fmt.Sprintf("%s %s/%s", ref.Type, ref.Parent, name)
 	}
-	return fmt.Sprintf("%s %s", ref.Type, ref.Name)
+	return fmt.Sprintf("%s %s", ref.Type, name)
 }
 
 // qualifiedLabel prefixes label(ref) with its context, matching the ordering

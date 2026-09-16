@@ -174,6 +174,41 @@ func TestFinalFrameNeverExceedsWidth(t *testing.T) {
 	}
 }
 
+// A fileset's ResourceRef.Name is keyed "context/stack/volume" for identity
+// (manifest.DiscoveredFilesets), but a fileset line already renders under its
+// context's header, so printing the full key repeats the context, e.g.
+// "hetzner-two/traefik/config" under "hetzner-two". The line, and the failure
+// footer if the fileset fails, must show only "traefik/config".
+func TestFilesetLineOmitsContext(t *testing.T) {
+	fs := planner.ResourceRef{Context: "hetzner-two", Type: planner.ResourceFileset, Name: "hetzner-two/traefik/config"}
+
+	m := apply(New(fixedClock(time.Second)),
+		tea.WindowSizeMsg{Width: 72},
+		SeedMsg{Items: []planner.ResourceRef{fs}},
+		StartMsg{Ref: fs, Verb: "syncing"},
+	)
+
+	got := ui.StripANSI(m.View())
+	if strings.Contains(got, "hetzner-two/traefik/config") {
+		t.Errorf("fileset line must not repeat the context; got:\n%s", got)
+	}
+	if !strings.Contains(got, "traefik/config") {
+		t.Errorf("fileset line must show the stack/volume portion; got:\n%s", got)
+	}
+
+	m2 := apply(m,
+		FailMsg{Ref: fs, Err: errors.New("boom")},
+		DoneMsg{},
+	)
+	got2 := ui.StripANSI(m2.View())
+	if strings.Contains(got2, "hetzner-two/traefik/config") {
+		t.Errorf("failure footer must not repeat the context; got:\n%s", got2)
+	}
+	if !strings.Contains(got2, "traefik/config") {
+		t.Errorf("failure footer must show the stack/volume portion; got:\n%s", got2)
+	}
+}
+
 // TestCollapsedGroupSummaryMixedResults proves Finding I4: a collapsed group's
 // summary line must break its results down by verb — the dominant one first,
 // the remainder called out — rather than silently reporting the total count

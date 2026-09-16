@@ -47,3 +47,22 @@ func TestSectionTitle_AllTitlesAppearInOrder(t *testing.T) {
 		}
 	}
 }
+
+// Discovery keys filesets by "context/stack/volume" (manifest.DiscoveredFilesets)
+// so the key stays unique across contexts, but a fileset section nests under a
+// context header already, so a bare "context/" prefix in its title just repeats
+// the header above it. FilesetDisplayName strips the leading segment, mirroring
+// what GetStacksForContext already does for stack titles.
+func TestFilesetDisplayName_StripsLeadingContextSegment(t *testing.T) {
+	cases := map[string]string{
+		"hetzner-two/traefik/config": "traefik/config",
+		"default/app/data":           "app/data",
+		"web_config":                 "web_config", // no context segment: unchanged
+		"":                           "",
+	}
+	for key, want := range cases {
+		if got := FilesetDisplayName(key); got != want {
+			t.Errorf("FilesetDisplayName(%q) = %q, want %q", key, got, want)
+		}
+	}
+}

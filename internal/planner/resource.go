@@ -141,7 +141,7 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 }
 
 func renderResourcePlanFull(rp *ResourcePlan) string {
-	sections := renderContextSections(rp, PlanRenderOptions{Full: true})
+	sections := renderContextSections(rp, PlanRenderOptions{Full: true}, false)
 	return appendPlanSummary(ui.RenderNestedSections(sections), rp)
 }
 
@@ -153,7 +153,15 @@ func renderResourcePlanFull(rp *ResourcePlan) string {
 // inventory (every resource, including no-ops) used by renderResourcePlanFull,
 // and the changes-only view (no-ops filtered out, "N unchanged" footers, and a
 // per-fileset changed-file cap) used by renderResourcePlanChangesOnly.
-func renderContextSections(rp *ResourcePlan, opts PlanRenderOptions) []ui.NestedSection {
+//
+// nested says whether the caller will wrap the returned sections under a
+// context header (renderPlanByContext does). A fileset's key is
+// "context/stack/volume" — needed for display when these sections stand
+// alone (RenderResourcePlanOpts/RenderResourcePlanFull, called directly on a
+// bare ResourcePlan with no context shown anywhere else), but redundant once
+// nested under that same context's header, so nested trims it down to
+// "stack/volume" via FilesetDisplayName.
+func renderContextSections(rp *ResourcePlan, opts PlanRenderOptions, nested bool) []ui.NestedSection {
 	if opts.Full {
 		var sections []ui.NestedSection
 
@@ -246,8 +254,12 @@ func renderContextSections(rp *ResourcePlan, opts PlanRenderOptions) []ui.Nested
 							diffLines = append(diffLines, ui.DiffLine{Type: res.ChangeType, Message: msg})
 						}
 
+						title := filesetName
+						if nested {
+							title = FilesetDisplayName(filesetName)
+						}
 						if len(diffLines) > 0 {
-							filesetSections = append(filesetSections, ui.NestedSection{Title: filesetName, Items: diffLines})
+							filesetSections = append(filesetSections, ui.NestedSection{Title: title, Items: diffLines})
 						}
 					}
 
@@ -380,7 +392,11 @@ func renderContextSections(rp *ResourcePlan, opts PlanRenderOptions) []ui.Nested
 						})
 					}
 
-					changedFilesetSections = append(changedFilesetSections, ui.NestedSection{Title: filesetName, Items: diffLines})
+					title := filesetName
+					if nested {
+						title = FilesetDisplayName(filesetName)
+					}
+					changedFilesetSections = append(changedFilesetSections, ui.NestedSection{Title: title, Items: diffLines})
 				}
 
 				filesetsSec := ui.NestedSection{Title: title, Sections: changedFilesetSections}
@@ -408,7 +424,7 @@ func renderPlanByContext(byContext map[string]*ContextPlan, opts PlanRenderOptio
 		if cp == nil || cp.Resources == nil {
 			continue
 		}
-		inner := renderContextSections(cp.Resources, opts)
+		inner := renderContextSections(cp.Resources, opts, true)
 		if len(inner) == 0 {
 			continue
 		}
@@ -503,7 +519,7 @@ func renderResourcePlanChangesOnly(rp *ResourcePlan) string {
 		return fmt.Sprintf("No changes. %d resources up to date.", totalUnits(rp))
 	}
 
-	sections := renderContextSections(rp, PlanRenderOptions{Full: false})
+	sections := renderContextSections(rp, PlanRenderOptions{Full: false}, false)
 	return appendPlanSummary(ui.RenderNestedSections(sections), rp)
 }
 
