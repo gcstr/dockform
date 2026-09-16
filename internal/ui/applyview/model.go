@@ -193,27 +193,8 @@ func (m Model) Outcomes() (applied, interrupted, notApplied int) {
 
 func (m Model) itemFor(ref planner.ResourceRef) *Item { return m.index[ref] }
 
-// groupTitle maps a resource type to its section heading. Stacks and the
-// services nested under them share one section, as in the plan renderer.
-func groupTitle(t planner.ResourceType) string {
-	switch t {
-	case planner.ResourceVolume:
-		return "Volumes"
-	case planner.ResourceNetwork:
-		return "Networks"
-	case planner.ResourceStack, planner.ResourceService:
-		return "Stacks"
-	case planner.ResourceFileset, planner.ResourceFile:
-		return "Filesets"
-	case planner.ResourceContainer:
-		return "Containers"
-	default:
-		return "Other"
-	}
-}
-
 func (m Model) groupFor(ref planner.ResourceRef) *Group {
-	title := groupTitle(ref.Type)
+	title := planner.SectionTitle(ref.Type)
 	for _, g := range m.groups {
 		if g.Context == ref.Context && g.Title == title {
 			return g
@@ -228,7 +209,7 @@ func (m *Model) ensureGroup(ref planner.ResourceRef) *Group {
 	if g := m.groupFor(ref); g != nil {
 		return g
 	}
-	g := &Group{Context: ref.Context, Title: groupTitle(ref.Type)}
+	g := &Group{Context: ref.Context, Title: planner.SectionTitle(ref.Type)}
 	m.groups = append(m.groups, g)
 	return g
 }

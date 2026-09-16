@@ -474,7 +474,7 @@ func (m Model) View() string {
 		if failures := m.Failures(); len(failures) > 0 {
 			for _, it := range failures {
 				fmt.Fprintf(&foot, "  %s %s %s/%s  %s\n",
-					styleFail.Render("✖"), it.Ref.Context, groupTitle(it.Ref.Type), it.Ref.Name, it.status())
+					styleFail.Render("✖"), it.Ref.Context, planner.SectionTitle(it.Ref.Type), it.Ref.Name, it.status())
 			}
 			foot.WriteString("\n")
 		}

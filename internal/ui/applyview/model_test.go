@@ -356,3 +356,19 @@ func TestLateGroupJoinsItsContextBlock(t *testing.T) {
 		t.Fatalf("context alpha header appears %d times, want 1:\n%s", n, out)
 	}
 }
+
+// The apply view must not keep its own copy of the section titles. This asserts
+// the view groups a ref under exactly the title the planner defines.
+func TestModel_GroupTitlesComeFromPlanner(t *testing.T) {
+	for _, typ := range []planner.ResourceType{
+		planner.ResourceVolume, planner.ResourceNetwork, planner.ResourceStack,
+		planner.ResourceService, planner.ResourceFileset, planner.ResourceContainer,
+	} {
+		m := New(nil)
+		ref := planner.ResourceRef{Context: "ctx", Type: typ, Name: "x"}
+		g := m.ensureGroup(ref)
+		if want := planner.SectionTitle(typ); g.Title != want {
+			t.Errorf("group title for %v = %q, want %q", typ, g.Title, want)
+		}
+	}
+}
