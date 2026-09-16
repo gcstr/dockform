@@ -190,9 +190,14 @@ func renderSections(result *strings.Builder, sections []NestedSection, depth int
 		if section.Title == "Using" {
 			titleStyle = styleUsingTitle
 		}
-		result.WriteString(indent)
-		result.WriteString(titleStyle.Render(section.Title))
-		result.WriteString("\n")
+		// Depth 0 always prints its header, even an empty one (unchanged from
+		// before). Nested depths skip a blank title, exactly as the original
+		// single level of nesting did.
+		if depth == 0 || section.Title != "" {
+			result.WriteString(indent)
+			result.WriteString(titleStyle.Render(section.Title))
+			result.WriteString("\n")
+		}
 
 		// Render direct items, indented one level deeper than this header.
 		for _, item := range section.Items {
