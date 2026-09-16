@@ -215,6 +215,38 @@ func TestRenderResourcePlanOpts_ChangesOnly_AllClear(t *testing.T) {
 	}
 }
 
+// TestRenderResourcePlanOpts_ChangesOnly_StartIsNotSwallowedAsNoop pins that a
+// plan whose only pending work is a stopped service (ActionStart) is reported
+// as having work, not folded into the "No changes" short-circuit. CountActions
+// only recognizes ActionCreate/ActionUpdate/ActionReconcile/ActionDelete as
+// "work"; ActionStart must be counted (as a create, since it shares the
+// create glyph per decision 1) or a stack with nothing but a stopped service
+// would silently report "No changes" and dockform apply would print "Nothing
+// to apply. Exiting." without ever starting the container.
+func TestRenderResourcePlanOpts_ChangesOnly_StartIsNotSwallowedAsNoop(t *testing.T) {
+	rp := &ResourcePlan{
+		Volumes: []Resource{
+			NewResource(ResourceVolume, "v1", ActionNoop, "exists"),
+		},
+		Stacks: map[string][]Resource{
+			"ctx/app": {NewResource(ResourceService, "web", ActionStart, "")},
+		},
+	}
+
+	got := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false}))
+	if strings.Contains(got, "No changes.") {
+		t.Errorf("expected pending start to be reported as work, got 'No changes.':\n%s", got)
+	}
+	if !strings.Contains(got, "will be started") {
+		t.Errorf("expected output to contain 'will be started', got:\n%s", got)
+	}
+
+	create, update, delete := rp.CountActions()
+	if create != 1 || update != 0 || delete != 0 {
+		t.Errorf("CountActions() = (%d, %d, %d), want (1, 0, 0)", create, update, delete)
+	}
+}
+
 func TestRenderResourcePlanOpts_FullMatchesLegacy(t *testing.T) {
 	rp := &ResourcePlan{
 		Volumes: []Resource{

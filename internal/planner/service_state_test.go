@@ -6,6 +6,7 @@ import (
 
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
+	"github.com/gcstr/dockform/internal/ui"
 )
 
 func TestServiceStateDetector_BuildInlineEnv(t *testing.T) {
@@ -136,6 +137,121 @@ func TestNeedsApply(t *testing.T) {
 				t.Errorf("expected %v, got %v", tt.expected, result)
 			}
 		})
+	}
+}
+
+func TestFormatAction_Start(t *testing.T) {
+	r := NewResource(ResourceService, "netbird-server", ActionStart, "")
+	if got := r.FormatAction(); got != "will be started" {
+		t.Errorf("FormatAction() = %q, want %q", got, "will be started")
+	}
+}
+
+func TestActionStart_IsAdditiveChangeType(t *testing.T) {
+	// A start adds a running container, so it shares the create glyph rather
+	// than inventing a new one.
+	if got := actionToChangeType(ActionStart); got != ui.Add {
+		t.Errorf("actionToChangeType(ActionStart) = %v, want ui.Add", got)
+	}
+}
+
+// serviceFixture describes the mock Docker state for one service, used to
+// drive detectServiceStateFast through detectStateForTest.
+type serviceFixture struct {
+	name            string
+	stack           string
+	runningService  bool
+	containerExists bool
+	configDrifted   bool
+}
+
+// detectStateForTest builds a mock Docker client reflecting f and runs
+// detectServiceStateFast against it. runningService wires the service into
+// GetRunningServices' backing ComposePs data; containerExists wires it into
+// the all-containers listing (ListComposeContainersAll) used to detect a
+// stopped-but-present container; configDrifted makes the container's
+// recorded config-hash label disagree with the (mocked) desired hash.
+func detectStateForTest(t *testing.T, f serviceFixture) ServiceInfo {
+	t.Helper()
+
+	mock := newMockDocker()
+	containerName := f.stack + "_" + f.name + "_1"
+
+	if f.runningService {
+		mock.composePsItems = []dockercli.ComposePsItem{
+			{Name: containerName, Service: f.name, Project: f.stack},
+		}
+	}
+
+	if f.containerExists {
+		mock.containers = []dockercli.PsBrief{
+			{Project: f.stack, Service: f.name, Name: containerName},
+		}
+		hash := "mock-hash" // matches mockDockerClient.ComposeConfigHash's fixed return
+		if f.configDrifted {
+			hash = "stale-hash"
+		}
+		mock.containerLabels[containerName] = map[string]string{
+			"com.docker.compose.config-hash": hash,
+		}
+	}
+
+	detector := NewServiceStateDetector(mock)
+	stack := manifest.Stack{Root: "/tmp/" + f.stack}
+
+	running, err := detector.GetRunningServices(context.Background(), stack, nil)
+	if err != nil {
+		t.Fatalf("GetRunningServices: %v", err)
+	}
+
+	info, err := detector.DetectServiceState(context.Background(), f.name, f.stack, stack, "", nil, running)
+	if err != nil {
+		t.Fatalf("DetectServiceState: %v", err)
+	}
+	return info
+}
+
+func TestDetectServiceState_ExistingButStopped(t *testing.T) {
+	// A container that exists but is not running must be ServiceStopped, not
+	// ServiceMissing. ServiceMissing maps to "will be created", which is a lie
+	// for a container compose will merely start.
+	info := detectStateForTest(t, serviceFixture{
+		name:            "netbird-server",
+		stack:           "netbird",
+		runningService:  false,
+		containerExists: true,
+		configDrifted:   false,
+	})
+	if info.State != ServiceStopped {
+		t.Errorf("State = %v, want ServiceStopped", info.State)
+	}
+}
+
+func TestDetectServiceState_StoppedAndDrifted_Recreates(t *testing.T) {
+	info := detectStateForTest(t, serviceFixture{
+		name:            "netbird-server",
+		stack:           "netbird",
+		runningService:  false,
+		containerExists: true,
+		configDrifted:   true,
+	})
+	if info.State != ServiceDrifted {
+		t.Errorf("State = %v, want ServiceDrifted (recreate wins over start)", info.State)
+	}
+}
+
+func TestDetectServiceState_NoContainer_StillCreates(t *testing.T) {
+	// After `compose down` the container genuinely does not exist, so
+	// "will be created" is correct and must not change.
+	info := detectStateForTest(t, serviceFixture{
+		name:            "netbird-server",
+		stack:           "netbird",
+		runningService:  false,
+		containerExists: false,
+		configDrifted:   false,
+	})
+	if info.State != ServiceMissing {
+		t.Errorf("State = %v, want ServiceMissing", info.State)
 	}
 }
 

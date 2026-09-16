@@ -12,6 +12,7 @@ type Action string
 
 const (
 	ActionCreate    Action = "create"
+	ActionStart     Action = "start"
 	ActionUpdate    Action = "update"
 	ActionDelete    Action = "delete"
 	ActionReconcile Action = "reconcile"
@@ -73,6 +74,8 @@ func actionToChangeType(action Action) ui.ChangeType {
 	switch action {
 	case ActionCreate:
 		return ui.Add
+	case ActionStart:
+		return ui.Add
 	case ActionUpdate:
 		return ui.Change
 	case ActionDelete:
@@ -91,6 +94,8 @@ func (r Resource) FormatAction() string {
 	switch r.Action {
 	case ActionCreate:
 		return "will be created"
+	case ActionStart:
+		return "will be started"
 	case ActionUpdate:
 		return "will be updated"
 	case ActionDelete:
@@ -513,7 +518,7 @@ func hasAnyResources(rp *ResourcePlan) bool {
 func (rp *ResourcePlan) CountActions() (create, update, delete int) {
 	countResource := func(res Resource) {
 		switch res.Action {
-		case ActionCreate:
+		case ActionCreate, ActionStart:
 			create++
 		case ActionUpdate, ActionReconcile:
 			update++
