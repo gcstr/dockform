@@ -255,6 +255,43 @@ func TestDetectServiceState_NoContainer_StillCreates(t *testing.T) {
 	}
 }
 
+// TestDetectServiceState_CrossStackServiceNameCollision_NotConflated pins that
+// detectStoppedContainer scopes its host-wide ListComposeContainersAll lookup
+// to the stack's own resolved compose project, not just the service name.
+// Two independent stacks that both happen to declare a "postgres" service,
+// neither setting an explicit project.name (the common case), must not have
+// stack A's stopped container mistakenly reported against stack B's
+// still-nonexistent one.
+func TestDetectServiceState_CrossStackServiceNameCollision_NotConflated(t *testing.T) {
+	mock := newMockDocker()
+
+	// Stack A ("postgres-a"): a stopped "postgres" container exists.
+	containerA := "postgres-a_postgres_1"
+	mock.containers = []dockercli.PsBrief{
+		{Project: "postgres-a", Service: "postgres", Name: containerA},
+	}
+	mock.containerLabels[containerA] = map[string]string{
+		"com.docker.compose.config-hash": "mock-hash",
+	}
+
+	detector := NewServiceStateDetector(mock)
+
+	// Stack B ("postgres-b"): same service name, no container was ever
+	// created for it. Neither stack sets project.name, so compose resolves
+	// each stack's project from its own directory (mocked here as the
+	// lowercased basename of Root, mirroring real compose's default).
+	stackB := manifest.Stack{Root: "/stacks/postgres-b"}
+	running := map[string]dockercli.ComposePsItem{} // nothing running for B
+
+	info, err := detector.DetectServiceState(context.Background(), "postgres", "postgres-b", stackB, "", nil, running)
+	if err != nil {
+		t.Fatalf("DetectServiceState: %v", err)
+	}
+	if info.State != ServiceMissing {
+		t.Errorf("State = %v, want ServiceMissing (must not conflate with stack A's unrelated stopped container)", info.State)
+	}
+}
+
 func TestGetServiceNames(t *testing.T) {
 	services := []ServiceInfo{
 		{Name: "web"},
