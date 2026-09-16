@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/gcstr/dockform/internal/planner"
+	"github.com/gcstr/dockform/internal/ui"
 )
 
 // spinnerFrames mirrors internal/ui/rollinglog.go:272 so every dockform spinner
@@ -252,6 +253,12 @@ const statusColumn = len(itemIndent) + 1 /* marker */ + 1 /* space */ + itemName
 // separation stays unambiguous, which is what actually matters.
 const minStatusWidth = 14
 
+// groupTitleWidth replaces the %-16s padding collapsed group lines used to
+// carry. %-Ns counts bytes, so once a title carries ANSI it pads by the escape
+// length rather than the visible width and the status column drifts; padDisplay
+// measures display width instead.
+const groupTitleWidth = 16
+
 // bodyLine is one rendered line of the resource list, tagged with whether it
 // belongs to work that is currently running. The height window centres on the
 // active region, so a long run shows what is happening rather than the top of a
@@ -302,7 +309,7 @@ func (m Model) bodyLines() []bodyLine {
 		}
 
 		if g.Context != lastContext {
-			out = append(out, bodyLine{text: " " + g.Context, active: running})
+			out = append(out, bodyLine{text: " " + ui.SectionTitle(g.Context), active: running})
 			lastContext = g.Context
 		}
 
@@ -313,23 +320,25 @@ func (m Model) bodyLines() []bodyLine {
 				// depth-0 lines only, so this agrees with the done branch below —
 				// a Stacks group of 3 stacks (each with 2 services) says "3
 				// pending", never "9 pending".
-				out = append(out, bodyLine{text: fmt.Sprintf("  %s %-16s %s",
-					stylePending.Render("·"), g.Title, fmt.Sprintf("%d pending", g.depthZeroCount()))})
+				out = append(out, bodyLine{text: fmt.Sprintf("  %s %s %s",
+					stylePending.Render("·"), padDisplay(ui.NestedSectionTitle(g.Title), groupTitleWidth),
+					fmt.Sprintf("%d pending", g.depthZeroCount()))})
 				continue
 			}
 			breakdown, groupTotal := g.summary()
-			out = append(out, bodyLine{text: strings.TrimRight(fmt.Sprintf("  %s %-16s %s  %s",
-				styleDone.Render("✔"), g.Title, padDisplay(breakdown, minStatusWidth), formatDuration(groupTotal)), " ")})
+			out = append(out, bodyLine{text: strings.TrimRight(fmt.Sprintf("  %s %s %s  %s",
+				styleDone.Render("✔"), padDisplay(ui.NestedSectionTitle(g.Title), groupTitleWidth),
+				padDisplay(breakdown, minStatusWidth), formatDuration(groupTotal)), " ")})
 			continue
 		}
 
-		out = append(out, bodyLine{text: fmt.Sprintf("  %s %s", m.groupMarker(g), g.Title), active: running})
+		out = append(out, bodyLine{text: fmt.Sprintf("  %s %s", m.groupMarker(g), ui.NestedSectionTitle(g.Title)), active: running})
 		for _, it := range g.items {
 			indent := itemIndent
 			if it.Ref.Parent != "" {
 				indent = childIndent
 			}
-			name := displayName(it.Ref)
+			name := ui.Italic(displayName(it.Ref))
 			if it.Discovered {
 				name += " (discovered)"
 			}

@@ -401,6 +401,14 @@ func SectionTitle(title string) string {
 	return styleSectionTitle.Render(title)
 }
 
+// NestedSectionTitle renders a section heading that sits below a top-level
+// header, the style RenderNestedSections applies at any depth past zero.
+// Exported so internal/ui/applyview styles its group titles identically to the
+// plan renderer rather than keeping its own look.
+func NestedSectionTitle(title string) string {
+	return styleNestedSectionTitle.Render(title)
+}
+
 // FormatPlanSummary renders a plan summary with bold "Plan:" prefix.
 func FormatPlanSummary(createCount, changeCount, destroyCount int) string {
 	boldPlan := lipgloss.NewStyle().Bold(true).Render("Plan:")
