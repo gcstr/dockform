@@ -30,8 +30,10 @@ func TestRenderResourcePlanOpts_ChangesOnly_FlatSections(t *testing.T) {
 	if strings.Contains(out, "vKeep2") {
 		t.Errorf("expected output to NOT contain 'vKeep2' (no-op), got:\n%s", out)
 	}
-	if !strings.Contains(out, "2 unchanged") {
-		t.Errorf("expected Volumes footer '2 unchanged', got:\n%s", out)
+	// changes-only carries no "N unchanged" footer at all — --long is the
+	// escape hatch for the full inventory.
+	if strings.Contains(out, "unchanged") {
+		t.Errorf("expected no unchanged footer in changes-only output, got:\n%s", out)
 	}
 	// Networks holds only a no-op, so the whole section is omitted now:
 	// changes-only exists to show what changes, and --long still lists it.
@@ -71,8 +73,8 @@ func TestRenderResourcePlanOpts_ChangesOnly_Stacks(t *testing.T) {
 	if strings.Contains(out, " db ") {
 		t.Errorf("expected output to NOT contain noop service 'db', got:\n%s", out)
 	}
-	if !strings.Contains(out, "3 unchanged") {
-		t.Errorf("expected footer '3 unchanged' (db+x+y), got:\n%s", out)
+	if strings.Contains(out, "unchanged") {
+		t.Errorf("expected no unchanged footer in changes-only output, got:\n%s", out)
 	}
 	if !strings.Contains(out, "Stacks") {
 		t.Errorf("expected output to contain 'Stacks' header, got:\n%s", out)
@@ -95,8 +97,8 @@ func TestRenderResourcePlanOpts_ChangesOnly_FilesetsCount(t *testing.T) {
 	if strings.Contains(out, "ctx/a/cfg") {
 		t.Errorf("expected output to NOT contain 'ctx/a/cfg' (fully unchanged), got:\n%s", out)
 	}
-	if !strings.Contains(out, "1 unchanged") {
-		t.Errorf("expected Filesets footer '1 unchanged', got:\n%s", out)
+	if strings.Contains(out, "unchanged") {
+		t.Errorf("expected no unchanged footer in changes-only output, got:\n%s", out)
 	}
 }
 

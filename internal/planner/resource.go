@@ -304,12 +304,7 @@ func renderContextSections(rp *ResourcePlan, opts PlanRenderOptions, nested bool
 		if len(items) == 0 {
 			return
 		}
-		sec := ui.NestedSection{Title: title, Items: items}
-		noop := countNoop(resources)
-		if noop > 0 {
-			sec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", noop)}}
-		}
-		sections = append(sections, sec)
+		sections = append(sections, ui.NestedSection{Title: title, Items: items})
 	}
 
 	for _, title := range SectionOrder {
@@ -350,11 +345,7 @@ func renderContextSections(rp *ResourcePlan, opts PlanRenderOptions, nested bool
 				if len(changedStackSections) == 0 {
 					break
 				}
-				stacksSec := ui.NestedSection{Title: title, Sections: changedStackSections}
-				if unchangedServices > 0 {
-					stacksSec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", unchangedServices)}}
-				}
-				sections = append(sections, stacksSec)
+				sections = append(sections, ui.NestedSection{Title: title, Sections: changedStackSections})
 			}
 
 		case SectionTitle(ResourceFileset):
@@ -410,11 +401,7 @@ func renderContextSections(rp *ResourcePlan, opts PlanRenderOptions, nested bool
 				if len(changedFilesetSections) == 0 {
 					break
 				}
-				filesetsSec := ui.NestedSection{Title: title, Sections: changedFilesetSections}
-				if unchangedFilesets > 0 {
-					filesetsSec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", unchangedFilesets)}}
-				}
-				sections = append(sections, filesetsSec)
+				sections = append(sections, ui.NestedSection{Title: title, Sections: changedFilesetSections})
 			}
 
 		case SectionTitle(ResourceContainer):

@@ -55,9 +55,10 @@ func TestRenderPlanByContext_ChangesOnly_OmitsUnchangedContextsAndSections(t *te
 	if strings.Contains(out, "Networks") {
 		t.Errorf("section with nothing pending must be omitted; got:\n%s", out)
 	}
-	// A section that DOES have a change keeps reporting the rest of itself.
-	if !strings.Contains(out, "1 unchanged") {
-		t.Errorf("a changed section keeps its unchanged footer; got:\n%s", out)
+	// No "N unchanged" footers at all: changes-only shows what changes, and
+	// --long is the escape hatch for the full inventory.
+	if strings.Contains(out, "unchanged") {
+		t.Errorf("changes-only must carry no unchanged footer; got:\n%s", out)
 	}
 }
 
