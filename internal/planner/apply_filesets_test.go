@@ -30,6 +30,38 @@ func TestInlineEnvByStack_CachedAndPerStackFallback(t *testing.T) {
 	}
 }
 
+// SyncFilesetsForContext must not resolve any stack's compose project when
+// the context has no filesets at all: with nothing to sync, restartPending
+// stays empty and RestartPendingServices (apply.go) returns before ever
+// touching the returned project->stack map, so stackProjectMap's `compose
+// config` calls (one per stack, via stackComposeProject) are pure waste on a
+// context with stacks but no filesets.
+func TestSyncFilesetsForContext_NoFilesets_SkipsComposeConfigForStacks(t *testing.T) {
+	mock := newMockDocker()
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks: map[string]manifest.Stack{
+			"default/app": {Context: "default", Root: "/stacks/app"},
+		},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{},
+	}
+	fm := NewFilesetManagerWithClient(mock, nil)
+
+	restartPending, projectToStack, err := fm.SyncFilesetsForContext(context.Background(), cfg, "default", map[string]struct{}{}, nil)
+	if err != nil {
+		t.Fatalf("SyncFilesetsForContext failed: %v", err)
+	}
+	if len(restartPending) != 0 {
+		t.Errorf("restartPending = %v, want empty", restartPending)
+	}
+	_ = projectToStack
+
+	if mock.composeConfigFullCalls != 0 {
+		t.Errorf("ComposeConfigFull called %d times for a context with no filesets, want 0", mock.composeConfigFullCalls)
+	}
+}
+
 func TestFilesetManager_New(t *testing.T) {
 	// Test basic construction without Docker dependencies
 	mockDocker := newMockDocker()

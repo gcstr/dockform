@@ -40,6 +40,18 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 		return nil, nil, apperr.New("filesetmanager.SyncFilesetsForContext", apperr.Precondition, "docker client not configured")
 	}
 
+	// Get filesets for this context
+	contextFilesets := cfg.GetFilesetsForContext(contextName)
+	if len(contextFilesets) == 0 {
+		// Nothing to sync, so nothing can need a restart: restartPending stays
+		// empty, and RestartPendingServices (apply.go) returns before ever
+		// touching the project->stack map for an empty restartPending. Resolving
+		// every stack's compose project below is real work (one `compose config`
+		// call per stack) that would otherwise run, and be discarded, on every
+		// apply to a context with stacks but no filesets.
+		return restartPending, nil, nil
+	}
+
 	// Built once per context: attached discovery needs to map a container's
 	// compose project back to the stack key that owns it. inlineEnvByStack
 	// mirrors the environment apply time actually runs each stack under
@@ -50,12 +62,6 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 	// Reverse mapping for the cold-mode stop loop below: given a target's
 	// stack, which compose project does it actually run under.
 	stackProject := invertProjectToStack(projectToStack)
-
-	// Get filesets for this context
-	contextFilesets := cfg.GetFilesetsForContext(contextName)
-	if len(contextFilesets) == 0 {
-		return restartPending, projectToStack, nil
-	}
 
 	// Process filesets in deterministic order
 	filesetNames := make([]string, 0, len(contextFilesets))
