@@ -228,3 +228,67 @@ func TestDestroy_ScopedToStack_UnresolvedProjectFails(t *testing.T) {
 		t.Errorf("removed containers = %v, want none", got)
 	}
 }
+
+// buildDestroyPlanForContext must key its own ResourcePlan.Stacks bare (just
+// the project name): destroy renders from Plan.ByContext now, which already
+// nests each context under its own header (see renderPlanByContext), so a
+// "context/project" key there would print the context twice — the same bug
+// Finding 1 fixed for filesets.
+//
+// The context prefix still has to exist somewhere, though: BuildDestroyPlan's
+// aggregated Resources merges every context's plan into one flat map, and two
+// hosts routinely run same-named projects. mergeResourcePlan is the one that
+// must add it back, mirroring aggregateContextPlan (used by the regular plan
+// path) — dropping the prefix outright would let host-a's and host-b's "app1"
+// collide into a single aggregate entry, undercounting the destroy plan by a
+// whole stack.
+func TestBuildDestroyPlan_StacksKeyedBarePerContext_PrefixedInAggregate(t *testing.T) {
+	mock := newMockDocker()
+	mock.containers = []dockercli.PsBrief{
+		{Project: "app1", Service: "web", Name: "app1-web-1"},
+	}
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts: map[string]manifest.ContextConfig{
+			"host-a": {},
+			"host-b": {},
+		},
+	}
+	p := NewWithDocker(mock)
+
+	plan, err := p.BuildDestroyPlan(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("BuildDestroyPlan failed: %v", err)
+	}
+
+	for _, ctxName := range []string{"host-a", "host-b"} {
+		cp, ok := plan.ByContext[ctxName]
+		if !ok {
+			t.Fatalf("missing ByContext[%q]", ctxName)
+		}
+		if _, ok := cp.Resources.Stacks["app1"]; !ok {
+			t.Errorf("ByContext[%q].Resources.Stacks = %v, want bare key %q", ctxName, cp.Resources.Stacks, "app1")
+		}
+		if _, ok := cp.Resources.Stacks[ctxName+"/app1"]; ok {
+			t.Errorf("ByContext[%q].Resources.Stacks must not repeat its own context prefix; got %v", ctxName, cp.Resources.Stacks)
+		}
+	}
+
+	// Aggregate must disambiguate the two same-named projects by context,
+	// rather than collapsing them into one "app1" entry.
+	if _, ok := plan.Resources.Stacks["app1"]; ok {
+		t.Errorf("aggregate Resources.Stacks must not use the bare key when contexts collide; got %v", plan.Resources.Stacks)
+	}
+	for _, key := range []string{"host-a/app1", "host-b/app1"} {
+		svcs, ok := plan.Resources.Stacks[key]
+		if !ok {
+			t.Fatalf("aggregate Resources.Stacks missing %q; got %v", key, plan.Resources.Stacks)
+		}
+		if len(svcs) != 1 {
+			t.Errorf("aggregate Resources.Stacks[%q] = %v, want exactly 1 service (its own host's), not merged with the other host's", key, svcs)
+		}
+	}
+	if len(plan.Resources.Stacks) != 2 {
+		t.Errorf("aggregate Resources.Stacks has %d entries, want 2 (one per context); got %v", len(plan.Resources.Stacks), plan.Resources.Stacks)
+	}
+}
