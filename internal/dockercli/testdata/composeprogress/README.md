@@ -12,6 +12,7 @@ Re-capture rather than adjust when compose changes.
 | `container_name_override.jsonl` | a service using `container_name:` |
 | `pull_with_layers.jsonl` | image pull, with per-layer progress |
 | `error.jsonl` | pull failure, including the terminal error line |
+| `pull_multilayer.jsonl` | 14-layer image pull (postgres:16.4-bookworm), 176 events |
 | `depends_on_healthy.jsonl` | `depends_on: condition: service_healthy` from nothing |
 | `partial_change_with_unchanged_deps.jsonl` | only one service changed; its unchanged dependency must turn healthy again |
 
@@ -36,3 +37,25 @@ Re-capture rather than adjust when compose changes.
    events name containers the view has no line for.
 5. **Pull is noisy**: 15 lines for a single service, most of them per-layer, all
    carrying `parent_id` so they can be filtered or aggregated.
+
+## Pull percentage: what the multi-layer capture proved
+
+Four aggregation algorithms were run against `pull_multilayer.jsonl`:
+
+| algorithm | went backwards | first reading |
+|---|---|---|
+| naive: latest current/total, both phases mixed | 9 times | 100% (a tiny layer finishing first) |
+| download-only, denominator grows as layers appear | 4 times | 100% |
+| download-only, wait until every layer total is known | 0 | event 86 (34.7%), then stuck at 100% for 29 events during extraction |
+| **download + extract bytes over 2 x total, frozen denominator** | **0** | **event 86 (25.3%)**, reaches 100% only when extraction is actually done |
+
+Two facts drive this:
+
+- Every layer runs TWO byte-counted phases, `Downloading` then `Extracting`, each
+  0 -> 100%. Anything that mixes them naively goes backwards.
+- A layer's `total` is only reported when that layer STARTS downloading, and docker
+  downloads a few layers at a time (the `Waiting` events). So the full size of an
+  image is unknown until its last layer begins. A percentage that never goes
+  backwards cannot start before then — show "pulling..." until it can.
+
+Events carry no timestamps, so event position is not wall-clock time.
