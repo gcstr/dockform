@@ -229,6 +229,36 @@ func TestStackProjectMap_NonAmbiguousStackMapsToItsKey(t *testing.T) {
 	}
 }
 
+// A stack's inline env can set COMPOSE_PROJECT_NAME, which real compose
+// honors ahead of the directory-derived default — apply time actually runs
+// each stack under that overridden project (see inlineEnvByStack), so
+// stackProjectMap must record the OVERRIDDEN project, not the default one, or
+// its caller resolves the wrong project entirely. The mock previously ignored
+// its `inline` parameter altogether, which made this whole class of test
+// impossible to write.
+func TestStackProjectMap_InlineEnvOverridesProjectName(t *testing.T) {
+	mockDocker := newMockDocker()
+	stacks := map[string]manifest.Stack{
+		"web": {Root: "/stacks/web"}, // no Project.Name: falls through to ComposeConfigFull
+	}
+
+	// stackProjectMap is keyed project -> stack. With no inline env, the
+	// directory-derived default project "web" maps back to the "web" stack.
+	gotDefault := stackProjectMap(context.Background(), mockDocker, "ctx", stacks, nil)
+	if gotDefault["web"] != "web" {
+		t.Fatalf("sanity check failed: default project resolution changed; got=%#v", gotDefault)
+	}
+
+	inlineEnv := map[string][]string{"web": {"COMPOSE_PROJECT_NAME=custom-project"}}
+	got := stackProjectMap(context.Background(), mockDocker, "ctx", stacks, inlineEnv)
+	if got["custom-project"] != "web" {
+		t.Fatalf("inline env COMPOSE_PROJECT_NAME must override the default project name; got=%#v", got)
+	}
+	if _, ok := got["web"]; ok {
+		t.Fatalf("the default (un-overridden) project name must no longer be present; got=%#v", got)
+	}
+}
+
 func TestStackProjectMap_NoStacksReturnsNil(t *testing.T) {
 	got := stackProjectMap(context.Background(), newMockDocker(), "ctx", nil, nil)
 	if got != nil {

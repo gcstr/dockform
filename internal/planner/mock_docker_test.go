@@ -324,6 +324,15 @@ func (m *mockDockerClient) ComposeConfigFull(ctx context.Context, root string, f
 	if override, ok := m.composeProjectNames[root]; ok {
 		name = override
 	}
+	// Real compose honors COMPOSE_PROJECT_NAME from the environment ahead of
+	// the directory-derived default. Mirror that here so a test can prove
+	// inline env changes project resolution (stackProjectMap's whole reason
+	// for taking one) — previously this method ignored `inline` entirely.
+	for _, kv := range inline {
+		if v, ok := strings.CutPrefix(kv, "COMPOSE_PROJECT_NAME="); ok && v != "" {
+			name = v
+		}
+	}
 	// Return a valid config with nginx service for website directory
 	if strings.Contains(root, "website") {
 		return dockercli.ComposeConfigDoc{
