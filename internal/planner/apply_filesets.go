@@ -29,22 +29,32 @@ func NewFilesetManagerWithClient(client DockerClient, progress ProgressReporter)
 }
 
 // SyncFilesetsForContext synchronizes filesets for a specific context into their target volumes.
-// Returns services that need restart.
-func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manifest.Config, contextName string, existingVolumes map[string]struct{}, execCtx *ContextExecutionContext) (map[restartTarget]struct{}, error) {
+// Returns services that need restart, and the project->stack map built along
+// the way (see stackProjectMap) so the caller can reuse it when actually
+// restarting those services instead of resolving projects a second time.
+func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manifest.Config, contextName string, existingVolumes map[string]struct{}, execCtx *ContextExecutionContext) (map[restartTarget]struct{}, map[string]string, error) {
 	log := logger.FromContext(ctx).With("component", "fileset", "context", contextName)
 	restartPending := map[restartTarget]struct{}{}
 
-	// Built once per context: attached discovery needs to map a container's
-	// compose project back to the stack key that owns it.
-	projectToStack := stackProjectMap(ctx, fm.docker, cfg.GetStacksForContext(contextName))
 	if fm.docker == nil {
-		return nil, apperr.New("filesetmanager.SyncFilesetsForContext", apperr.Precondition, "docker client not configured")
+		return nil, nil, apperr.New("filesetmanager.SyncFilesetsForContext", apperr.Precondition, "docker client not configured")
 	}
+
+	// Built once per context: attached discovery needs to map a container's
+	// compose project back to the stack key that owns it. inlineEnvByStack
+	// mirrors the environment apply time actually runs each stack under
+	// (reusing BuildPlan's cached value where available), since inline env can
+	// set COMPOSE_PROJECT_NAME and change which project a stack resolves to.
+	stacksForContext := cfg.GetStacksForContext(contextName)
+	projectToStack := stackProjectMap(ctx, fm.docker, contextName, stacksForContext, inlineEnvByStack(ctx, fm.docker, cfg, contextName, execCtx, stacksForContext))
+	// Reverse mapping for the cold-mode stop loop below: given a target's
+	// stack, which compose project does it actually run under.
+	stackProject := invertProjectToStack(projectToStack)
 
 	// Get filesets for this context
 	contextFilesets := cfg.GetFilesetsForContext(contextName)
 	if len(contextFilesets) == 0 {
-		return restartPending, nil
+		return restartPending, projectToStack, nil
 	}
 
 	// Process filesets in deterministic order
@@ -66,7 +76,7 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 		if fileset.SourceAbs == "" {
 			err := apperr.New("filesetmanager.SyncFilesetsForContext", apperr.InvalidInput, "fileset %s: resolved source path is empty", name)
 			fm.progress.Fail(ref, err)
-			return nil, err
+			return nil, nil, err
 		}
 
 		var local, remote filesets.Index
@@ -86,7 +96,7 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 			if err != nil {
 				wrapped := apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.Internal, err, "index local filesets for %s", name)
 				fm.progress.Fail(ref, wrapped)
-				return nil, wrapped
+				return nil, nil, wrapped
 			}
 
 			// Only read from volume if it exists to avoid implicit creation
@@ -96,14 +106,14 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 				if err != nil {
 					wrapped := apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "read index file for fileset %s", name)
 					fm.progress.Fail(ref, wrapped)
-					return nil, wrapped
+					return nil, nil, wrapped
 				}
 			}
 			remote, err = filesets.ParseIndexJSON(raw)
 			if err != nil {
 				wrapped := apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "parse remote index for fileset %s", name)
 				fm.progress.Fail(ref, wrapped)
-				return nil, wrapped
+				return nil, nil, wrapped
 			}
 			diff = filesets.DiffIndexes(local, remote)
 		}
@@ -131,7 +141,7 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 		if err != nil {
 			wrapped := apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "resolve target services for fileset %s", name)
 			fm.progress.Fail(ref, wrapped)
-			return nil, wrapped
+			return nil, nil, wrapped
 		}
 
 		// For cold mode, stop targets (if any) before syncing
@@ -143,7 +153,7 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 			if err != nil {
 				wrapped := apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "list compose containers for cold fileset %s", name)
 				fm.progress.Fail(ref, wrapped)
-				return nil, wrapped
+				return nil, nil, wrapped
 			}
 			var containersToStop []string
 			for _, t := range targetServices {
@@ -151,7 +161,11 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 					continue
 				}
 				for _, it := range items {
-					if it.Service == t.Service {
+					// Match on the target's own stack, not just its service
+					// name: two stacks can share a service name, and picking
+					// whichever container docker lists first would stop (and
+					// later mark restarted) the wrong stack's container.
+					if containerMatchesTarget(it, t, stackProject) {
 						containersToStop = append(containersToStop, it.Name)
 						stoppedContainers = append(stoppedContainers, it.Name)
 						break
@@ -162,7 +176,7 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 				if err := fm.docker.StopContainers(ctx, containersToStop); err != nil {
 					wrapped := apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "stop cold-mode containers for fileset %s", name)
 					fm.progress.Fail(ref, wrapped)
-					return nil, wrapped
+					return nil, nil, wrapped
 				}
 			}
 		}
@@ -196,28 +210,28 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 		if err := fm.syncFilesetFiles(ctx, ref, fileset, diff); err != nil {
 			wrapped := restartColdContainersOnFailure(err)
 			fm.progress.Fail(ref, wrapped)
-			return nil, st.Fail(wrapped)
+			return nil, nil, st.Fail(wrapped)
 		}
 
 		// Delete removed files
 		if err := fm.deleteFilesetFiles(ctx, ref, fileset, diff); err != nil {
 			wrapped := restartColdContainersOnFailure(err)
 			fm.progress.Fail(ref, wrapped)
-			return nil, st.Fail(wrapped)
+			return nil, nil, st.Fail(wrapped)
 		}
 
 		// Write updated index
 		if err := fm.writeFilesetIndex(ctx, ref, fileset, local); err != nil {
 			wrapped := restartColdContainersOnFailure(err)
 			fm.progress.Fail(ref, wrapped)
-			return nil, st.Fail(wrapped)
+			return nil, nil, st.Fail(wrapped)
 		}
 
 		// Apply ownership if configured
 		if err := fm.applyOwnership(ctx, contextName, name, fileset, diff); err != nil {
 			wrapped := restartColdContainersOnFailure(err)
 			fm.progress.Fail(ref, wrapped)
-			return nil, st.Fail(wrapped)
+			return nil, nil, st.Fail(wrapped)
 		}
 
 		// For cold mode, start previously stopped containers again
@@ -226,7 +240,7 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 			if err := fm.docker.StartContainers(ctx, stoppedContainers); err != nil {
 				wrapped := apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "restart cold-mode containers for fileset %s", name)
 				fm.progress.Fail(ref, wrapped)
-				return nil, st.Fail(wrapped)
+				return nil, nil, st.Fail(wrapped)
 			}
 		}
 
@@ -243,7 +257,7 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 		}
 	}
 
-	return restartPending, nil
+	return restartPending, projectToStack, nil
 }
 
 // syncFilesetFiles handles create and update operations for fileset files.
@@ -313,4 +327,38 @@ func (fm *FilesetManager) writeFilesetIndex(ctx context.Context, ref ResourceRef
 	}
 
 	return nil
+}
+
+// inlineEnvByStack resolves each stack's own compose inline environment
+// (including decrypted SOPS secrets), keyed the same as stacks. It reuses
+// BuildPlan's cached result when available (StackExecutionData.InlineEnv), the
+// same fallback pattern collectDesiredServicesForContext and prune's
+// desiredServicesForStack use, so this doesn't redo SOPS decryption on every
+// apply. A stack whose inline env cannot be built is logged and left out
+// rather than silently mixed up with another stack's environment.
+func inlineEnvByStack(ctx context.Context, docker DockerClient, cfg manifest.Config, contextName string, execCtx *ContextExecutionContext, stacks map[string]manifest.Stack) map[string][]string {
+	if len(stacks) == 0 {
+		return nil
+	}
+	detector := NewServiceStateDetector(docker)
+	out := make(map[string][]string, len(stacks))
+	for name, stack := range stacks {
+		if stack.Project != nil && stack.Project.Name != "" {
+			// stackComposeProject short-circuits on an explicit project name
+			// (compose_project.go:19) without touching inline env; skip the
+			// decryption work for a value nothing will read.
+			continue
+		}
+		if execData := stackExecData(execCtx, name); execData != nil {
+			out[name] = execData.InlineEnv
+			continue
+		}
+		inline, err := detector.BuildInlineEnv(ctx, stack, cfg.Sops)
+		if err != nil {
+			logger.FromContext(ctx).Warn("inline_env_unresolved", "context", contextName, "stack", name, "error", err)
+			continue
+		}
+		out[name] = inline
+	}
+	return out
 }

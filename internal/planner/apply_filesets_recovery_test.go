@@ -46,7 +46,7 @@ func TestSyncFilesetsForContext_ColdFailureRestartSuccessReturnsBaseError(t *tes
 	mockDocker.extractTarError = errors.New("extract failed")
 
 	fm := NewFilesetManager(mockDocker, nil)
-	_, err := fm.SyncFilesetsForContext(
+	_, _, err := fm.SyncFilesetsForContext(
 		context.Background(),
 		coldFilesetConfig(t, src),
 		"default",
@@ -82,7 +82,7 @@ func TestSyncFilesetsForContext_ColdFailureRestartFailureReturnsAggregate(t *tes
 	mockDocker.startContainersError = errors.New("start failed")
 
 	fm := NewFilesetManager(mockDocker, nil)
-	_, err := fm.SyncFilesetsForContext(
+	_, _, err := fm.SyncFilesetsForContext(
 		context.Background(),
 		coldFilesetConfig(t, src),
 		"default",
@@ -97,5 +97,32 @@ func TestSyncFilesetsForContext_ColdFailureRestartFailureReturnsAggregate(t *tes
 	}
 	if !apperr.IsKind(err, apperr.External) {
 		t.Fatalf("expected external error kind, got: %v", err)
+	}
+}
+
+// A nil docker client must fail with a clear precondition error, not panic.
+// The projectToStack computation used to run before the nil-docker guard, and
+// for a stack with no project.name it reaches straight into
+// client.ComposeConfigFull on a nil DockerClient interface.
+func TestSyncFilesetsForContext_NilDockerReturnsPreconditionNotPanic(t *testing.T) {
+	cfg := manifest.Config{
+		Identifier: "demo",
+		Contexts: map[string]manifest.ContextConfig{
+			"default": {},
+		},
+		Stacks: map[string]manifest.Stack{
+			// No Project.Name: forces stackProjectMap to call ComposeConfigFull.
+			"default/web": {Root: "/stacks/web"},
+		},
+		DiscoveredFilesets: coldFilesetConfig(t, t.TempDir()).DiscoveredFilesets,
+	}
+
+	fm := NewFilesetManager(nil, nil)
+	_, _, err := fm.SyncFilesetsForContext(context.Background(), cfg, "default", map[string]struct{}{}, nil)
+	if err == nil {
+		t.Fatalf("expected precondition error for nil docker client")
+	}
+	if !apperr.IsKind(err, apperr.Precondition) {
+		t.Fatalf("expected precondition error kind, got: %v", err)
 	}
 }

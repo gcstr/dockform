@@ -133,7 +133,7 @@ func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
 
 			restartManager := NewRestartManager(mockDocker, nil, nil)
 
-			err := restartManager.RestartPendingServices(context.Background(), "test-context", tt.pendingServices)
+			err := restartManager.RestartPendingServices(context.Background(), "test-context", tt.pendingServices, nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -183,5 +183,44 @@ func TestRestartPendingServices_SameServiceNameInTwoStacks(t *testing.T) {
 	}
 	if a.Parent != "linkwarden" || b.Parent != "paperless" {
 		t.Errorf("parents wrong: a=%q b=%q", a.Parent, b.Parent)
+	}
+}
+
+// Two stacks with a pending service of the same name must each restart their
+// OWN container. Matching by service name alone (docker's listing order) would
+// restart whichever container happens to come first for BOTH targets, leaving
+// one stack's container never restarted while the other's is restarted twice.
+func TestRestartPendingServices_SharedServiceNameRestartsOwnContainer(t *testing.T) {
+	mockDocker := newMockDocker()
+	mockDocker.containers = []dockercli.PsBrief{
+		{Project: "linkwarden", Service: "postgres", Name: "linkwarden-postgres-1"},
+		{Project: "paperless", Service: "postgres", Name: "paperless-postgres-1"},
+	}
+	pending := map[restartTarget]struct{}{
+		{Stack: "linkwarden", Service: "postgres"}: {},
+		{Stack: "paperless", Service: "postgres"}:  {},
+	}
+	projectToStack := map[string]string{"linkwarden": "linkwarden", "paperless": "paperless"}
+
+	restartManager := NewRestartManager(mockDocker, nil, nil)
+	if err := restartManager.RestartPendingServices(context.Background(), "ctx", pending, projectToStack); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wantRestarted := []string{"linkwarden-postgres-1", "paperless-postgres-1"}
+	if len(mockDocker.restartedContainers) != len(wantRestarted) {
+		t.Fatalf("restarted containers = %v, want %v", mockDocker.restartedContainers, wantRestarted)
+	}
+	for _, want := range wantRestarted {
+		found := false
+		for _, got := range mockDocker.restartedContainers {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected %q to be restarted, got=%v", want, mockDocker.restartedContainers)
+		}
 	}
 }

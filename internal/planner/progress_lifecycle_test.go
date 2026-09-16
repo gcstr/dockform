@@ -128,7 +128,7 @@ func TestProgressLifecycle_FilesetDeleteOnly(t *testing.T) {
 		Diff:        filesets.Diff{ToDelete: []string{"old-file.txt"}},
 	}
 
-	if _, err := fm.SyncFilesetsForContext(context.Background(), cfg, "default", map[string]struct{}{}, execCtx); err != nil {
+	if _, _, err := fm.SyncFilesetsForContext(context.Background(), cfg, "default", map[string]struct{}{}, execCtx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

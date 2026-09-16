@@ -1,10 +1,34 @@
 package planner
 
 import (
+	"context"
+	"reflect"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/manifest"
 )
+
+// inlineEnvByStack must give stackProjectMap each stack's OWN environment, not
+// a shared nil: inline env can set COMPOSE_PROJECT_NAME, so resolving one
+// stack's project with another stack's (or no) inline env can land it on the
+// wrong project and steal that project's line at restart time.
+func TestInlineEnvByStack_CachedAndPerStackFallback(t *testing.T) {
+	stacks := map[string]manifest.Stack{
+		"a": {Root: "/stacks/a", EnvInline: []string{"COMPOSE_PROJECT_NAME=a-project"}},
+		"b": {Root: "/stacks/b", EnvInline: []string{"COMPOSE_PROJECT_NAME=b-project"}},
+	}
+	execCtx := NewContextExecutionContext("default", "id")
+	execCtx.Stacks["a"] = &StackExecutionData{InlineEnv: []string{"CACHED=1"}}
+
+	got := inlineEnvByStack(context.Background(), newMockDocker(), manifest.Config{}, "default", execCtx, stacks)
+
+	if !reflect.DeepEqual(got["a"], []string{"CACHED=1"}) {
+		t.Errorf("stack a: expected cached BuildPlan inline env, got %#v", got["a"])
+	}
+	if !reflect.DeepEqual(got["b"], []string{"COMPOSE_PROJECT_NAME=b-project"}) {
+		t.Errorf("stack b: expected its OWN EnvInline via fallback (not a's, not nil), got %#v", got["b"])
+	}
+}
 
 func TestFilesetManager_New(t *testing.T) {
 	// Test basic construction without Docker dependencies

@@ -5,8 +5,25 @@ import (
 	"sort"
 
 	"github.com/gcstr/dockform/internal/apperr"
+	"github.com/gcstr/dockform/internal/dockercli"
+	"github.com/gcstr/dockform/internal/logger"
 	"github.com/gcstr/dockform/internal/manifest"
 )
+
+// normalizeFilesetStack reduces fs.Stack to the bare stack name SeedRefs uses
+// as Parent (manifest.GetStacksForContext strips the context via
+// ParseStackKey, seed.go:50). fs.Stack itself is populated two different ways
+// depending on how the fileset reached the config: loader.go's directory
+// discovery already stores the bare name, but validation.go's merge of a
+// declared fileset stores the full "context/stack" key. Reducing the keyed
+// form here — the only production call site that reads fs.Stack — means both
+// paths compare equal to the seeded Parent, not just the discovered one.
+func normalizeFilesetStack(raw string) string {
+	if _, stack, err := manifest.ParseStackKey(raw); err == nil {
+		return stack
+	}
+	return raw
+}
 
 // resolveTargetServices determines the services to act on for a fileset, based
 // on the restart_services setting (attached sentinel or explicit list).
@@ -42,7 +59,7 @@ func resolveTargetServices(ctx context.Context, docker DockerClient, fs manifest
 				continue
 			}
 			seen[s] = struct{}{}
-			out = append(out, restartTarget{Stack: fs.Stack, Service: s})
+			out = append(out, restartTarget{Stack: normalizeFilesetStack(fs.Stack), Service: s})
 		}
 		return out, nil
 	}
@@ -108,14 +125,29 @@ func resolveTargetServices(ctx context.Context, docker DockerClient, fs manifest
 // than a second fallback that guesses differently. A stack whose project cannot
 // be resolved is simply absent from the map, which yields an empty Stack at the
 // call site instead of a wrong one.
-func stackProjectMap(ctx context.Context, docker DockerClient, stacks map[string]manifest.Stack) map[string]string {
+//
+// inlineEnv supplies each stack's own compose inline environment, keyed the
+// same as stacks. Inline env can set COMPOSE_PROJECT_NAME, so a stack resolved
+// with the wrong (or no) inline env can land on a different project than the
+// one apply actually runs it under — and if that project happens to match
+// another stack's, this map would attribute containers to the wrong stack.
+// A missing entry passes nil, which is only correct when the stack truly has
+// no inline env.
+func stackProjectMap(ctx context.Context, docker DockerClient, contextName string, stacks map[string]manifest.Stack, inlineEnv map[string][]string) map[string]string {
 	if len(stacks) == 0 {
 		return nil
 	}
 	out := make(map[string]string, len(stacks))
 	for key, stack := range stacks {
-		proj, err := stackComposeProject(ctx, docker, stack, nil)
-		if err != nil || proj == "" {
+		proj, err := stackComposeProject(ctx, docker, stack, inlineEnv[key])
+		if err != nil {
+			// Matches build_plan_stacks.go's collectDesiredServicesForContext:
+			// a failed `compose config` stays diagnosable instead of silently
+			// producing an empty Parent.
+			logger.FromContext(ctx).Warn("compose_project_unresolved", "context", contextName, "stack", key, "error", err)
+			continue
+		}
+		if proj == "" {
 			continue
 		}
 		// Two stacks resolving to the same project is ambiguous; keeping
@@ -132,4 +164,39 @@ func stackProjectMap(ctx context.Context, docker DockerClient, stacks map[string
 		}
 	}
 	return out
+}
+
+// invertProjectToStack builds the reverse of stackProjectMap's project->stack
+// map, for call sites that know the stack and need its project (restart
+// matching, see containerMatchesTarget). stackProjectMap already drops
+// ambiguous projects, so this stays a clean one-to-one mapping.
+func invertProjectToStack(projectToStack map[string]string) map[string]string {
+	out := make(map[string]string, len(projectToStack))
+	for proj, stack := range projectToStack {
+		out[stack] = proj
+	}
+	return out
+}
+
+// containerMatchesTarget reports whether it is the container a restart target
+// names. The service name must match; when the target's stack maps to a known
+// compose project, the container's own project must match it too, so a service
+// name shared by two stacks resolves to the container that actually belongs to
+// the target's stack instead of whichever one docker lists first.
+//
+// A target with no known stack (t.Stack == "" or absent from stackProject)
+// falls back to matching by service name alone: that is today's behaviour,
+// and it is strictly better than refusing to restart anything.
+func containerMatchesTarget(it dockercli.PsBrief, t restartTarget, stackProject map[string]string) bool {
+	if it.Service != t.Service {
+		return false
+	}
+	if t.Stack == "" {
+		return true
+	}
+	wantProject, ok := stackProject[t.Stack]
+	if !ok {
+		return true
+	}
+	return normalizeComposeProject(it.Project) == wantProject
 }

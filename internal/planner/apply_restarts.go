@@ -52,10 +52,16 @@ func restartRefFor(contextName string, t restartTarget) ResourceRef {
 }
 
 // RestartPendingServices restarts all services queued for restart after fileset updates.
-func (rm *RestartManager) RestartPendingServices(ctx context.Context, contextName string, restartPending map[restartTarget]struct{}) error {
+//
+// projectToStack is the same project->stack map SyncFilesetsForContext built
+// (see stackProjectMap); it lets a target's stack be matched to its actual
+// compose project instead of matching containers by service name alone, which
+// two stacks sharing a service name would otherwise collide on.
+func (rm *RestartManager) RestartPendingServices(ctx context.Context, contextName string, restartPending map[restartTarget]struct{}, projectToStack map[string]string) error {
 	if len(restartPending) == 0 {
 		return nil
 	}
+	stackProject := invertProjectToStack(projectToStack)
 
 	log := logger.FromContext(ctx).With("component", "restart")
 
@@ -90,7 +96,7 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, contextNam
 		svc := t.Service
 		found := false
 		for _, it := range items {
-			if it.Service == svc {
+			if containerMatchesTarget(it, t, stackProject) {
 				found = true
 				st := logger.StartStep(log, "service_restart", svc, "resource_kind", "service", "container", it.Name)
 				pr.Info("restarting service %s...", svc)

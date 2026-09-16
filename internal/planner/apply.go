@@ -133,7 +133,7 @@ func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, context
 
 	// Synchronize filesets
 	filesetManager := NewFilesetManagerWithClient(client, progress)
-	restartPending, err := filesetManager.SyncFilesetsForContext(ctx, cfg, contextName, existingVolumes, execCtx)
+	restartPending, projectToStack, err := filesetManager.SyncFilesetsForContext(ctx, cfg, contextName, existingVolumes, execCtx)
 	if err != nil {
 		return st.Fail(err)
 	}
@@ -145,7 +145,7 @@ func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, context
 
 	// Restart services that need it
 	restartManager := NewRestartManagerWithClient(client, p.pr, progress)
-	if err := restartManager.RestartPendingServices(ctx, contextName, restartPending); err != nil {
+	if err := restartManager.RestartPendingServices(ctx, contextName, restartPending, projectToStack); err != nil {
 		return st.Fail(err)
 	}
 
