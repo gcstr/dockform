@@ -74,7 +74,17 @@ func (pln *Plan) String() string {
 	if pln.Resources == nil {
 		return "[no plan]"
 	}
-	return RenderResourcePlan(pln.Resources)
+	// BuildDestroyPlan (and similarly degenerate cases, e.g. a config with no
+	// contexts) never populates ByContext — it merges straight into the
+	// aggregate. Fall back to rendering that aggregate directly rather than
+	// silently dropping its content.
+	if len(pln.ByContext) == 0 {
+		return RenderResourcePlan(pln.Resources)
+	}
+	// Sections come from the per-context plans so a resource is always
+	// attributable to a host. The aggregate is kept only for the summary
+	// counts, which are legitimately cross-context.
+	return appendPlanSummary(renderPlanByContext(pln.ByContext, PlanRenderOptions{Full: true}), pln.Resources)
 }
 
 // Render renders the plan with the given options (e.g. changes-only vs full).
@@ -82,7 +92,15 @@ func (pln *Plan) Render(opts PlanRenderOptions) string {
 	if pln.Resources == nil {
 		return "[no plan]"
 	}
-	return RenderResourcePlanOpts(pln.Resources, opts)
+	// See String(): fall back to the flat renderer when there is no
+	// per-context data to group by (e.g. BuildDestroyPlan).
+	if len(pln.ByContext) == 0 {
+		return RenderResourcePlanOpts(pln.Resources, opts)
+	}
+	// Sections come from the per-context plans so a resource is always
+	// attributable to a host. The aggregate is kept only for the summary
+	// counts, which are legitimately cross-context.
+	return appendPlanSummary(renderPlanByContext(pln.ByContext, opts), pln.Resources)
 }
 
 // GetContextExecutionContext returns the execution context for a specific context.

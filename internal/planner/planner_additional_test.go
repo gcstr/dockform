@@ -44,7 +44,12 @@ func TestBuildPlan_NoDocker_ClientNil(t *testing.T) {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	out := pln.String()
-	if !strings.Contains(out, "no stacks defined") && out == "" {
+	// A config with no contexts has nothing to render per-context (the
+	// aggregate's synthetic "nothing to do" placeholder only ever lands in
+	// pln.Resources, never in any *ContextPlan, since there are no contexts
+	// to attach it to). Empty output is the correct result here; anything
+	// else must at least resemble a no-op/placeholder line.
+	if out != "" && !strings.Contains(out, "no stacks defined") && !strings.Contains(out, "nothing to do") {
 		t.Fatalf("expected a no-op line or empty output; got:\n%s", out)
 	}
 }
@@ -197,27 +202,38 @@ func TestPrune_Precondition_NoDocker(t *testing.T) {
 }
 
 func TestPlanString_Grouping(t *testing.T) {
-	pl := &Plan{
-		Resources: &ResourcePlan{
-			Volumes: []Resource{
-				NewResource(ResourceVolume, "v1", ActionCreate, ""),
+	// pln.String() now renders from ByContext (Resources is kept only for the
+	// summary counts), so a plan built without ByContext would render no
+	// section content at all — see TestBuildPlan_NoDocker_ClientNil. Give it a
+	// single context here, matching what a real BuildPlan produces.
+	rp := &ResourcePlan{
+		Volumes: []Resource{
+			NewResource(ResourceVolume, "v1", ActionCreate, ""),
+		},
+		Networks: []Resource{
+			NewResource(ResourceNetwork, "n1", ActionCreate, ""),
+		},
+		Stacks: map[string][]Resource{
+			"app": {
+				NewResource(ResourceService, "s1", ActionCreate, ""),
 			},
-			Networks: []Resource{
-				NewResource(ResourceNetwork, "n1", ActionCreate, ""),
-			},
-			Stacks: map[string][]Resource{
-				"app": {
-					NewResource(ResourceService, "s1", ActionCreate, ""),
-				},
-			},
-			Filesets: map[string][]Resource{
-				"fs": {
-					NewResource(ResourceFile, "a", ActionCreate, ""),
-				},
+		},
+		Filesets: map[string][]Resource{
+			"fs": {
+				NewResource(ResourceFile, "a", ActionCreate, ""),
 			},
 		},
 	}
+	pl := &Plan{
+		ByContext: map[string]*ContextPlan{
+			"default": {ContextName: "default", Resources: rp},
+		},
+		Resources: rp,
+	}
 	out := ui.StripANSI(pl.String())
+	if !strings.Contains(out, "default") {
+		t.Fatalf("expected the context header; got:\n%s", out)
+	}
 	if !strings.Contains(out, "Volumes") || !strings.Contains(out, "Networks") || !strings.Contains(out, "Stacks") || !strings.Contains(out, "Filesets") {
 		t.Fatalf("expected grouped section titles; got:\n%s", out)
 	}
