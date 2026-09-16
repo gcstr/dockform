@@ -1,0 +1,15 @@
+{"id":"Image alpine:3.19","status":"Working","text":"Pulling"}
+{"id":"5711127a7748","parent_id":"Image alpine:3.19","status":"Working","text":"Pulling fs layer","details":"0B"}
+{"id":"5711127a7748","parent_id":"Image alpine:3.19","status":"Working","text":"Downloading","details":"48.54kB","current":48537,"total":3359301,"percent":1}
+{"id":"5711127a7748","parent_id":"Image alpine:3.19","status":"Working","text":"Verifying Checksum","details":"0B"}
+{"id":"5711127a7748","parent_id":"Image alpine:3.19","status":"Done","text":"Download complete","details":"0B","percent":100}
+{"id":"5711127a7748","parent_id":"Image alpine:3.19","status":"Working","text":"Extracting","details":"65.54kB","current":65536,"total":3359301,"percent":1}
+{"id":"5711127a7748","parent_id":"Image alpine:3.19","status":"Working","text":"Extracting","details":"3.359MB","current":3359301,"total":3359301,"percent":100}
+{"id":"5711127a7748","parent_id":"Image alpine:3.19","status":"Done","text":"Pull complete","details":"0B","percent":100}
+{"id":"Image alpine:3.19","status":"Done","text":"Pulled"}
+{"id":"Network skqpull_default","status":"Working","text":"Creating"}
+{"id":"Network skqpull_default","status":"Done","text":"Created"}
+{"id":"Container skqpull-puller-1","status":"Working","text":"Creating"}
+{"id":"Container skqpull-puller-1","status":"Done","text":"Created"}
+{"id":"Container skqpull-puller-1","status":"Working","text":"Starting"}
+{"id":"Container skqpull-puller-1","status":"Done","text":"Started"}

@@ -1,0 +1,8 @@
+{"id":"Container skqfixture-alpha-1","status":"Working","text":"Recreate"}
+{"id":"Container skqfixture-alpha-1","status":"Done","text":"Recreated"}
+{"id":"Container skqfixture-beta-1","status":"Working","text":"Recreate"}
+{"id":"Container skqfixture-beta-1","status":"Done","text":"Recreated"}
+{"id":"Container skqfixture-alpha-1","status":"Working","text":"Starting"}
+{"id":"Container skqfixture-alpha-1","status":"Done","text":"Started"}
+{"id":"Container skqfixture-beta-1","status":"Working","text":"Starting"}
+{"id":"Container skqfixture-beta-1","status":"Done","text":"Started"}
