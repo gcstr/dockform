@@ -33,14 +33,13 @@ func TestRenderResourcePlanOpts_ChangesOnly_FlatSections(t *testing.T) {
 	if !strings.Contains(out, "2 unchanged") {
 		t.Errorf("expected Volumes footer '2 unchanged', got:\n%s", out)
 	}
-	if !strings.Contains(out, "1 unchanged") {
-		t.Errorf("expected Networks footer '1 unchanged', got:\n%s", out)
+	// Networks holds only a no-op, so the whole section is omitted now:
+	// changes-only exists to show what changes, and --long still lists it.
+	if strings.Contains(out, "Networks") {
+		t.Errorf("expected Networks section to be omitted (nothing pending), got:\n%s", out)
 	}
 	if !strings.Contains(out, "Volumes") {
 		t.Errorf("expected output to contain 'Volumes' header, got:\n%s", out)
-	}
-	if !strings.Contains(out, "Networks") {
-		t.Errorf("expected output to contain 'Networks' header, got:\n%s", out)
 	}
 }
 
@@ -161,11 +160,17 @@ func TestRenderResourcePlanOpts_ChangesOnly_AllStacksUnchanged(t *testing.T) {
 	}
 	out := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false}))
 
-	if !strings.Contains(out, "Stacks") {
-		t.Errorf("expected output to contain 'Stacks' header, got:\n%s", out)
+	// Every service is up to date, so the Stacks section carries no pending
+	// work and is dropped entirely rather than rendered as a bare footer.
+	if strings.Contains(out, "Stacks") {
+		t.Errorf("expected Stacks section to be omitted (no changed services), got:\n%s", out)
 	}
-	if !strings.Contains(out, "2 unchanged") {
-		t.Errorf("expected footer '2 unchanged', got:\n%s", out)
+	if strings.Contains(out, "2 unchanged") {
+		t.Errorf("expected no footer for an omitted section, got:\n%s", out)
+	}
+	// The section that DOES have a change still renders.
+	if !strings.Contains(out, "vNew") {
+		t.Errorf("expected the pending volume change to render, got:\n%s", out)
 	}
 	if strings.Contains(out, "ctx/app") {
 		t.Errorf("expected output to NOT contain 'ctx/app' subsection (no changed services), got:\n%s", out)

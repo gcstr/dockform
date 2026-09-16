@@ -96,9 +96,14 @@ func TestApply_DefaultChangesOnly(t *testing.T) {
 	if strings.Contains(got, "up-to-date") {
 		t.Fatalf("default apply output should omit 'up-to-date' lines; got: %s", got)
 	}
-	// It should still show a changed resource (the orphan-vol deletion).
-	if !strings.Contains(got, "unchanged") && !strings.Contains(got, "No changes") {
-		t.Fatalf("expected 'unchanged' or 'No changes' in default apply output; got: %s", got)
+	// It should still show the changed resource (the orphan-vol deletion).
+	if !strings.Contains(got, "orphan-vol") {
+		t.Fatalf("expected the pending change in default apply output; got: %s", got)
+	}
+	// Sections and contexts with nothing pending are omitted entirely, so an
+	// untouched Stacks section must not appear at all. --long still lists it.
+	if strings.Contains(got, "Stacks") {
+		t.Fatalf("default apply output should omit sections with nothing pending; got: %s", got)
 	}
 }
 

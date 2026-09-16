@@ -299,6 +299,11 @@ func renderContextSections(rp *ResourcePlan, opts PlanRenderOptions, nested bool
 			}
 			items = append(items, formatResourceLine(res))
 		}
+		// Nothing pending here: the whole section is noise in a view whose
+		// job is to show what will change. --long still lists it.
+		if len(items) == 0 {
+			return
+		}
 		sec := ui.NestedSection{Title: title, Items: items}
 		noop := countNoop(resources)
 		if noop > 0 {
@@ -342,6 +347,9 @@ func renderContextSections(rp *ResourcePlan, opts PlanRenderOptions, nested bool
 					}
 				}
 
+				if len(changedStackSections) == 0 {
+					break
+				}
 				stacksSec := ui.NestedSection{Title: title, Sections: changedStackSections}
 				if unchangedServices > 0 {
 					stacksSec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", unchangedServices)}}
@@ -399,6 +407,9 @@ func renderContextSections(rp *ResourcePlan, opts PlanRenderOptions, nested bool
 					changedFilesetSections = append(changedFilesetSections, ui.NestedSection{Title: title, Items: diffLines})
 				}
 
+				if len(changedFilesetSections) == 0 {
+					break
+				}
 				filesetsSec := ui.NestedSection{Title: title, Sections: changedFilesetSections}
 				if unchangedFilesets > 0 {
 					filesetsSec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", unchangedFilesets)}}
