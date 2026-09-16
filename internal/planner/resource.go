@@ -390,7 +390,13 @@ func renderPlanByContext(byContext map[string]*ContextPlan, opts PlanRenderOptio
 		}
 		sections = append(sections, ui.NestedSection{Title: name, Sections: inner})
 	}
-	return ui.RenderNestedSections(sections)
+	// This tree has one more wrapping level than a plain ResourcePlan's (the
+	// context itself), so the resource-type sections nested under each
+	// context need RenderGroupedNestedSections' extra level of blank-line
+	// separation to keep the spacing they had before context-wrapping
+	// existed. RenderNestedSections stays reserved for the plain, un-wrapped
+	// shape (e.g. destroy's direct RenderResourcePlanOpts calls).
+	return ui.RenderGroupedNestedSections(sections)
 }
 
 // formatResourceLine returns a DiffLine for a resource using the standard
@@ -475,6 +481,13 @@ func renderResourcePlanChangesOnly(rp *ResourcePlan) string {
 
 	sections := renderContextSections(rp, PlanRenderOptions{Full: false})
 	return appendPlanSummary(ui.RenderNestedSections(sections), rp)
+}
+
+// hasAnyResources reports whether a ResourcePlan tracks anything at all
+// (regardless of action), for the "nothing to do" placeholder.
+func hasAnyResources(rp *ResourcePlan) bool {
+	return len(rp.Volumes) > 0 || len(rp.Networks) > 0 ||
+		len(rp.Stacks) > 0 || len(rp.Filesets) > 0 || len(rp.Containers) > 0
 }
 
 // CountActions counts the number of each action type in the plan

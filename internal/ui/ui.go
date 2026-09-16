@@ -122,11 +122,29 @@ func RenderSectionedList(sections []Section) string {
 	return result.String()
 }
 
-// RenderNestedSections renders sections that can contain nested subsections,
-// to any depth (a section's Sections may themselves carry Sections, as when a
-// plan's per-context grouping wraps the existing Volumes/Stacks/Filesets tree
-// one level deeper).
+// RenderNestedSections renders sections that can contain nested subsections.
+// Blank-line separation applies only between THIS call's own top-level
+// siblings; anything nested beneath a section (its .Sections, at any depth)
+// renders tight against its own siblings — the original, unchanged two-level
+// behavior. Use this for a plain (non-grouped) tree, e.g. a single
+// ResourcePlan's Volumes/Networks/Stacks/Filesets/Containers sections.
 func RenderNestedSections(sections []NestedSection) string {
+	return renderSectionForest(sections, 1)
+}
+
+// RenderGroupedNestedSections is RenderNestedSections for a tree that has one
+// extra wrapping level around it — e.g. a plan grouped by Docker context,
+// where each context wraps the same Volumes/Networks/Stacks/Filesets/
+// Containers tree one level deeper. Blank-line separation extends one level
+// further in, so those wrapped resource-type sections keep the same visual
+// separation from each other that they had before being wrapped; the
+// per-stack/per-fileset leaf sections beneath them still render tight, as
+// they always have.
+func RenderGroupedNestedSections(sections []NestedSection) string {
+	return renderSectionForest(sections, 2)
+}
+
+func renderSectionForest(sections []NestedSection, spacedLevels int) string {
 	var result strings.Builder
 
 	// If we have content, start with a blank line for proper spacing from previous output
@@ -134,7 +152,7 @@ func RenderNestedSections(sections []NestedSection) string {
 		result.WriteString("\n")
 	}
 
-	renderSections(&result, sections, 0)
+	renderSections(&result, sections, 0, spacedLevels)
 
 	return result.String()
 }
@@ -154,10 +172,24 @@ func sectionHasContent(section NestedSection) bool {
 	return len(section.Items) > 0 || len(section.Sections) > 0 || len(section.Footer) > 0
 }
 
-// renderSections writes sections at the given depth (0 = top-level, matching
-// the original two-level behavior; each additional level of nesting indents
-// two more spaces, consistent with that original scheme).
-func renderSections(result *strings.Builder, sections []NestedSection, depth int) {
+// maxSectionDepth bounds the recursion below: today's callers only ever
+// produce at most three levels of section (group -> resource-type ->
+// per-item); anything deeper is unexpected and is dropped rather than grown
+// into indefinitely.
+const maxSectionDepth = 2
+
+// renderSections writes sections at the given depth (0 = top-level). Blank
+// lines separate siblings for depth < spacedLevels; deeper levels render
+// tight against each other. spacedLevels lets each entry point (see
+// RenderNestedSections vs. RenderGroupedNestedSections above) state its own
+// tree shape explicitly, rather than the renderer guessing it from the
+// absolute depth alone — the same absolute depth means a different thing to
+// each caller's tree.
+func renderSections(result *strings.Builder, sections []NestedSection, depth, spacedLevels int) {
+	if depth > maxSectionDepth {
+		return
+	}
+
 	indent := strings.Repeat("  ", depth)
 	itemIndent := strings.Repeat("  ", depth+1)
 
@@ -167,13 +199,10 @@ func renderSections(result *strings.Builder, sections []NestedSection, depth int
 			continue
 		}
 
-		// Add blank line before a sibling section, matching the original
-		// two-level behavior: the two shallowest levels (top-level sections,
-		// and — under a context wrapper — the resource-type sections nested
-		// beneath it) get blank-line separation; deeper levels (e.g. the
-		// per-stack/per-fileset subsections) stay tight against each other,
-		// exactly as before.
-		if depth < 2 {
+		// Add a blank line before a sibling section at every level the
+		// caller asked to have separated; deeper levels stay tight against
+		// each other.
+		if depth < spacedLevels {
 			if !firstSection {
 				result.WriteString("\n")
 			}
@@ -209,7 +238,7 @@ func renderSections(result *strings.Builder, sections []NestedSection, depth int
 		}
 
 		// Recurse into nested sections one level deeper.
-		renderSections(result, section.Sections, depth+1)
+		renderSections(result, section.Sections, depth+1, spacedLevels)
 
 		// Render footer lines at the same indent as this section's own items:
 		// dim, no icon.

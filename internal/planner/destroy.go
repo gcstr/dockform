@@ -78,6 +78,7 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 		Stacks:   make(map[string][]Resource),
 		Filesets: make(map[string][]Resource),
 	}
+	byContext := make(map[string]*ContextPlan)
 
 	allFilesets := cfg.GetAllFilesets()
 	volumeToFileset := make(map[string]string)
@@ -108,13 +109,14 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 		mu.Lock()
 		defer mu.Unlock()
 		mergeResourcePlan(rp, localRP)
+		byContext[contextName] = &ContextPlan{ContextName: contextName, Identifier: cfg.Identifier, Resources: localRP}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &Plan{Resources: rp}, nil
+	return &Plan{ByContext: byContext, Resources: rp}, nil
 }
 
 // buildDestroyPlanForContext discovers labeled resources on a single context.

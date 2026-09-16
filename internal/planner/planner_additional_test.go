@@ -38,19 +38,26 @@ exit 0
 }
 
 func TestBuildPlan_NoDocker_ClientNil(t *testing.T) {
-	cfg := manifest.Config{}
+	// One context with nothing declared in it and no docker client — a
+	// config manifest validation actually allows (it requires at least one
+	// context; see normalizeAndValidate's "at least one context must be
+	// defined" check), unlike a bare manifest.Config{} with zero contexts.
+	// Plan.String() now renders from ByContext with no aggregate-only
+	// fallback (destroy.go and buildContextPlan each own attaching their own
+	// "nothing to do" placeholder to their own ResourcePlan — see
+	// buildContextPlan), so the placeholder line must actually be visible
+	// here, not just tolerated as one of several acceptable shapes.
+	cfg := manifest.Config{
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+	}
 	pln, err := New().BuildPlan(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	out := pln.String()
-	// A config with no contexts has nothing to render per-context (the
-	// aggregate's synthetic "nothing to do" placeholder only ever lands in
-	// pln.Resources, never in any *ContextPlan, since there are no contexts
-	// to attach it to). Empty output is the correct result here; anything
-	// else must at least resemble a no-op/placeholder line.
-	if out != "" && !strings.Contains(out, "no stacks defined") && !strings.Contains(out, "nothing to do") {
-		t.Fatalf("expected a no-op line or empty output; got:\n%s", out)
+	if !strings.Contains(out, "nothing to do") {
+		t.Fatalf("expected the 'nothing to do' placeholder line; got:\n%s", out)
 	}
 }
 
