@@ -12,6 +12,8 @@ Re-capture rather than adjust when compose changes.
 | `container_name_override.jsonl` | a service using `container_name:` |
 | `pull_with_layers.jsonl` | image pull, with per-layer progress |
 | `error.jsonl` | pull failure, including the terminal error line |
+| `depends_on_healthy.jsonl` | `depends_on: condition: service_healthy` from nothing |
+| `partial_change_with_unchanged_deps.jsonl` | only one service changed; its unchanged dependency must turn healthy again |
 
 ## What the capture established
 
@@ -26,5 +28,11 @@ Re-capture rather than adjust when compose changes.
    already builds.
 4. **The terminal error line has a DIFFERENT SHAPE**: `{"error":true,"message":...}`,
    with no `id`, `status` or `text`. A parser assuming the base shape mishandles it.
+6. **Healthcheck waits are visible, on the DEPENDENCY.** `Container db: Waiting`
+   then `Healthy`. The blocked dependent (`app`) emits nothing during the wait.
+7. **Unchanged services emit events.** When only `app` changed, `bystander` and
+   `db` still emitted `Done Running`, and `db` emitted `Waiting`/`Healthy` again
+   because `app` depends on it. dockform seeds only CHANGED services, so these
+   events name containers the view has no line for.
 5. **Pull is noisy**: 15 lines for a single service, most of them per-layer, all
    carrying `parent_id` so they can be filtered or aggregated.
