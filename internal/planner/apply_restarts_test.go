@@ -18,7 +18,7 @@ func TestRestartManager_New(t *testing.T) {
 
 func TestRestartManager_RestartPendingServices_NoPendingServices(t *testing.T) {
 	// Test that empty restart pending map is handled correctly
-	restartPending := map[string]struct{}{}
+	restartPending := map[restartTarget]struct{}{}
 
 	if len(restartPending) != 0 {
 		t.Error("Expected empty restart pending map")
@@ -89,18 +89,18 @@ func TestRestartManager_ServicesParsing(t *testing.T) {
 func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
 	tests := []struct {
 		name                string
-		pendingServices     map[string]struct{}
+		pendingServices     map[restartTarget]struct{}
 		availableContainers []dockercli.PsBrief
 		expectedRestarts    []string
 	}{
 		{
 			name:             "no pending services",
-			pendingServices:  map[string]struct{}{},
+			pendingServices:  map[restartTarget]struct{}{},
 			expectedRestarts: []string{},
 		},
 		{
 			name:            "restart available service",
-			pendingServices: map[string]struct{}{"web": {}},
+			pendingServices: map[restartTarget]struct{}{{Stack: "myapp", Service: "web"}: {}},
 			availableContainers: []dockercli.PsBrief{
 				{Service: "web", Name: "myapp_web_1"},
 			},
@@ -108,7 +108,7 @@ func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
 		},
 		{
 			name:            "skip missing service",
-			pendingServices: map[string]struct{}{"missing": {}},
+			pendingServices: map[restartTarget]struct{}{{Stack: "myapp", Service: "missing"}: {}},
 			availableContainers: []dockercli.PsBrief{
 				{Service: "web", Name: "myapp_web_1"},
 			},
@@ -116,7 +116,7 @@ func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
 		},
 		{
 			name:            "mixed available and missing services",
-			pendingServices: map[string]struct{}{"web": {}, "missing": {}, "db": {}},
+			pendingServices: map[restartTarget]struct{}{{Stack: "myapp", Service: "web"}: {}, {Stack: "myapp", Service: "missing"}: {}, {Stack: "myapp", Service: "db"}: {}},
 			availableContainers: []dockercli.PsBrief{
 				{Service: "web", Name: "myapp_web_1"},
 				{Service: "db", Name: "myapp_db_1"},
@@ -156,5 +156,32 @@ func TestRestartManager_RestartPendingServices_WithMock(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A restarted service must resolve the line SeedRefs created for it. All four
+// ResourceRef fields are compared, so a missing Parent produces a second,
+// top-level "(discovered)" entry instead of updating the seeded line.
+func TestRestartPendingServices_RefMatchesSeededRef(t *testing.T) {
+	seeded := ResourceRef{Context: "ctx", Type: ResourceService, Name: "web", Parent: "linkwarden"}
+
+	got := restartRefFor("ctx", restartTarget{Stack: "linkwarden", Service: "web"})
+
+	if got != seeded {
+		t.Errorf("restart ref = %+v, want %+v", got, seeded)
+	}
+}
+
+// Two stacks owning a service of the same name must not collide. This is the
+// failure a wrongly-attached Parent would cause.
+func TestRestartPendingServices_SameServiceNameInTwoStacks(t *testing.T) {
+	a := restartRefFor("ctx", restartTarget{Stack: "linkwarden", Service: "postgres"})
+	b := restartRefFor("ctx", restartTarget{Stack: "paperless", Service: "postgres"})
+
+	if a == b {
+		t.Fatalf("refs for the same service name in different stacks must differ; both were %+v", a)
+	}
+	if a.Parent != "linkwarden" || b.Parent != "paperless" {
+		t.Errorf("parents wrong: a=%q b=%q", a.Parent, b.Parent)
 	}
 }

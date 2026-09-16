@@ -30,9 +30,13 @@ func NewFilesetManagerWithClient(client DockerClient, progress ProgressReporter)
 
 // SyncFilesetsForContext synchronizes filesets for a specific context into their target volumes.
 // Returns services that need restart.
-func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manifest.Config, contextName string, existingVolumes map[string]struct{}, execCtx *ContextExecutionContext) (map[string]struct{}, error) {
+func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manifest.Config, contextName string, existingVolumes map[string]struct{}, execCtx *ContextExecutionContext) (map[restartTarget]struct{}, error) {
 	log := logger.FromContext(ctx).With("component", "fileset", "context", contextName)
-	restartPending := map[string]struct{}{}
+	restartPending := map[restartTarget]struct{}{}
+
+	// Built once per context: attached discovery needs to map a container's
+	// compose project back to the stack key that owns it.
+	projectToStack := stackProjectMap(ctx, fm.docker, cfg.GetStacksForContext(contextName))
 	if fm.docker == nil {
 		return nil, apperr.New("filesetmanager.SyncFilesetsForContext", apperr.Precondition, "docker client not configured")
 	}
@@ -123,7 +127,7 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 		isCold := fileset.ApplyMode == "cold"
 
 		// Compute target services to restart/stop based on restart_services semantics
-		targetServices, err := resolveTargetServices(ctx, fm.docker, fileset)
+		targetServices, err := resolveTargetServices(ctx, fm.docker, fileset, projectToStack)
 		if err != nil {
 			wrapped := apperr.Wrap("filesetmanager.SyncFilesetsForContext", apperr.External, err, "resolve target services for fileset %s", name)
 			fm.progress.Fail(ref, wrapped)
@@ -142,12 +146,12 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 				return nil, wrapped
 			}
 			var containersToStop []string
-			for _, svc := range targetServices {
-				if svc == "" {
+			for _, t := range targetServices {
+				if t.Service == "" {
 					continue
 				}
 				for _, it := range items {
-					if it.Service == svc {
+					if it.Service == t.Service {
 						containersToStop = append(containersToStop, it.Name)
 						stoppedContainers = append(stoppedContainers, it.Name)
 						break
@@ -231,9 +235,9 @@ func (fm *FilesetManager) SyncFilesetsForContext(ctx context.Context, cfg manife
 
 		// Queue services for restart only for hot mode
 		if !isCold {
-			for _, svc := range targetServices {
-				if svc != "" {
-					restartPending[svc] = struct{}{}
+			for _, t := range targetServices {
+				if t.Service != "" {
+					restartPending[t] = struct{}{}
 				}
 			}
 		}

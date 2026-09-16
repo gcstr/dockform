@@ -154,7 +154,7 @@ func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, context
 }
 
 // applyStackChangesForContext processes stacks for a context and performs compose up for those that need updates.
-func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.Config, contextName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, restartPending map[string]struct{}, progress ProgressReporter, execCtx *ContextExecutionContext) error {
+func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.Config, contextName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, restartPending map[restartTarget]struct{}, progress ProgressReporter, execCtx *ContextExecutionContext) error {
 	detector := NewServiceStateDetector(client)
 
 	// Process stacks in sorted order for deterministic behavior

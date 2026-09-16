@@ -26,8 +26,33 @@ func NewRestartManagerWithClient(client DockerClient, printer ui.Printer, progre
 	return &RestartManager{docker: client, printer: printer, progress: orNop(progress)}
 }
 
+// restartTarget identifies a service to restart by the stack that owns it.
+// The stack is required: ResourceRef compares all four of its fields, so a
+// service ref built without a Parent never matches the line SeedRefs created
+// for that service, and the apply view renders a second, top-level
+// "(discovered)" entry instead of updating the seeded one.
+//
+// Stack is empty only when the owning stack genuinely could not be resolved.
+// An empty Stack costs one duplicate line; a wrong one resolves some other
+// stack's line, which is worse.
+type restartTarget struct {
+	Stack   string
+	Service string
+}
+
+// restartRefFor builds the ResourceRef for a restart, matching the shape
+// SeedRefs uses for services (seed.go: Parent is the stack name).
+func restartRefFor(contextName string, t restartTarget) ResourceRef {
+	return ResourceRef{
+		Context: contextName,
+		Type:    ResourceService,
+		Name:    t.Service,
+		Parent:  t.Stack,
+	}
+}
+
 // RestartPendingServices restarts all services queued for restart after fileset updates.
-func (rm *RestartManager) RestartPendingServices(ctx context.Context, contextName string, restartPending map[string]struct{}) error {
+func (rm *RestartManager) RestartPendingServices(ctx context.Context, contextName string, restartPending map[restartTarget]struct{}) error {
 	if len(restartPending) == 0 {
 		return nil
 	}
@@ -48,14 +73,21 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, contextNam
 
 	// Restart each pending service in deterministic order: restartPending is a
 	// map, and iterating it directly would make restart lines appear in a
-	// different order every run.
-	svcNames := make([]string, 0, len(restartPending))
-	for svc := range restartPending {
-		svcNames = append(svcNames, svc)
+	// different order every run. Sorted by stack first so a run's restarts read
+	// grouped by the stack that owns them.
+	targets := make([]restartTarget, 0, len(restartPending))
+	for t := range restartPending {
+		targets = append(targets, t)
 	}
-	sort.Strings(svcNames)
+	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].Stack != targets[j].Stack {
+			return targets[i].Stack < targets[j].Stack
+		}
+		return targets[i].Service < targets[j].Service
+	})
 
-	for _, svc := range svcNames {
+	for _, t := range targets {
+		svc := t.Service
 		found := false
 		for _, it := range items {
 			if it.Service == svc {
@@ -63,7 +95,7 @@ func (rm *RestartManager) RestartPendingServices(ctx context.Context, contextNam
 				st := logger.StartStep(log, "service_restart", svc, "resource_kind", "service", "container", it.Name)
 				pr.Info("restarting service %s...", svc)
 
-				ref := ResourceRef{Context: contextName, Type: ResourceService, Name: svc}
+				ref := restartRefFor(contextName, t)
 				rm.progress.Start(ref, "restarting")
 
 				if err := rm.docker.RestartContainer(ctx, it.Name); err != nil {
