@@ -12,6 +12,7 @@ type Action string
 
 const (
 	ActionCreate    Action = "create"
+	ActionStart     Action = "start"
 	ActionUpdate    Action = "update"
 	ActionDelete    Action = "delete"
 	ActionReconcile Action = "reconcile"
@@ -28,6 +29,7 @@ const (
 	ResourceContainer ResourceType = "container"
 	ResourceFileset   ResourceType = "fileset"
 	ResourceFile      ResourceType = "file" // Individual file in a fileset
+	ResourceStack     ResourceType = "stack"
 )
 
 // Resource represents a single infrastructure resource with its planned action
@@ -72,6 +74,8 @@ func actionToChangeType(action Action) ui.ChangeType {
 	switch action {
 	case ActionCreate:
 		return ui.Add
+	case ActionStart:
+		return ui.Add
 	case ActionUpdate:
 		return ui.Change
 	case ActionDelete:
@@ -90,6 +94,8 @@ func (r Resource) FormatAction() string {
 	switch r.Action {
 	case ActionCreate:
 		return "will be created"
+	case ActionStart:
+		return "will be started"
 	case ActionUpdate:
 		return "will be updated"
 	case ActionDelete:
@@ -135,114 +141,300 @@ func RenderResourcePlan(rp *ResourcePlan) string {
 }
 
 func renderResourcePlanFull(rp *ResourcePlan) string {
+	sections := renderContextSections(rp, PlanRenderOptions{Full: true}, false)
+	return appendPlanSummary(ui.RenderNestedSections(sections), rp)
+}
+
+// renderContextSections builds the section tree for ONE context's resources.
+// It deliberately returns sections rather than a string so both the plan
+// renderer and the apply view can wrap them with their own decoration.
+//
+// opts.Full selects between the two existing rendering shapes: the full
+// inventory (every resource, including no-ops) used by renderResourcePlanFull,
+// and the changes-only view (no-ops filtered out, "N unchanged" footers, and a
+// per-fileset changed-file cap) used by renderResourcePlanChangesOnly.
+//
+// nested says whether the caller will wrap the returned sections under a
+// context header (renderPlanByContext does). A fileset's key is
+// "context/stack/volume" — needed for display when these sections stand
+// alone (RenderResourcePlanOpts/RenderResourcePlanFull, called directly on a
+// bare ResourcePlan with no context shown anywhere else), but redundant once
+// nested under that same context's header, so nested trims it down to
+// "stack/volume" via FilesetDisplayName.
+func renderContextSections(rp *ResourcePlan, opts PlanRenderOptions, nested bool) []ui.NestedSection {
+	if opts.Full {
+		var sections []ui.NestedSection
+
+		for _, title := range SectionOrder {
+			switch title {
+			case SectionTitle(ResourceVolume):
+				// Volumes section
+				if len(rp.Volumes) > 0 {
+					var items []ui.DiffLine
+					for _, res := range rp.Volumes {
+						items = append(items, formatResourceLine(res))
+					}
+					sections = append(sections, ui.NestedSection{Title: title, Items: items})
+				}
+
+			case SectionTitle(ResourceNetwork):
+				// Networks section
+				if len(rp.Networks) > 0 {
+					var items []ui.DiffLine
+					for _, res := range rp.Networks {
+						items = append(items, formatResourceLine(res))
+					}
+					sections = append(sections, ui.NestedSection{Title: title, Items: items})
+				}
+
+			case SectionTitle(ResourceStack):
+				// Stacks section with nested services
+				if len(rp.Stacks) > 0 {
+					var stackSections []ui.NestedSection
+
+					// Sort stack names for consistent output
+					stackNames := make([]string, 0, len(rp.Stacks))
+					for name := range rp.Stacks {
+						stackNames = append(stackNames, name)
+					}
+					sort.Strings(stackNames)
+
+					for _, stackName := range stackNames {
+						services := rp.Stacks[stackName]
+						var items []ui.DiffLine
+
+						for _, res := range services {
+							items = append(items, formatResourceLine(res))
+						}
+
+						if len(items) > 0 {
+							stackSections = append(stackSections, ui.NestedSection{Title: stackName, Items: items})
+						}
+					}
+
+					if len(stackSections) > 0 {
+						sections = append(sections, ui.NestedSection{
+							Title:    title,
+							Sections: stackSections,
+						})
+					}
+				}
+
+			case SectionTitle(ResourceFileset):
+				// Filesets section with nested file changes
+				if len(rp.Filesets) > 0 {
+					var filesetSections []ui.NestedSection
+
+					// Sort fileset names for consistent output
+					filesetNames := make([]string, 0, len(rp.Filesets))
+					for name := range rp.Filesets {
+						filesetNames = append(filesetNames, name)
+					}
+					sort.Strings(filesetNames)
+
+					for _, filesetName := range filesetNames {
+						items := rp.Filesets[filesetName]
+						var diffLines []ui.DiffLine
+
+						for _, res := range items {
+							var msg string
+							if res.Action == ActionNoop {
+								msg = res.Details
+								if msg == "" {
+									msg = "no file changes"
+								}
+							} else if res.Name != "" {
+								// File-specific action
+								fname := ui.Italic(res.Name)
+								msg = fmt.Sprintf("%s %s", res.Action, fname)
+							} else {
+								// General fileset message
+								msg = res.FormatAction()
+							}
+							diffLines = append(diffLines, ui.DiffLine{Type: res.ChangeType, Message: msg})
+						}
+
+						title := filesetName
+						if nested {
+							title = FilesetDisplayName(filesetName)
+						}
+						if len(diffLines) > 0 {
+							filesetSections = append(filesetSections, ui.NestedSection{Title: title, Items: diffLines})
+						}
+					}
+
+					if len(filesetSections) > 0 {
+						sections = append(sections, ui.NestedSection{
+							Title:    title,
+							Sections: filesetSections,
+						})
+					}
+				}
+
+			case SectionTitle(ResourceContainer):
+				// Containers section (for orphaned containers)
+				if len(rp.Containers) > 0 {
+					var items []ui.DiffLine
+					for _, res := range rp.Containers {
+						items = append(items, formatResourceLine(res))
+					}
+					sections = append(sections, ui.NestedSection{Title: title, Items: items})
+				}
+			}
+		}
+
+		return sections
+	}
+
 	var sections []ui.NestedSection
 
-	// Volumes section
-	if len(rp.Volumes) > 0 {
+	buildFlatSection := func(title string, resources []Resource) {
+		if len(resources) == 0 {
+			return
+		}
 		var items []ui.DiffLine
-		for _, res := range rp.Volumes {
+		for _, res := range resources {
+			if res.Action == ActionNoop {
+				continue
+			}
 			items = append(items, formatResourceLine(res))
 		}
-		sections = append(sections, ui.NestedSection{Title: "Volumes", Items: items})
+		// Nothing pending here: the whole section is noise in a view whose
+		// job is to show what will change. --long still lists it.
+		if len(items) == 0 {
+			return
+		}
+		sections = append(sections, ui.NestedSection{Title: title, Items: items})
 	}
 
-	// Networks section
-	if len(rp.Networks) > 0 {
-		var items []ui.DiffLine
-		for _, res := range rp.Networks {
-			items = append(items, formatResourceLine(res))
-		}
-		sections = append(sections, ui.NestedSection{Title: "Networks", Items: items})
-	}
+	for _, title := range SectionOrder {
+		switch title {
+		case SectionTitle(ResourceVolume):
+			buildFlatSection(title, rp.Volumes)
 
-	// Stacks section with nested services
-	if len(rp.Stacks) > 0 {
-		var stackSections []ui.NestedSection
+		case SectionTitle(ResourceNetwork):
+			buildFlatSection(title, rp.Networks)
 
-		// Sort stack names for consistent output
-		stackNames := make([]string, 0, len(rp.Stacks))
-		for name := range rp.Stacks {
-			stackNames = append(stackNames, name)
-		}
-		sort.Strings(stackNames)
-
-		for _, stackName := range stackNames {
-			services := rp.Stacks[stackName]
-			var items []ui.DiffLine
-
-			for _, res := range services {
-				items = append(items, formatResourceLine(res))
-			}
-
-			if len(items) > 0 {
-				stackSections = append(stackSections, ui.NestedSection{Title: stackName, Items: items})
-			}
-		}
-
-		if len(stackSections) > 0 {
-			sections = append(sections, ui.NestedSection{
-				Title:    "Stacks",
-				Sections: stackSections,
-			})
-		}
-	}
-
-	// Filesets section with nested file changes
-	if len(rp.Filesets) > 0 {
-		var filesetSections []ui.NestedSection
-
-		// Sort fileset names for consistent output
-		filesetNames := make([]string, 0, len(rp.Filesets))
-		for name := range rp.Filesets {
-			filesetNames = append(filesetNames, name)
-		}
-		sort.Strings(filesetNames)
-
-		for _, filesetName := range filesetNames {
-			items := rp.Filesets[filesetName]
-			var diffLines []ui.DiffLine
-
-			for _, res := range items {
-				var msg string
-				if res.Action == ActionNoop {
-					msg = res.Details
-					if msg == "" {
-						msg = "no file changes"
-					}
-				} else if res.Name != "" {
-					// File-specific action
-					fname := ui.Italic(res.Name)
-					msg = fmt.Sprintf("%s %s", res.Action, fname)
-				} else {
-					// General fileset message
-					msg = res.FormatAction()
+		case SectionTitle(ResourceStack):
+			// Stacks section (changes-only)
+			if len(rp.Stacks) > 0 {
+				stackNames := make([]string, 0, len(rp.Stacks))
+				for name := range rp.Stacks {
+					stackNames = append(stackNames, name)
 				}
-				diffLines = append(diffLines, ui.DiffLine{Type: res.ChangeType, Message: msg})
+				sort.Strings(stackNames)
+
+				var changedStackSections []ui.NestedSection
+				unchangedServices := 0
+
+				for _, stackName := range stackNames {
+					services := rp.Stacks[stackName]
+					unchangedServices += countNoop(services)
+
+					var items []ui.DiffLine
+					for _, svc := range services {
+						if svc.Action != ActionNoop {
+							items = append(items, formatResourceLine(svc))
+						}
+					}
+					if len(items) > 0 {
+						changedStackSections = append(changedStackSections, ui.NestedSection{Title: stackName, Items: items})
+					}
+				}
+
+				if len(changedStackSections) == 0 {
+					break
+				}
+				sections = append(sections, ui.NestedSection{Title: title, Sections: changedStackSections})
 			}
 
-			if len(diffLines) > 0 {
-				filesetSections = append(filesetSections, ui.NestedSection{Title: filesetName, Items: diffLines})
-			}
-		}
+		case SectionTitle(ResourceFileset):
+			// Filesets section (changes-only)
+			if len(rp.Filesets) > 0 {
+				filesetNames := make([]string, 0, len(rp.Filesets))
+				for name := range rp.Filesets {
+					filesetNames = append(filesetNames, name)
+				}
+				sort.Strings(filesetNames)
 
-		if len(filesetSections) > 0 {
-			sections = append(sections, ui.NestedSection{
-				Title:    "Filesets",
-				Sections: filesetSections,
-			})
+				var changedFilesetSections []ui.NestedSection
+				unchangedFilesets := 0
+
+				for _, filesetName := range filesetNames {
+					items := rp.Filesets[filesetName]
+					if countNoop(items) == len(items) {
+						unchangedFilesets++
+						continue
+					}
+
+					var changedFiles []Resource
+					for _, item := range items {
+						if item.Action != ActionNoop {
+							changedFiles = append(changedFiles, item)
+						}
+					}
+
+					show := min(filesetChangedFileCap, len(changedFiles))
+
+					var diffLines []ui.DiffLine
+					for _, item := range changedFiles[:show] {
+						diffLines = append(diffLines, formatFilesetItem(item))
+					}
+
+					if len(changedFiles) > filesetChangedFileCap {
+						remaining := changedFiles[filesetChangedFileCap:]
+						extra := len(remaining)
+						c, u, d := summarizeFileActions(remaining)
+						diffLines = append(diffLines, ui.DiffLine{
+							Type:    ui.Info,
+							Message: fmt.Sprintf("… and %d more changed (%d created, %d updated, %d deleted)", extra, c, u, d),
+						})
+					}
+
+					title := filesetName
+					if nested {
+						title = FilesetDisplayName(filesetName)
+					}
+					changedFilesetSections = append(changedFilesetSections, ui.NestedSection{Title: title, Items: diffLines})
+				}
+
+				if len(changedFilesetSections) == 0 {
+					break
+				}
+				sections = append(sections, ui.NestedSection{Title: title, Sections: changedFilesetSections})
+			}
+
+		case SectionTitle(ResourceContainer):
+			buildFlatSection(title, rp.Containers)
 		}
 	}
 
-	// Containers section (for orphaned containers)
-	if len(rp.Containers) > 0 {
-		var items []ui.DiffLine
-		for _, res := range rp.Containers {
-			items = append(items, formatResourceLine(res))
-		}
-		sections = append(sections, ui.NestedSection{Title: "Containers", Items: items})
-	}
+	return sections
+}
 
-	return appendPlanSummary(ui.RenderNestedSections(sections), rp)
+// renderPlanByContext renders every context in sorted order, each as a section
+// whose children are that context's resource sections. The context level always
+// appears, including for a single context, so there is one output shape.
+func renderPlanByContext(byContext map[string]*ContextPlan, opts PlanRenderOptions) string {
+	var sections []ui.NestedSection
+	for _, name := range sortedKeys(byContext) {
+		cp := byContext[name]
+		if cp == nil || cp.Resources == nil {
+			continue
+		}
+		inner := renderContextSections(cp.Resources, opts, true)
+		if len(inner) == 0 {
+			continue
+		}
+		sections = append(sections, ui.NestedSection{Title: name, Sections: inner})
+	}
+	// This tree has one more wrapping level than a plain ResourcePlan's (the
+	// context itself), so the resource-type sections nested under each
+	// context need RenderGroupedNestedSections' extra level of blank-line
+	// separation to keep the spacing they had before context-wrapping
+	// existed. RenderNestedSections stays reserved for the plain, un-wrapped
+	// shape (e.g. destroy's direct RenderResourcePlanOpts calls).
+	return ui.RenderGroupedNestedSections(sections)
 }
 
 // formatResourceLine returns a DiffLine for a resource using the standard
@@ -325,125 +517,22 @@ func renderResourcePlanChangesOnly(rp *ResourcePlan) string {
 		return fmt.Sprintf("No changes. %d resources up to date.", totalUnits(rp))
 	}
 
-	var sections []ui.NestedSection
-
-	buildFlatSection := func(title string, resources []Resource) {
-		if len(resources) == 0 {
-			return
-		}
-		var items []ui.DiffLine
-		for _, res := range resources {
-			if res.Action == ActionNoop {
-				continue
-			}
-			items = append(items, formatResourceLine(res))
-		}
-		sec := ui.NestedSection{Title: title, Items: items}
-		noop := countNoop(resources)
-		if noop > 0 {
-			sec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", noop)}}
-		}
-		sections = append(sections, sec)
-	}
-
-	buildFlatSection("Volumes", rp.Volumes)
-	buildFlatSection("Networks", rp.Networks)
-
-	// Stacks section (changes-only)
-	if len(rp.Stacks) > 0 {
-		stackNames := make([]string, 0, len(rp.Stacks))
-		for name := range rp.Stacks {
-			stackNames = append(stackNames, name)
-		}
-		sort.Strings(stackNames)
-
-		var changedStackSections []ui.NestedSection
-		unchangedServices := 0
-
-		for _, stackName := range stackNames {
-			services := rp.Stacks[stackName]
-			unchangedServices += countNoop(services)
-
-			var items []ui.DiffLine
-			for _, svc := range services {
-				if svc.Action != ActionNoop {
-					items = append(items, formatResourceLine(svc))
-				}
-			}
-			if len(items) > 0 {
-				changedStackSections = append(changedStackSections, ui.NestedSection{Title: stackName, Items: items})
-			}
-		}
-
-		stacksSec := ui.NestedSection{Title: "Stacks", Sections: changedStackSections}
-		if unchangedServices > 0 {
-			stacksSec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", unchangedServices)}}
-		}
-		sections = append(sections, stacksSec)
-	}
-
-	// Filesets section (changes-only)
-	if len(rp.Filesets) > 0 {
-		filesetNames := make([]string, 0, len(rp.Filesets))
-		for name := range rp.Filesets {
-			filesetNames = append(filesetNames, name)
-		}
-		sort.Strings(filesetNames)
-
-		var changedFilesetSections []ui.NestedSection
-		unchangedFilesets := 0
-
-		for _, filesetName := range filesetNames {
-			items := rp.Filesets[filesetName]
-			if countNoop(items) == len(items) {
-				unchangedFilesets++
-				continue
-			}
-
-			var changedFiles []Resource
-			for _, item := range items {
-				if item.Action != ActionNoop {
-					changedFiles = append(changedFiles, item)
-				}
-			}
-
-			show := min(filesetChangedFileCap, len(changedFiles))
-
-			var diffLines []ui.DiffLine
-			for _, item := range changedFiles[:show] {
-				diffLines = append(diffLines, formatFilesetItem(item))
-			}
-
-			if len(changedFiles) > filesetChangedFileCap {
-				remaining := changedFiles[filesetChangedFileCap:]
-				extra := len(remaining)
-				c, u, d := summarizeFileActions(remaining)
-				diffLines = append(diffLines, ui.DiffLine{
-					Type:    ui.Info,
-					Message: fmt.Sprintf("… and %d more changed (%d created, %d updated, %d deleted)", extra, c, u, d),
-				})
-			}
-
-			changedFilesetSections = append(changedFilesetSections, ui.NestedSection{Title: filesetName, Items: diffLines})
-		}
-
-		filesetsSec := ui.NestedSection{Title: "Filesets", Sections: changedFilesetSections}
-		if unchangedFilesets > 0 {
-			filesetsSec.Footer = []ui.DiffLine{{Type: ui.Info, Message: fmt.Sprintf("%d unchanged", unchangedFilesets)}}
-		}
-		sections = append(sections, filesetsSec)
-	}
-
-	buildFlatSection("Containers", rp.Containers)
-
+	sections := renderContextSections(rp, PlanRenderOptions{Full: false}, false)
 	return appendPlanSummary(ui.RenderNestedSections(sections), rp)
+}
+
+// hasAnyResources reports whether a ResourcePlan tracks anything at all
+// (regardless of action), for the "nothing to do" placeholder.
+func hasAnyResources(rp *ResourcePlan) bool {
+	return len(rp.Volumes) > 0 || len(rp.Networks) > 0 ||
+		len(rp.Stacks) > 0 || len(rp.Filesets) > 0 || len(rp.Containers) > 0
 }
 
 // CountActions counts the number of each action type in the plan
 func (rp *ResourcePlan) CountActions() (create, update, delete int) {
 	countResource := func(res Resource) {
 		switch res.Action {
-		case ActionCreate:
+		case ActionCreate, ActionStart:
 			create++
 		case ActionUpdate, ActionReconcile:
 			update++

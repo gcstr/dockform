@@ -123,85 +123,131 @@ func RenderSectionedList(sections []Section) string {
 }
 
 // RenderNestedSections renders sections that can contain nested subsections.
+// Blank-line separation applies only between THIS call's own top-level
+// siblings; anything nested beneath a section (its .Sections, at any depth)
+// renders tight against its own siblings — the original, unchanged two-level
+// behavior. Use this for a plain (non-grouped) tree, e.g. a single
+// ResourcePlan's Volumes/Networks/Stacks/Filesets/Containers sections.
 func RenderNestedSections(sections []NestedSection) string {
-	var result strings.Builder
-	hasAnyContent := false
+	return renderSectionForest(sections, 1)
+}
 
-	// Check if we have any content to render
-	for _, section := range sections {
-		if len(section.Items) > 0 || len(section.Sections) > 0 || len(section.Footer) > 0 {
-			hasAnyContent = true
-			break
-		}
-	}
+// RenderGroupedNestedSections is RenderNestedSections for a tree that has one
+// extra wrapping level around it — e.g. a plan grouped by Docker context,
+// where each context wraps the same Volumes/Networks/Stacks/Filesets/
+// Containers tree one level deeper. Blank-line separation extends one level
+// further in, so those wrapped resource-type sections keep the same visual
+// separation from each other that they had before being wrapped; the
+// per-stack/per-fileset leaf sections beneath them still render tight, as
+// they always have.
+func RenderGroupedNestedSections(sections []NestedSection) string {
+	return renderSectionForest(sections, 2)
+}
+
+func renderSectionForest(sections []NestedSection, spacedLevels int) string {
+	var result strings.Builder
 
 	// If we have content, start with a blank line for proper spacing from previous output
-	if hasAnyContent {
+	if sectionsHaveContent(sections) {
 		result.WriteString("\n")
 	}
+
+	renderSections(&result, sections, 0, spacedLevels)
+
+	return result.String()
+}
+
+// sectionsHaveContent reports whether any section in the list has an item,
+// subsection, or footer line to render.
+func sectionsHaveContent(sections []NestedSection) bool {
+	for _, section := range sections {
+		if sectionHasContent(section) {
+			return true
+		}
+	}
+	return false
+}
+
+func sectionHasContent(section NestedSection) bool {
+	return len(section.Items) > 0 || len(section.Sections) > 0 || len(section.Footer) > 0
+}
+
+// maxSectionDepth bounds the recursion below: today's callers only ever
+// produce at most three levels of section (group -> resource-type ->
+// per-item); anything deeper is unexpected and is dropped rather than grown
+// into indefinitely.
+const maxSectionDepth = 2
+
+// renderSections writes sections at the given depth (0 = top-level). Blank
+// lines separate siblings for depth < spacedLevels; deeper levels render
+// tight against each other. spacedLevels lets each entry point (see
+// RenderNestedSections vs. RenderGroupedNestedSections above) state its own
+// tree shape explicitly, rather than the renderer guessing it from the
+// absolute depth alone — the same absolute depth means a different thing to
+// each caller's tree.
+func renderSections(result *strings.Builder, sections []NestedSection, depth, spacedLevels int) {
+	if depth > maxSectionDepth {
+		return
+	}
+
+	indent := strings.Repeat("  ", depth)
+	itemIndent := strings.Repeat("  ", depth+1)
 
 	firstSection := true
 	for _, section := range sections {
-		hasContent := len(section.Items) > 0 || len(section.Sections) > 0 || len(section.Footer) > 0
-		if !hasContent {
+		if !sectionHasContent(section) {
 			continue
 		}
 
-		// Add blank line before section (except for the first one)
-		if !firstSection {
-			result.WriteString("\n")
+		// Add a blank line before a sibling section at every level the
+		// caller asked to have separated; deeper levels stay tight against
+		// each other.
+		if depth < spacedLevels {
+			if !firstSection {
+				result.WriteString("\n")
+			}
+			firstSection = false
 		}
-		firstSection = false
 
-		// Section header with styling (override for "Using")
+		// Section header with styling (override for "Using"). Depth 0 keeps
+		// the original top-level style; any nested depth uses the existing
+		// nested-section style.
 		titleStyle := styleSectionTitle
+		if depth > 0 {
+			titleStyle = styleNestedSectionTitle
+		}
 		if section.Title == "Using" {
 			titleStyle = styleUsingTitle
 		}
-		result.WriteString(titleStyle.Render(section.Title))
-		result.WriteString("\n")
+		// Depth 0 always prints its header, even an empty one (unchanged from
+		// before). Nested depths skip a blank title, exactly as the original
+		// single level of nesting did.
+		if depth == 0 || section.Title != "" {
+			result.WriteString(indent)
+			result.WriteString(titleStyle.Render(section.Title))
+			result.WriteString("\n")
+		}
 
-		// Render direct items with two-space indentation and icons
+		// Render direct items, indented one level deeper than this header.
 		for _, item := range section.Items {
-			result.WriteString("  ")
+			result.WriteString(itemIndent)
 			result.WriteString(getIconForChangeType(item.Type))
 			result.WriteString(" ")
 			result.WriteString(StripRedundantPrefixes(item.Message, section.Title))
 			result.WriteString("\n")
 		}
 
-		// Render nested sections with additional indentation
-		for _, nestedSection := range section.Sections {
-			if len(nestedSection.Items) == 0 {
-				continue
-			}
+		// Recurse into nested sections one level deeper.
+		renderSections(result, section.Sections, depth+1, spacedLevels)
 
-			// Nested section header (if it has a title) - use plain bold style, not blue background
-			if nestedSection.Title != "" {
-				result.WriteString("  ")
-				result.WriteString(styleNestedSectionTitle.Render(nestedSection.Title))
-				result.WriteString("\n")
-			}
-
-			// Render nested items with four-space indentation
-			for _, item := range nestedSection.Items {
-				result.WriteString("    ")
-				result.WriteString(getIconForChangeType(item.Type))
-				result.WriteString(" ")
-				result.WriteString(StripRedundantPrefixes(item.Message, section.Title))
-				result.WriteString("\n")
-			}
-		}
-
-		// Render footer lines: 2-space indent, dim, no icon
+		// Render footer lines at the same indent as this section's own items:
+		// dim, no icon.
 		for _, item := range section.Footer {
-			result.WriteString("  ")
+			result.WriteString(itemIndent)
 			result.WriteString(styleMuted.Render(item.Message))
 			result.WriteString("\n")
 		}
 	}
-
-	return result.String()
 }
 
 // getIconForChangeType returns the appropriate icon for each change type.
@@ -353,6 +399,14 @@ func (NoopPrinter) Error(string, ...any) {}
 // SectionTitle renders a bold section header for grouped output.
 func SectionTitle(title string) string {
 	return styleSectionTitle.Render(title)
+}
+
+// NestedSectionTitle renders a section heading that sits below a top-level
+// header, the style RenderNestedSections applies at any depth past zero.
+// Exported so internal/ui/applyview styles its group titles identically to the
+// plan renderer rather than keeping its own look.
+func NestedSectionTitle(title string) string {
+	return styleNestedSectionTitle.Render(title)
 }
 
 // FormatPlanSummary renders a plan summary with bold "Plan:" prefix.

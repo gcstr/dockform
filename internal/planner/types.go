@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/gcstr/dockform/internal/filesets"
@@ -74,7 +75,10 @@ func (pln *Plan) String() string {
 	if pln.Resources == nil {
 		return "[no plan]"
 	}
-	return RenderResourcePlan(pln.Resources)
+	// Sections come from the per-context plans so a resource is always
+	// attributable to a host. The aggregate is kept only for the summary
+	// counts, which are legitimately cross-context.
+	return appendPlanSummary(renderPlanByContext(pln.ByContext, PlanRenderOptions{Full: true}), pln.Resources)
 }
 
 // Render renders the plan with the given options (e.g. changes-only vs full).
@@ -82,7 +86,22 @@ func (pln *Plan) Render(opts PlanRenderOptions) string {
 	if pln.Resources == nil {
 		return "[no plan]"
 	}
-	return RenderResourcePlanOpts(pln.Resources, opts)
+	// The concise all-clear message is a property of the whole plan (like
+	// renderResourcePlanChangesOnly's short-circuit for a single
+	// ResourcePlan), not of any one context, so it is checked against the
+	// aggregate before rendering any per-context sections. Without this,
+	// changes-only mode for a plan with zero changes across every context
+	// would fall through to a wall of per-section "N unchanged" footers
+	// instead of the single "No changes" line.
+	if !opts.Full {
+		if c, u, d := pln.Resources.CountActions(); c == 0 && u == 0 && d == 0 {
+			return fmt.Sprintf("No changes. %d resources up to date.", totalUnits(pln.Resources))
+		}
+	}
+	// Sections come from the per-context plans so a resource is always
+	// attributable to a host. The aggregate is kept only for the summary
+	// counts, which are legitimately cross-context.
+	return appendPlanSummary(renderPlanByContext(pln.ByContext, opts), pln.Resources)
 }
 
 // GetContextExecutionContext returns the execution context for a specific context.

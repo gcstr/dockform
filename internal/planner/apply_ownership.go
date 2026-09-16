@@ -13,7 +13,7 @@ import (
 )
 
 // applyOwnership applies ownership and permission settings to fileset files after they are synced.
-func (fm *FilesetManager) applyOwnership(ctx context.Context, name string, fileset manifest.FilesetSpec, diff filesets.Diff) error {
+func (fm *FilesetManager) applyOwnership(ctx context.Context, contextName string, name string, fileset manifest.FilesetSpec, diff filesets.Diff) error {
 	log := logger.FromContext(ctx).With("component", "fileset")
 
 	// Skip if no ownership configured
@@ -28,9 +28,10 @@ func (fm *FilesetManager) applyOwnership(ctx context.Context, name string, files
 		return nil
 	}
 
-	if fm.progress != nil {
-		fm.progress.SetAction("applying ownership for fileset " + name)
-	}
+	// Ownership is a phase of the fileset's own line, so this must carry the
+	// same ResourceRef the sync events use — all four fields take part in the
+	// renderer's identity comparison.
+	fm.progress.Detail(ResourceRef{Context: contextName, Type: ResourceFileset, Name: name}, "applying ownership")
 
 	// Build the script to run in the helper container
 	script, err := buildOwnershipScript(fileset.TargetPath, ownership, diff)

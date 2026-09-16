@@ -146,6 +146,14 @@ func (ctx *CLIContext) ApplyPlanWithContext(plan *planner.Plan) error {
 	})
 }
 
+// ApplyPlanWithReporter executes the plan, reporting progress to r instead of a
+// spinner. Used by the apply view and by the plain non-TTY renderer — there is
+// no spinner during the apply view, and starting one would fight the TUI for
+// stdout, so this deliberately does not use DynamicSpinnerOperation.
+func (ctx *CLIContext) ApplyPlanWithReporter(plan *planner.Plan, r planner.ProgressReporter) error {
+	return ctx.Planner.WithProgressReporter(r).ApplyWithPlan(ctx.Ctx, *ctx.Config, plan)
+}
+
 // PrunePlan executes pruning with spinner.
 func (ctx *CLIContext) PrunePlan() error {
 	stdPr := ctx.Printer.(ui.StdPrinter)

@@ -28,19 +28,20 @@ type mockDockerClient struct {
 	containerLabels        map[string]map[string]string // containerName -> labels
 
 	// Track operations performed
-	createdVolumes      []string
-	createdNetworks     []string
-	restartedContainers []string
-	startedContainers   []string
-	stoppedContainers   []string
-	removedContainers   []string
-	removedVolumes      []string
-	removedNetworks     []string
-	writtenFiles        map[string]string   // fileName -> content
-	extractedTars       []string            // volume names that had tars extracted
-	removedPaths        map[string][]string // volumeName -> removed paths
-	runVolumeScriptRuns int
-	readIndexBatchCalls int
+	createdVolumes         []string
+	createdNetworks        []string
+	restartedContainers    []string
+	startedContainers      []string
+	stoppedContainers      []string
+	removedContainers      []string
+	removedVolumes         []string
+	removedNetworks        []string
+	writtenFiles           map[string]string   // fileName -> content
+	extractedTars          []string            // volume names that had tars extracted
+	removedPaths           map[string][]string // volumeName -> removed paths
+	runVolumeScriptRuns    int
+	readIndexBatchCalls    int
+	composeConfigFullCalls int
 
 	// Control behavior
 	listVolumesError             error
@@ -314,6 +315,7 @@ func (m *mockDockerClient) InspectContainerLabels(ctx context.Context, container
 
 // Compose operations (minimal implementations for testing)
 func (m *mockDockerClient) ComposeConfigFull(ctx context.Context, root string, files []string, profiles []string, envFiles []string, inline []string) (dockercli.ComposeConfigDoc, error) {
+	m.composeConfigFullCalls++
 	if m.composeConfigFullError != nil {
 		return dockercli.ComposeConfigDoc{}, m.composeConfigFullError
 	}
@@ -321,6 +323,15 @@ func (m *mockDockerClient) ComposeConfigFull(ctx context.Context, root string, f
 	name := strings.ToLower(filepath.Base(root))
 	if override, ok := m.composeProjectNames[root]; ok {
 		name = override
+	}
+	// Real compose honors COMPOSE_PROJECT_NAME from the environment ahead of
+	// the directory-derived default. Mirror that here so a test can prove
+	// inline env changes project resolution (stackProjectMap's whole reason
+	// for taking one) — previously this method ignored `inline` entirely.
+	for _, kv := range inline {
+		if v, ok := strings.CutPrefix(kv, "COMPOSE_PROJECT_NAME="); ok && v != "" {
+			name = v
+		}
 	}
 	// Return a valid config with nginx service for website directory
 	if strings.Contains(root, "website") {

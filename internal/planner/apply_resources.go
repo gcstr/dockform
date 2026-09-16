@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"sort"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/logger"
@@ -16,12 +17,12 @@ type ResourceManager struct {
 
 // NewResourceManager creates a new resource manager.
 func NewResourceManager(docker DockerClient, progress ProgressReporter) *ResourceManager {
-	return &ResourceManager{docker: docker, progress: progress}
+	return &ResourceManager{docker: docker, progress: orNop(progress)}
 }
 
 // NewResourceManagerWithClient creates a new resource manager with a specific client.
 func NewResourceManagerWithClient(client DockerClient, progress ProgressReporter) *ResourceManager {
-	return &ResourceManager{docker: client, progress: progress}
+	return &ResourceManager{docker: client, progress: orNop(progress)}
 }
 
 // EnsureVolumesExistForContext creates any missing volumes for a specific context.
@@ -72,8 +73,14 @@ func (rm *ResourceManager) EnsureVolumesExistForContext(ctx context.Context, cfg
 		return nil, apperr.Wrap("resourcemanager.EnsureVolumesExistForContext", apperr.External, err, "list all volumes")
 	}
 
-	// Create missing volumes
+	// Create missing volumes in deterministic order.
+	volumeNames := make([]string, 0, len(desiredVolumes))
 	for name := range desiredVolumes {
+		volumeNames = append(volumeNames, name)
+	}
+	sort.Strings(volumeNames)
+
+	for _, name := range volumeNames {
 		if _, unlabeled := unlabeledVolumes[name]; unlabeled {
 			log.Warn("volume_exists_unlabeled", "volume", name)
 			st := logger.StartStep(log, "volume_ensure", name, "resource_kind", "volume")
@@ -85,12 +92,14 @@ func (rm *ResourceManager) EnsureVolumesExistForContext(ctx context.Context, cfg
 		}
 		if _, exists := existingVolumes[name]; !exists {
 			st := logger.StartStep(log, "volume_ensure", name, "resource_kind", "volume")
-			if rm.progress != nil {
-				rm.progress.SetAction("creating volume " + name)
-			}
+			ref := ResourceRef{Context: contextName, Type: ResourceVolume, Name: name}
+			rm.progress.Start(ref, "creating")
 			if err := rm.docker.CreateVolume(ctx, name, labels); err != nil {
-				return nil, st.Fail(apperr.Wrap("resourcemanager.EnsureVolumesExistForContext", apperr.External, err, "create volume %s", name))
+				wrapped := apperr.Wrap("resourcemanager.EnsureVolumesExistForContext", apperr.External, err, "create volume %s", name)
+				rm.progress.Fail(ref, wrapped)
+				return nil, st.Fail(wrapped)
 			}
+			rm.progress.Finish(ref, "created")
 			st.OK(true)
 			// Add to existing volumes map for return value
 			existingVolumes[name] = struct{}{}
@@ -117,22 +126,30 @@ func (rm *ResourceManager) EnsureNetworksExistForContext(ctx context.Context, cf
 		return nil
 	}
 
-	// Get desired networks for this context
+	// Get desired networks for this context, in deterministic order.
+	netNames := make([]string, 0, len(contextConfig.Networks))
 	for netName := range contextConfig.Networks {
+		netNames = append(netNames, netName)
+	}
+	sort.Strings(netNames)
+
+	for _, netName := range netNames {
 		if _, exists := existingNetworks[netName]; exists {
 			continue // Already exists
 		}
 
-		if rm.progress != nil {
-			rm.progress.SetAction("creating network " + netName)
-		}
+		ref := ResourceRef{Context: contextName, Type: ResourceNetwork, Name: netName}
+		rm.progress.Start(ref, "creating")
 
 		st := logger.StartStep(log, "network_create", netName,
 			"resource_kind", "network")
 
 		if err := rm.docker.CreateNetwork(ctx, netName, labels); err != nil {
-			return st.Fail(apperr.Wrap("resourcemanager.EnsureNetworksExistForContext", apperr.External, err, "create network %s", netName))
+			wrapped := apperr.Wrap("resourcemanager.EnsureNetworksExistForContext", apperr.External, err, "create network %s", netName)
+			rm.progress.Fail(ref, wrapped)
+			return st.Fail(wrapped)
 		}
+		rm.progress.Finish(ref, "created")
 
 		st.OK(true)
 	}

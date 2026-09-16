@@ -33,6 +33,28 @@ func (p *Planner) ApplyWithPlan(ctx context.Context, cfg manifest.Config, plan *
 		"stacks", len(allStacks),
 		"filesets", len(allFilesets))
 
+	// Seed the progress view with every line the approved plan contains, across
+	// all contexts, before any work starts. Apply (the no-plan entry point)
+	// seeds nothing, so its lines arrive as discovered refs instead.
+	progress := orNop(p.reporter)
+	if plan != nil {
+		contextNames := make([]string, 0, len(plan.ByContext))
+		for name := range plan.ByContext {
+			contextNames = append(contextNames, name)
+		}
+		sort.Strings(contextNames)
+
+		var refs []ResourceRef
+		for _, name := range contextNames {
+			cp := plan.ByContext[name]
+			if cp == nil {
+				continue
+			}
+			refs = append(refs, SeedRefs(name, cp.Resources)...)
+		}
+		progress.Seed(refs)
+	}
+
 	// Process each context (parallel by default, sequential with --sequential).
 	// Apply mutates state (compose up, volume/network creation), so contexts
 	// always run to completion: a failure on one host must never cancel an
@@ -82,14 +104,7 @@ func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, context
 	}
 
 	// Initialize progress tracking
-	progress := newProgressReporter(p.spinner, p.spinnerPrefix)
-	progressEstimator := NewProgressEstimatorWithClient(client, progress)
-	if execCtx != nil {
-		progressEstimator = progressEstimator.WithExecutionContext(execCtx)
-	}
-	if err := progressEstimator.EstimateAndStartProgressForContext(ctx, cfg, contextName, identifier); err != nil {
-		return st.Fail(err)
-	}
+	progress := orNop(p.reporter)
 
 	// Create missing volumes
 	resourceManager := NewResourceManagerWithClient(client, progress)
@@ -118,7 +133,7 @@ func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, context
 
 	// Synchronize filesets
 	filesetManager := NewFilesetManagerWithClient(client, progress)
-	restartPending, err := filesetManager.SyncFilesetsForContext(ctx, cfg, contextName, existingVolumes, execCtx)
+	restartPending, projectToStack, err := filesetManager.SyncFilesetsForContext(ctx, cfg, contextName, existingVolumes, execCtx)
 	if err != nil {
 		return st.Fail(err)
 	}
@@ -130,7 +145,7 @@ func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, context
 
 	// Restart services that need it
 	restartManager := NewRestartManagerWithClient(client, p.pr, progress)
-	if err := restartManager.RestartPendingServices(ctx, restartPending); err != nil {
+	if err := restartManager.RestartPendingServices(ctx, contextName, restartPending, projectToStack); err != nil {
 		return st.Fail(err)
 	}
 
@@ -139,7 +154,7 @@ func (p *Planner) applyContext(ctx context.Context, cfg manifest.Config, context
 }
 
 // applyStackChangesForContext processes stacks for a context and performs compose up for those that need updates.
-func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.Config, contextName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, restartPending map[string]struct{}, progress ProgressReporter, execCtx *ContextExecutionContext) error {
+func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.Config, contextName string, stacks map[string]manifest.Stack, identifier string, client DockerClient, restartPending map[restartTarget]struct{}, progress ProgressReporter, execCtx *ContextExecutionContext) error {
 	detector := NewServiceStateDetector(client)
 
 	// Process stacks in sorted order for deterministic behavior
@@ -195,17 +210,20 @@ func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.
 		}
 
 		// Perform compose up
-		if progress != nil {
-			progress.SetAction("docker compose up for " + contextName + "/" + stackName)
-		}
+		stackRef := ResourceRef{Context: contextName, Type: ResourceStack, Name: stackName}
+		progress.Start(stackRef, "starting")
 		if _, err := client.ComposeUp(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline); err != nil {
 			// Each service opens its own SSH session, so the stack's size is
 			// what overflows the host's MaxSessions limit. Name it here, where
 			// it is known; the transport layer cannot see it.
 			if dockercli.IsSSHSessionLimit(err) {
-				return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s/%s (%d services started concurrently)", contextName, stackName, len(services))
+				wrapped := apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s/%s (%d services started concurrently)", contextName, stackName, len(services))
+				progress.Fail(stackRef, wrapped)
+				return wrapped
 			}
-			return apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s/%s", contextName, stackName)
+			wrapped := apperr.Wrap("planner.Apply", apperr.External, err, "compose up %s/%s", contextName, stackName)
+			progress.Fail(stackRef, wrapped)
+			return wrapped
 		}
 
 		// Best-effort: ensure identifier label is present on containers
@@ -219,9 +237,13 @@ func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.
 				// enriching only ComposeUp looked correct from reading the code
 				// and produced no output at all on a real failure. Keep both.
 				if dockercli.IsSSHSessionLimit(err) {
-					return apperr.Wrap("planner.Apply", apperr.External, err, "list compose containers for stack %s/%s (%d services started concurrently)", contextName, stackName, len(services))
+					wrapped := apperr.Wrap("planner.Apply", apperr.External, err, "list compose containers for stack %s/%s (%d services started concurrently)", contextName, stackName, len(services))
+					progress.Fail(stackRef, wrapped)
+					return wrapped
 				}
-				return apperr.Wrap("planner.Apply", apperr.External, err, "list compose containers for stack %s/%s", contextName, stackName)
+				wrapped := apperr.Wrap("planner.Apply", apperr.External, err, "list compose containers for stack %s/%s", contextName, stackName)
+				progress.Fail(stackRef, wrapped)
+				return wrapped
 			}
 			var labelErrs []error
 			for _, it := range items {
@@ -237,9 +259,12 @@ func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.
 				}
 			}
 			if err := apperr.Aggregate("planner.Apply", apperr.External, "failed to apply identifier labels to one or more containers", labelErrs...); err != nil {
+				progress.Fail(stackRef, err)
 				return err
 			}
 		}
+
+		progress.Finish(stackRef, "started")
 	}
 
 	return nil

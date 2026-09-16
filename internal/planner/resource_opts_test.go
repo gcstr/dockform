@@ -30,17 +30,18 @@ func TestRenderResourcePlanOpts_ChangesOnly_FlatSections(t *testing.T) {
 	if strings.Contains(out, "vKeep2") {
 		t.Errorf("expected output to NOT contain 'vKeep2' (no-op), got:\n%s", out)
 	}
-	if !strings.Contains(out, "2 unchanged") {
-		t.Errorf("expected Volumes footer '2 unchanged', got:\n%s", out)
+	// changes-only carries no "N unchanged" footer at all — --long is the
+	// escape hatch for the full inventory.
+	if strings.Contains(out, "unchanged") {
+		t.Errorf("expected no unchanged footer in changes-only output, got:\n%s", out)
 	}
-	if !strings.Contains(out, "1 unchanged") {
-		t.Errorf("expected Networks footer '1 unchanged', got:\n%s", out)
+	// Networks holds only a no-op, so the whole section is omitted now:
+	// changes-only exists to show what changes, and --long still lists it.
+	if strings.Contains(out, "Networks") {
+		t.Errorf("expected Networks section to be omitted (nothing pending), got:\n%s", out)
 	}
 	if !strings.Contains(out, "Volumes") {
 		t.Errorf("expected output to contain 'Volumes' header, got:\n%s", out)
-	}
-	if !strings.Contains(out, "Networks") {
-		t.Errorf("expected output to contain 'Networks' header, got:\n%s", out)
 	}
 }
 
@@ -72,8 +73,8 @@ func TestRenderResourcePlanOpts_ChangesOnly_Stacks(t *testing.T) {
 	if strings.Contains(out, " db ") {
 		t.Errorf("expected output to NOT contain noop service 'db', got:\n%s", out)
 	}
-	if !strings.Contains(out, "3 unchanged") {
-		t.Errorf("expected footer '3 unchanged' (db+x+y), got:\n%s", out)
+	if strings.Contains(out, "unchanged") {
+		t.Errorf("expected no unchanged footer in changes-only output, got:\n%s", out)
 	}
 	if !strings.Contains(out, "Stacks") {
 		t.Errorf("expected output to contain 'Stacks' header, got:\n%s", out)
@@ -96,8 +97,8 @@ func TestRenderResourcePlanOpts_ChangesOnly_FilesetsCount(t *testing.T) {
 	if strings.Contains(out, "ctx/a/cfg") {
 		t.Errorf("expected output to NOT contain 'ctx/a/cfg' (fully unchanged), got:\n%s", out)
 	}
-	if !strings.Contains(out, "1 unchanged") {
-		t.Errorf("expected Filesets footer '1 unchanged', got:\n%s", out)
+	if strings.Contains(out, "unchanged") {
+		t.Errorf("expected no unchanged footer in changes-only output, got:\n%s", out)
 	}
 }
 
@@ -161,11 +162,17 @@ func TestRenderResourcePlanOpts_ChangesOnly_AllStacksUnchanged(t *testing.T) {
 	}
 	out := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false}))
 
-	if !strings.Contains(out, "Stacks") {
-		t.Errorf("expected output to contain 'Stacks' header, got:\n%s", out)
+	// Every service is up to date, so the Stacks section carries no pending
+	// work and is dropped entirely rather than rendered as a bare footer.
+	if strings.Contains(out, "Stacks") {
+		t.Errorf("expected Stacks section to be omitted (no changed services), got:\n%s", out)
 	}
-	if !strings.Contains(out, "2 unchanged") {
-		t.Errorf("expected footer '2 unchanged', got:\n%s", out)
+	if strings.Contains(out, "2 unchanged") {
+		t.Errorf("expected no footer for an omitted section, got:\n%s", out)
+	}
+	// The section that DOES have a change still renders.
+	if !strings.Contains(out, "vNew") {
+		t.Errorf("expected the pending volume change to render, got:\n%s", out)
 	}
 	if strings.Contains(out, "ctx/app") {
 		t.Errorf("expected output to NOT contain 'ctx/app' subsection (no changed services), got:\n%s", out)
@@ -212,6 +219,38 @@ func TestRenderResourcePlanOpts_ChangesOnly_AllClear(t *testing.T) {
 	}
 	if !strings.Contains(full, "exists") {
 		t.Errorf("full mode should contain 'exists' (inventory), got:\n%s", full)
+	}
+}
+
+// TestRenderResourcePlanOpts_ChangesOnly_StartIsNotSwallowedAsNoop pins that a
+// plan whose only pending work is a stopped service (ActionStart) is reported
+// as having work, not folded into the "No changes" short-circuit. CountActions
+// only recognizes ActionCreate/ActionUpdate/ActionReconcile/ActionDelete as
+// "work"; ActionStart must be counted (as a create, since it shares the
+// create glyph per decision 1) or a stack with nothing but a stopped service
+// would silently report "No changes" and dockform apply would print "Nothing
+// to apply. Exiting." without ever starting the container.
+func TestRenderResourcePlanOpts_ChangesOnly_StartIsNotSwallowedAsNoop(t *testing.T) {
+	rp := &ResourcePlan{
+		Volumes: []Resource{
+			NewResource(ResourceVolume, "v1", ActionNoop, "exists"),
+		},
+		Stacks: map[string][]Resource{
+			"ctx/app": {NewResource(ResourceService, "web", ActionStart, "")},
+		},
+	}
+
+	got := ui.StripANSI(RenderResourcePlanOpts(rp, PlanRenderOptions{Full: false}))
+	if strings.Contains(got, "No changes.") {
+		t.Errorf("expected pending start to be reported as work, got 'No changes.':\n%s", got)
+	}
+	if !strings.Contains(got, "will be started") {
+		t.Errorf("expected output to contain 'will be started', got:\n%s", got)
+	}
+
+	create, update, delete := rp.CountActions()
+	if create != 1 || update != 0 || delete != 0 {
+		t.Errorf("CountActions() = (%d, %d, %d), want (1, 0, 0)", create, update, delete)
 	}
 }
 

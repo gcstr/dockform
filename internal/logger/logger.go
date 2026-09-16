@@ -37,6 +37,9 @@ type Options struct {
 	NoColor bool
 	// LogFile, when set, enables an additional JSON sink written to this path.
 	LogFile string
+	// FileLevel overrides the level of the file sink. Empty means "same as
+	// Level", which is the historical behaviour of --log-file.
+	FileLevel string
 	// ReportTimestamp toggles timestamps on the primary sink. Default: true.
 	ReportTimestamp *bool
 }
@@ -75,12 +78,20 @@ func New(opts Options) (Logger, io.Closer, error) {
 	var sinks []Logger
 	sinks = append(sinks, primary)
 	if strings.TrimSpace(opts.LogFile) != "" {
-		f, err := os.OpenFile(opts.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		// 0o600: a secret that slips past redaction (redactPairs/redactText below
+		// are key-name and loose-regex based, not a guarantee) can end up in this
+		// file, so it gets the same restrictive mode as the run log directory
+		// (runlog.Open creates it 0o700), not a world-readable one.
+		f, err := os.OpenFile(opts.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
 			return nil, nil, err
 		}
 		fl := clog.NewWithOptions(f, clog.Options{})
-		fl.SetLevel(parseLevel(opts.Level))
+		fileLevel := opts.FileLevel
+		if strings.TrimSpace(fileLevel) == "" {
+			fileLevel = opts.Level
+		}
+		fl.SetLevel(parseLevel(fileLevel))
 		fl.SetFormatter(chooseFormatter(f, opts.Format))
 		// File logs default to no timestamps for machine parsing (unless pretty format is explicitly requested)
 		fl.SetReportTimestamp(opts.Format == "pretty" || opts.Format == "text")

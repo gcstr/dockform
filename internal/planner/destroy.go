@@ -78,6 +78,7 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 		Stacks:   make(map[string][]Resource),
 		Filesets: make(map[string][]Resource),
 	}
+	byContext := make(map[string]*ContextPlan)
 
 	allFilesets := cfg.GetAllFilesets()
 	volumeToFileset := make(map[string]string)
@@ -107,14 +108,15 @@ func (p *Planner) BuildDestroyPlan(ctx context.Context, cfg manifest.Config) (*P
 
 		mu.Lock()
 		defer mu.Unlock()
-		mergeResourcePlan(rp, localRP)
+		mergeResourcePlan(rp, localRP, contextName)
+		byContext[contextName] = &ContextPlan{ContextName: contextName, Identifier: cfg.Identifier, Resources: localRP}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &Plan{Resources: rp}, nil
+	return &Plan{ByContext: byContext, Resources: rp}, nil
 }
 
 // buildDestroyPlanForContext discovers labeled resources on a single context.
@@ -147,11 +149,15 @@ func (p *Planner) buildDestroyPlanForContext(ctx context.Context, client DockerC
 	}
 
 	for stack, services := range stackServices {
-		key := manifest.MakeStackKey(contextName, stack)
-		rp.Stacks[key] = []Resource{}
+		// Bare key: this ResourcePlan is rendered per-context (Plan.ByContext),
+		// nested under its own context header (renderPlanByContext), so a
+		// "context/project" key here would print the context twice — the same
+		// bug Finding 1 fixed for filesets. mergeResourcePlan adds the context
+		// prefix back when folding this into the aggregate plan.
+		rp.Stacks[stack] = []Resource{}
 		for svc := range services {
 			res := NewResource(ResourceService, svc, ActionDelete, "will be destroyed")
-			rp.Stacks[key] = append(rp.Stacks[key], res)
+			rp.Stacks[stack] = append(rp.Stacks[stack], res)
 		}
 	}
 
@@ -194,13 +200,21 @@ func (p *Planner) buildDestroyPlanForContext(ctx context.Context, client DockerC
 	return rp, nil
 }
 
-// mergeResourcePlan merges src into dst.
-func mergeResourcePlan(dst, src *ResourcePlan) {
+// mergeResourcePlan merges src (one context's plan, stacks keyed bare) into
+// dst (the cross-context aggregate), prefixing each stack key with
+// contextName — mirroring aggregateContextPlan, which does the same for the
+// regular (non-destroy) plan. Two hosts routinely run same-named projects;
+// without this prefix their entries would collide into one aggregate key,
+// undercounting the destroy plan by a whole stack. Fileset keys already
+// include their context from discovery (context/stack/volume), so they merge
+// as-is.
+func mergeResourcePlan(dst, src *ResourcePlan, contextName string) {
 	dst.Volumes = append(dst.Volumes, src.Volumes...)
 	dst.Networks = append(dst.Networks, src.Networks...)
 	dst.Containers = append(dst.Containers, src.Containers...)
 	for k, v := range src.Stacks {
-		dst.Stacks[k] = append(dst.Stacks[k], v...)
+		fullKey := manifest.MakeStackKey(contextName, k)
+		dst.Stacks[fullKey] = append(dst.Stacks[fullKey], v...)
 	}
 	for k, v := range src.Filesets {
 		dst.Filesets[k] = append(dst.Filesets[k], v...)

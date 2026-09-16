@@ -42,6 +42,9 @@ func serviceStatesToResources(services []ServiceInfo) []Resource {
 		case ServiceMissing:
 			resources = append(resources,
 				NewResource(ResourceService, service.Name, ActionCreate, ""))
+		case ServiceStopped:
+			resources = append(resources,
+				NewResource(ResourceService, service.Name, ActionStart, ""))
 		case ServiceIdentifierMismatch:
 			resources = append(resources,
 				NewResource(ResourceService, service.Name, ActionReconcile, "identifier mismatch"))

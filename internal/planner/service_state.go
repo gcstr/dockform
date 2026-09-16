@@ -19,6 +19,11 @@ type ServiceState int
 const (
 	// ServiceMissing indicates the service is not running
 	ServiceMissing ServiceState = iota
+	// ServiceStopped indicates a container for the service exists (compose ps -a
+	// sees it) but is not currently running, and its config has not drifted.
+	// Distinct from ServiceMissing so it maps to "will be started" rather than
+	// the misleading "will be created".
+	ServiceStopped
 	// ServiceRunning indicates the service is running and up-to-date
 	ServiceRunning
 	// ServiceDrifted indicates the service is running but configuration has drifted
@@ -193,6 +198,7 @@ func (d *ServiceStateDetector) detectServiceStateFast(ctx context.Context, servi
 	info.DesiredHash = desiredHash
 
 	if !isRunning {
+		d.detectStoppedContainer(ctx, &info, serviceName, stack, inline, desiredHash)
 		return info, nil
 	}
 
@@ -233,6 +239,60 @@ func (d *ServiceStateDetector) detectServiceStateFast(ctx context.Context, servi
 	}
 
 	return info, nil
+}
+
+// detectStoppedContainer upgrades info from ServiceMissing to ServiceStopped
+// (or ServiceDrifted) when a container for this service already exists but
+// is not running — e.g. `compose stop`, or a crashed/exited container. This
+// must NOT fire after `compose down`, which removes the container entirely:
+// in that case ListComposeContainersAll finds nothing and info stays
+// ServiceMissing, which correctly reports "will be created".
+//
+// ListComposeContainersAll is host-wide, not scoped to this stack, so a
+// service-name-only match risks conflating two different stacks that happen
+// to declare a same-named service (e.g. two independent "postgres" stacks).
+// The project is resolved the same way stackComposeProject already does
+// elsewhere in the planner (manifest project.name, else compose's own
+// resolution via ComposeConfigFull) so that a manifest simply omitting
+// project.name — the common case — is not mistaken for "resolution failed"
+// and does not fall back to matching by service name alone.
+func (d *ServiceStateDetector) detectStoppedContainer(ctx context.Context, info *ServiceInfo, serviceName string, stack manifest.Stack, inline []string, desiredHash string) {
+	all, err := d.docker.ListComposeContainersAll(ctx)
+	if err != nil {
+		// Can't tell whether a container exists; leave the ServiceMissing default.
+		return
+	}
+
+	// Already normalized by stackComposeProject; empty only on genuine
+	// resolution failure, in which case matching falls back to service name
+	// alone (consistent with desiredStacks.wantsContainer's documented
+	// fallback elsewhere in the planner).
+	proj, perr := stackComposeProject(ctx, d.docker, stack, inline)
+	if perr != nil {
+		proj = ""
+	}
+
+	for _, c := range all {
+		if c.Service != serviceName {
+			continue
+		}
+		if proj != "" && normalizeComposeProject(c.Project) != proj {
+			continue
+		}
+
+		info.State = ServiceStopped
+		if desiredHash != "" {
+			labels, lerr := d.docker.InspectContainerLabels(ctx, c.Name, []string{"com.docker.compose.config-hash"})
+			if lerr == nil {
+				runningHash := labels["com.docker.compose.config-hash"]
+				info.RunningHash = runningHash
+				if runningHash == "" || runningHash != desiredHash {
+					info.State = ServiceDrifted
+				}
+			}
+		}
+		return
+	}
 }
 
 // DetectAllServicesState analyzes the state of all services in a stack.

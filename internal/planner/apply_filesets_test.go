@@ -1,10 +1,66 @@
 package planner
 
 import (
+	"context"
+	"reflect"
 	"testing"
 
 	"github.com/gcstr/dockform/internal/manifest"
 )
+
+// inlineEnvByStack must give stackProjectMap each stack's OWN environment, not
+// a shared nil: inline env can set COMPOSE_PROJECT_NAME, so resolving one
+// stack's project with another stack's (or no) inline env can land it on the
+// wrong project and steal that project's line at restart time.
+func TestInlineEnvByStack_CachedAndPerStackFallback(t *testing.T) {
+	stacks := map[string]manifest.Stack{
+		"a": {Root: "/stacks/a", EnvInline: []string{"COMPOSE_PROJECT_NAME=a-project"}},
+		"b": {Root: "/stacks/b", EnvInline: []string{"COMPOSE_PROJECT_NAME=b-project"}},
+	}
+	execCtx := NewContextExecutionContext("default", "id")
+	execCtx.Stacks["a"] = &StackExecutionData{InlineEnv: []string{"CACHED=1"}}
+
+	got := inlineEnvByStack(context.Background(), newMockDocker(), manifest.Config{}, "default", execCtx, stacks)
+
+	if !reflect.DeepEqual(got["a"], []string{"CACHED=1"}) {
+		t.Errorf("stack a: expected cached BuildPlan inline env, got %#v", got["a"])
+	}
+	if !reflect.DeepEqual(got["b"], []string{"COMPOSE_PROJECT_NAME=b-project"}) {
+		t.Errorf("stack b: expected its OWN EnvInline via fallback (not a's, not nil), got %#v", got["b"])
+	}
+}
+
+// SyncFilesetsForContext must not resolve any stack's compose project when
+// the context has no filesets at all: with nothing to sync, restartPending
+// stays empty and RestartPendingServices (apply.go) returns before ever
+// touching the returned project->stack map, so stackProjectMap's `compose
+// config` calls (one per stack, via stackComposeProject) are pure waste on a
+// context with stacks but no filesets.
+func TestSyncFilesetsForContext_NoFilesets_SkipsComposeConfigForStacks(t *testing.T) {
+	mock := newMockDocker()
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		Stacks: map[string]manifest.Stack{
+			"default/app": {Context: "default", Root: "/stacks/app"},
+		},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{},
+	}
+	fm := NewFilesetManagerWithClient(mock, nil)
+
+	restartPending, projectToStack, err := fm.SyncFilesetsForContext(context.Background(), cfg, "default", map[string]struct{}{}, nil)
+	if err != nil {
+		t.Fatalf("SyncFilesetsForContext failed: %v", err)
+	}
+	if len(restartPending) != 0 {
+		t.Errorf("restartPending = %v, want empty", restartPending)
+	}
+	_ = projectToStack
+
+	if mock.composeConfigFullCalls != 0 {
+		t.Errorf("ComposeConfigFull called %d times for a context with no filesets, want 0", mock.composeConfigFullCalls)
+	}
+}
 
 func TestFilesetManager_New(t *testing.T) {
 	// Test basic construction without Docker dependencies

@@ -61,16 +61,12 @@ func (p *Planner) BuildPlan(ctx context.Context, cfg manifest.Config) (*Plan, er
 		p.aggregateContextPlan(aggregatedPlan, contextPlan)
 	}
 
-	// Check if we have any resources
-	hasResources := len(aggregatedPlan.Volumes) > 0 || len(aggregatedPlan.Networks) > 0 ||
-		len(aggregatedPlan.Stacks) > 0 || len(aggregatedPlan.Filesets) > 0 ||
-		len(aggregatedPlan.Containers) > 0
-
-	if !hasResources {
-		// Add a special "nothing to do" resource
-		aggregatedPlan.Volumes = append(aggregatedPlan.Volumes,
-			NewResource(ResourceVolume, "nothing to do", ActionNoop, "nothing to do"))
-	}
+	// The "nothing to do" placeholder is now attached per-context (see
+	// buildContextPlan), which the aggregation loop above already folds into
+	// aggregatedPlan when a context has it — no separate aggregate-only
+	// check needed here. A config with zero contexts (impossible through
+	// validated manifests, which require at least one) has no context to
+	// attach a placeholder to and legitimately produces an empty plan.
 
 	// Calculate plan statistics for logging
 	createCount, updateCount, deleteCount := aggregatedPlan.CountActions()
@@ -245,6 +241,19 @@ func (p *Planner) buildContextPlan(ctx context.Context, cfg manifest.Config, con
 		if err := p.buildFilesetResourcesForContext(ctx, contextFilesets, existingVolumes, client, resourcePlan, execCtx); err != nil {
 			return nil, err
 		}
+	}
+
+	// A context with nothing declared for it renders as an empty section
+	// tree (see renderContextSections: every section is skipped when its
+	// resource slice/map is empty), so it would otherwise vanish from the
+	// per-context output entirely. Attach the same "nothing to do" nod this
+	// planner has always shown for an empty plan, but to this context's own
+	// ResourcePlan rather than only the cross-context aggregate — matching
+	// how every other resource here is data owned by a context, not the
+	// aggregate (see BuildPlan, which merges this into the aggregate too).
+	if !hasAnyResources(resourcePlan) {
+		resourcePlan.Volumes = append(resourcePlan.Volumes,
+			NewResource(ResourceVolume, "nothing to do", ActionNoop, "nothing to do"))
 	}
 
 	return &ContextPlan{

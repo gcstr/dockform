@@ -38,14 +38,26 @@ exit 0
 }
 
 func TestBuildPlan_NoDocker_ClientNil(t *testing.T) {
-	cfg := manifest.Config{}
+	// One context with nothing declared in it and no docker client — a
+	// config manifest validation actually allows (it requires at least one
+	// context; see normalizeAndValidate's "at least one context must be
+	// defined" check), unlike a bare manifest.Config{} with zero contexts.
+	// Plan.String() now renders from ByContext with no aggregate-only
+	// fallback (destroy.go and buildContextPlan each own attaching their own
+	// "nothing to do" placeholder to their own ResourcePlan — see
+	// buildContextPlan), so the placeholder line must actually be visible
+	// here, not just tolerated as one of several acceptable shapes.
+	cfg := manifest.Config{
+		Identifier: "demo",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+	}
 	pln, err := New().BuildPlan(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
 	out := pln.String()
-	if !strings.Contains(out, "no stacks defined") && out == "" {
-		t.Fatalf("expected a no-op line or empty output; got:\n%s", out)
+	if !strings.Contains(out, "nothing to do") {
+		t.Fatalf("expected the 'nothing to do' placeholder line; got:\n%s", out)
 	}
 }
 
@@ -197,27 +209,38 @@ func TestPrune_Precondition_NoDocker(t *testing.T) {
 }
 
 func TestPlanString_Grouping(t *testing.T) {
-	pl := &Plan{
-		Resources: &ResourcePlan{
-			Volumes: []Resource{
-				NewResource(ResourceVolume, "v1", ActionCreate, ""),
+	// pln.String() now renders from ByContext (Resources is kept only for the
+	// summary counts), so a plan built without ByContext would render no
+	// section content at all — see TestBuildPlan_NoDocker_ClientNil. Give it a
+	// single context here, matching what a real BuildPlan produces.
+	rp := &ResourcePlan{
+		Volumes: []Resource{
+			NewResource(ResourceVolume, "v1", ActionCreate, ""),
+		},
+		Networks: []Resource{
+			NewResource(ResourceNetwork, "n1", ActionCreate, ""),
+		},
+		Stacks: map[string][]Resource{
+			"app": {
+				NewResource(ResourceService, "s1", ActionCreate, ""),
 			},
-			Networks: []Resource{
-				NewResource(ResourceNetwork, "n1", ActionCreate, ""),
-			},
-			Stacks: map[string][]Resource{
-				"app": {
-					NewResource(ResourceService, "s1", ActionCreate, ""),
-				},
-			},
-			Filesets: map[string][]Resource{
-				"fs": {
-					NewResource(ResourceFile, "a", ActionCreate, ""),
-				},
+		},
+		Filesets: map[string][]Resource{
+			"fs": {
+				NewResource(ResourceFile, "a", ActionCreate, ""),
 			},
 		},
 	}
+	pl := &Plan{
+		ByContext: map[string]*ContextPlan{
+			"default": {ContextName: "default", Resources: rp},
+		},
+		Resources: rp,
+	}
 	out := ui.StripANSI(pl.String())
+	if !strings.Contains(out, "default") {
+		t.Fatalf("expected the context header; got:\n%s", out)
+	}
 	if !strings.Contains(out, "Volumes") || !strings.Contains(out, "Networks") || !strings.Contains(out, "Stacks") || !strings.Contains(out, "Filesets") {
 		t.Fatalf("expected grouped section titles; got:\n%s", out)
 	}
