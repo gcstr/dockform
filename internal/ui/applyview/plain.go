@@ -66,12 +66,20 @@ func (p *Plain) track(ref planner.ResourceRef) {
 func (p *Plain) Seed(items []planner.ResourceRef) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	n := 0
 	for _, ref := range items {
 		p.track(ref)
 		p.seeded[ref] = true
 		p.state[ref] = planner.StatePending
+		// A ResourceStack line is not counted, matching Model.Counts (see
+		// countsTowardTotal in cascade.go): apply drives one compose call per
+		// stack, so counting the stack too reports more resources than the
+		// plan footer the user approved.
+		if countsTowardTotal(ref) {
+			n++
+		}
 	}
-	_, _ = fmt.Fprintf(p.w, "Applying %d %s\n", len(items), plural(len(items), "resource", "resources"))
+	_, _ = fmt.Fprintf(p.w, "Applying %d %s\n", n, plural(n, "resource", "resources"))
 }
 
 func (p *Plain) Start(ref planner.ResourceRef, verb string) {
@@ -177,6 +185,12 @@ func (p *Plain) Summarize(logPath string) {
 	defer p.mu.Unlock()
 
 	var failed, interrupted, unfinished []planner.ResourceRef
+	// total/done mirror Model.Counts: a ResourceStack line is not counted
+	// (see countsTowardTotal in cascade.go), so this total agrees with the
+	// interactive renderer's for the same run. The failed/interrupted/
+	// unfinished listings below stay unfiltered — a failed stack is still
+	// useful to name explicitly, it just is not one of the counted totals.
+	total, done := 0, 0
 	for _, ref := range p.order {
 		switch p.state[ref] {
 		case planner.StateFailed:
@@ -187,10 +201,15 @@ func (p *Plain) Summarize(logPath string) {
 		default:
 			unfinished = append(unfinished, ref)
 		}
+		if countsTowardTotal(ref) {
+			total++
+			if p.state[ref] == planner.StateDone || p.state[ref] == planner.StateFailed {
+				done++
+			}
+		}
 	}
 
-	done := len(p.order) - len(failed) - len(interrupted) - len(unfinished)
-	_, _ = fmt.Fprintf(p.w, "\n%d of %d %s applied, %d failed\n", done, len(p.order), plural(len(p.order), "resource", "resources"), len(failed))
+	_, _ = fmt.Fprintf(p.w, "\n%d of %d %s applied, %d failed\n", done, total, plural(total, "resource", "resources"), len(failed))
 	for _, ref := range failed {
 		_, _ = fmt.Fprintf(p.w, "  FAILED %s %s: %s\n", ref.Context, label(ref), p.causes[ref])
 	}

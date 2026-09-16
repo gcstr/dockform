@@ -131,14 +131,15 @@ func (m Model) WithCancel(ch chan struct{}) Model {
 // Counts returns how many changes are terminal and how many there are, matching
 // what the plan footer the user just approved reported.
 //
-// A ResourceStack line is NOT counted: it is the same work as its services seen
-// at a coarser grain — apply drives one compose call per stack — so counting both
-// reported 15 where the plan said 12. The plan counts services and never the
-// stack (see ResourcePlan.CountActions), so the view follows it.
+// A ResourceStack line is NOT counted (see countsTowardTotal in cascade.go):
+// it is the same work as its services seen at a coarser grain — apply drives
+// one compose call per stack — so counting both reported 15 where the plan
+// said 12. The plan counts services and never the stack (see
+// ResourcePlan.CountActions), so the view follows it.
 func (m Model) Counts() (done, total int) {
 	for _, g := range m.groups {
 		for _, it := range g.items {
-			if it.Ref.Type == planner.ResourceStack {
+			if !countsTowardTotal(it.Ref) {
 				continue
 			}
 			total++
@@ -175,7 +176,7 @@ func (m Model) Failures() []*Item {
 func (m Model) Outcomes() (applied, interrupted, notApplied int) {
 	for _, g := range m.groups {
 		for _, it := range g.items {
-			if it.Ref.Type == planner.ResourceStack {
+			if !countsTowardTotal(it.Ref) {
 				continue
 			}
 			switch it.State {

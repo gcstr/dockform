@@ -190,8 +190,10 @@ func TestPlainSuccessfulStackResolvesItsServices(t *testing.T) {
 	if !strings.Contains(out, "not applied hetzner-two service authelia/postgres") {
 		t.Errorf("a same-named service under another stack should NOT have resolved:\n%s", out)
 	}
-	if !strings.Contains(out, "3 of 4 resources applied, 0 failed") {
-		t.Errorf("completion count wrong; want 3 of 4:\n%s", out)
+	// Finding 3: the stack itself is not counted (matching Model.Counts), so
+	// the total is 3 (web, postgres, and authelia's postgres) — not 4.
+	if !strings.Contains(out, "2 of 3 resources applied, 0 failed") {
+		t.Errorf("completion count wrong; want 2 of 3:\n%s", out)
 	}
 }
 

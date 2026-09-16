@@ -21,6 +21,20 @@ func stackResolves(stack, child planner.ResourceRef) bool {
 		child.Parent == stack.Name
 }
 
+// countsTowardTotal reports whether ref should be counted in the resource
+// totals both renderers report ("Applying N resources", "N of M resources
+// applied"). A ResourceStack line is the same work as its services seen at a
+// coarser grain — apply drives one compose call per stack, and stackResolves
+// above is what makes a successful stack's services resolve with it — so
+// counting the stack too reports more resources than the plan footer the
+// user approved. This used to be reimplemented separately inside
+// Model.Counts/Outcomes (which excluded it) and the plain renderer (which
+// did not), so the same run printed a different total on a terminal than in
+// CI; it lives here, alongside stackResolves, so both stay in sync.
+func countsTowardTotal(ref planner.ResourceRef) bool {
+	return ref.Type != planner.ResourceStack
+}
+
 // displayName returns ref.Name as it should be printed. A fileset's Name is
 // keyed "context/stack/volume" for identity (see manifest.DiscoveredFilesets
 // and planner.FilesetDisplayName), but every line in both renderers already
