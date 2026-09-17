@@ -15,6 +15,7 @@ Re-capture rather than adjust when compose changes.
 | `pull_multilayer.jsonl` | 14-layer image pull (postgres:16.4-bookworm), 176 events |
 | `start_stopped.jsonl` | `up` against an existing stopped container |
 | `pull_fully_qualified_ref.jsonl` | pull of `docker.io/library/alpine:3.18`, written fully qualified |
+| `pull_shared_base_layer.jsonl` | pull of python:3.12-slim with python:3.11-slim's debian base layer already cached |
 | `depends_on_healthy.jsonl` | `depends_on: condition: service_healthy` from nothing |
 | `partial_change_with_unchanged_deps.jsonl` | only one service changed; its unchanged dependency must turn healthy again |
 
@@ -70,3 +71,11 @@ Events carry no timestamps, so event position is not wall-clock time.
   the pull event's `Image` id matches it byte for byte — including the fully-qualified
   `docker.io/library/alpine:3.18`. Exact string matching between an event and
   `ComposeConfigFull` is correct.
+- **A cached layer emits exactly ONE event**: `Already exists`, with no `total`, and is
+  never announced by `Pulling fs layer`. A percentage accumulator must therefore record
+  a layer as announced ONLY on `Pulling fs layer`. Announcing on any layer event makes
+  the cached layer a permanently total-less member of the set, and the percentage never
+  appears — measured on `pull_shared_base_layer.jsonl`: announcing on any event gives
+  0 readings; announcing on `Pulling fs layer` gives 10 readings, 60.4% to 100%, never
+  backwards. Pulls that share a base layer with a cached image are the common case for
+  image updates.
