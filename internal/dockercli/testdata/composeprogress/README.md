@@ -13,6 +13,8 @@ Re-capture rather than adjust when compose changes.
 | `pull_with_layers.jsonl` | image pull, with per-layer progress |
 | `error.jsonl` | pull failure, including the terminal error line |
 | `pull_multilayer.jsonl` | 14-layer image pull (postgres:16.4-bookworm), 176 events |
+| `start_stopped.jsonl` | `up` against an existing stopped container |
+| `pull_fully_qualified_ref.jsonl` | pull of `docker.io/library/alpine:3.18`, written fully qualified |
 | `depends_on_healthy.jsonl` | `depends_on: condition: service_healthy` from nothing |
 | `partial_change_with_unchanged_deps.jsonl` | only one service changed; its unchanged dependency must turn healthy again |
 
@@ -59,3 +61,12 @@ Two facts drive this:
   backwards cannot start before then — show "pulling..." until it can.
 
 Events carry no timestamps, so event position is not wall-clock time.
+
+## Verified while writing the implementation plan
+
+- **Stopped container:** `up` emits exactly `Starting` then `Started`. No `Creating`,
+  no `Recreate`.
+- **Image refs are not normalised.** `compose config` keeps each ref as written, and
+  the pull event's `Image` id matches it byte for byte — including the fully-qualified
+  `docker.io/library/alpine:3.18`. Exact string matching between an event and
+  `ComposeConfigFull` is correct.

@@ -1,0 +1,15 @@
+{"id":"Image docker.io/library/alpine:3.18","status":"Working","text":"Pulling"}
+{"id":"95459497489f","parent_id":"Image docker.io/library/alpine:3.18","status":"Working","text":"Pulling fs layer","details":"0B"}
+{"id":"95459497489f","parent_id":"Image docker.io/library/alpine:3.18","status":"Working","text":"Downloading","details":"48.54kB","current":48538,"total":3342657,"percent":1}
+{"id":"95459497489f","parent_id":"Image docker.io/library/alpine:3.18","status":"Working","text":"Downloading","details":"245.1kB","current":245146,"total":3342657,"percent":7}
+{"id":"95459497489f","parent_id":"Image docker.io/library/alpine:3.18","status":"Done","text":"Download complete","details":"0B","percent":100}
+{"id":"95459497489f","parent_id":"Image docker.io/library/alpine:3.18","status":"Working","text":"Extracting","details":"65.54kB","current":65536,"total":3342657,"percent":1}
+{"id":"95459497489f","parent_id":"Image docker.io/library/alpine:3.18","status":"Working","text":"Extracting","details":"3.343MB","current":3342657,"total":3342657,"percent":100}
+{"id":"95459497489f","parent_id":"Image docker.io/library/alpine:3.18","status":"Done","text":"Pull complete","details":"0B","percent":100}
+{"id":"Image docker.io/library/alpine:3.18","status":"Done","text":"Pulled"}
+{"id":"Network skqfq_default","status":"Working","text":"Creating"}
+{"id":"Network skqfq_default","status":"Done","text":"Created"}
+{"id":"Container skqfq-q-1","status":"Working","text":"Creating"}
+{"id":"Container skqfq-q-1","status":"Done","text":"Created"}
+{"id":"Container skqfq-q-1","status":"Working","text":"Starting"}
+{"id":"Container skqfq-q-1","status":"Done","text":"Started"}
