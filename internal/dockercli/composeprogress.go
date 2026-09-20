@@ -29,7 +29,7 @@ type ComposeEvent struct {
 	Text    string // Creating, Recreated, Waiting, Healthy, Downloading, ...
 	Current int64  // layer byte progress, when present
 	Total   int64
-	Message string // EventError only: the human-readable cause
+	Message string // the human-readable cause, on EventError and on any Status=="Error" event
 }
 
 type rawComposeEvent struct {
@@ -41,6 +41,10 @@ type rawComposeEvent struct {
 	Total    int64  `json:"total"`
 	Error    bool   `json:"error"`
 	Message  string `json:"message"`
+	// Details carries the cause on a resource's own Status=="Error" event. The
+	// terminal {"error":true} line repeats it in "message", but it is not
+	// guaranteed to arrive: without this the only readable text would be gone.
+	Details string `json:"details"`
 }
 
 var composeIDPrefixes = []struct {
@@ -68,6 +72,11 @@ func ParseComposeEvent(line []byte) (ComposeEvent, bool) {
 		return ComposeEvent{}, false
 	}
 	ev := ComposeEvent{Status: raw.Status, Text: raw.Text, Current: raw.Current, Total: raw.Total}
+	if raw.Status == "Error" {
+		// "details" is a size string ("3.359MB") on progress events, so it is
+		// only a message on an Error one.
+		ev.Message = raw.Details
+	}
 	if raw.ParentID != "" {
 		image, ok := strings.CutPrefix(raw.ParentID, "Image ")
 		if !ok {

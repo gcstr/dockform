@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/goccy/go-yaml"
 )
 
@@ -77,6 +78,15 @@ func (f *fakeExec) RunDetailed(ctx context.Context, opts Options, args ...string
 		}
 	}
 	out, err := f.dispatch(args)
+	if err != nil {
+		// Mirror SystemExec.RunDetailed, which wraps a failed run as
+		// apperr.Wrap("dockercli.Exec", External, runErr, "%s", res.Stderr).
+		// That Msg is the DEEPEST one in the chain, so it is what
+		// apperr.DeepestMessage — and therefore every user-facing printer —
+		// selects. A fake returning the bare error hides every bug in how the
+		// reported message is derived.
+		err = apperr.Wrap("dockercli.Exec", apperr.External, err, "%s", stderr)
+	}
 	return Result{Stdout: out, Stderr: stderr, ExitCode: 0}, err
 }
 func (f *fakeExec) dispatch(args []string) (string, error) {

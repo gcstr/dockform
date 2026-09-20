@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -88,6 +89,12 @@ func (c *Client) ComposeUpWithProgress(ctx context.Context, workingDir string, f
 		Env:       inlineEnv,
 		StdinData: doc,
 		StderrLine: func(line []byte) {
+			// This runs on os/exec's stderr copy goroutine, which this package
+			// does not own: a panic there is unrecoverable from here and would
+			// kill the whole apply. Progress is advisory, so swallow it — the
+			// cost of a bug in the tracker must be lost display detail, never a
+			// failed apply.
+			defer func() { _ = recover() }()
 			if ev, ok := ParseComposeEvent(line); ok {
 				onEvent(ev)
 			}
@@ -97,7 +104,16 @@ func (c *Client) ComposeUpWithProgress(ctx context.Context, workingDir string, f
 		return res.Stdout, nil
 	}
 	if msg, ok := composeFailureMessage(res.Stderr); ok {
-		return res.Stdout, apperr.Wrap("dockercli.ComposeUpWithProgress", apperr.External, err, "%s", msg)
+		// Re-wrap the Exec error's CAUSE, not the Exec error itself. Its Msg is
+		// the raw --progress json stderr, and apperr.DeepestMessage — what every
+		// user-facing printer reports — keeps the deepest Msg, so leaving it in
+		// the chain means the derived message is never the one shown.
+		cause := err
+		var e *apperr.E
+		if errors.As(err, &e) && e.Err != nil {
+			cause = e.Err
+		}
+		return res.Stdout, apperr.Wrap("dockercli.ComposeUpWithProgress", apperr.External, cause, "%s", msg)
 	}
 	return res.Stdout, err
 }
@@ -110,26 +126,37 @@ func (c *Client) ComposeUpWithProgress(ctx context.Context, workingDir string, f
 // attempt's message from being reported as the cause of a later, unrelated
 // failure.
 //
-// It prefers compose's own error event (the last one found, if several). When
-// the final attempt reports none — an SSH drop, a killed process — it falls
-// back to the stderr lines that did not decode as compose events at all: in
-// --progress json mode those are exactly the plain-text lines (an SSH error,
-// a daemon message) a user would have seen without this flag. When neither
-// exists, it reports nothing, and the caller's original error is left as-is.
+// It prefers compose's own terminal error event (the last one found, if
+// several), falling back to the failing resource's own "details" when a compose
+// release reports the resource but no terminal line.
+//
+// The undecodable lines are always appended after it, never discarded: in
+// --progress json mode those are exactly the plain-text lines (an SSH error, a
+// daemon message) a user would have seen without this flag, and IsSSHSessionLimit
+// looks for one of them — "Session open refused by peer" — through
+// apperr.DeepestMessage. Dropping them would silently disable planner.Apply's
+// SSH-exhaustion diagnostic. When there is nothing of either kind, it reports
+// nothing and the caller's original error is left as-is.
 func composeFailureMessage(stderr string) (string, bool) {
-	var composeErr string
+	var composeErr, resourceErr string
 	var plainText []string
 	for _, line := range splitStderrLines(stderr) {
 		if ev, ok := ParseComposeEvent(line); ok {
-			if ev.Kind == EventError && ev.Message != "" {
+			switch {
+			case ev.Kind == EventError && ev.Message != "":
 				composeErr = ev.Message
+			case ev.Status == "Error" && ev.Message != "":
+				resourceErr = ev.Message
 			}
 			continue
 		}
 		plainText = append(plainText, string(line))
 	}
+	if composeErr == "" {
+		composeErr = resourceErr
+	}
 	if composeErr != "" {
-		return composeErr, true
+		return strings.Join(append([]string{composeErr}, plainText...), "\n"), true
 	}
 	if len(plainText) > 0 {
 		return strings.Join(plainText, "\n"), true

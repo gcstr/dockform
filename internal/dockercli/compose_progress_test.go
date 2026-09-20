@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/gcstr/dockform/internal/apperr"
 )
 
 func indexOf(args []string, s string) int {
@@ -35,19 +37,68 @@ func TestComposeUpWithProgress_DeliversEventsAndAddsFlag(t *testing.T) {
 	assertPipedDocument(t, f)
 }
 
+// Every user-facing printer (internal/cli/root.go) reports apperr.DeepestMessage,
+// not err.Error() — which on an *apperr.E collapses to Op+Msg and drops the
+// chain. With --progress json the Exec error's Msg IS the raw JSON stderr, so
+// the readable message has to be the DEEPEST one or the user sees a wall of
+// JSON instead.
 func TestComposeUpWithProgress_ErrorEventBecomesReadableMessage(t *testing.T) {
-	jsonStderr := `{"id":"Image dockform-nonexistent-image:v0","status":"Error"}`
-	f := &fakeExec{outConfigYAML: secretDoc, progressLines: fixtureLines(t, "error.jsonl"), errUp: errors.New(jsonStderr)}
+	f := &fakeExec{outConfigYAML: secretDoc, progressLines: fixtureLines(t, "error.jsonl"), errUp: errors.New("exit status 1")}
 	c := &Client{exec: f, identifier: "demo"}
 	_, err := c.ComposeUpWithProgress(context.Background(), t.TempDir(), []string{"a.yml"}, nil, nil, "proj", nil, func(ComposeEvent) {})
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if !strings.Contains(err.Error(), "pull access denied") {
-		t.Fatalf("error should carry compose's message, got %q", err)
+	msg := apperr.DeepestMessage(err)
+	if !strings.Contains(msg, "pull access denied") {
+		t.Fatalf("error should carry compose's message, got %q", msg)
 	}
-	if strings.Contains(err.Error(), `{"id"`) {
-		t.Fatalf("error should not show JSON, got %q", err)
+	if strings.Contains(msg, `{"`) {
+		t.Fatalf("error should not show JSON, got %q", msg)
+	}
+}
+
+// A compose release that reports the failing resource but no terminal
+// {"error":true} line must still produce a readable message: the resource
+// event carries the same cause in "details". Without that fallback the caller's
+// raw-JSON error is left untouched and the user gets the JSON wall.
+func TestComposeUpWithProgress_ResourceErrorDetailsAreTheFallback(t *testing.T) {
+	lines := fixtureLines(t, "error.jsonl")
+	withoutTerminal := strings.Join([]string{string(lines[0]), string(lines[1])}, "\n")
+	f := &fakeExec{outConfigYAML: secretDoc, finalStderr: &withoutTerminal, errUp: errors.New("exit status 1")}
+	c := &Client{exec: f, identifier: "demo"}
+	_, err := c.ComposeUpWithProgress(context.Background(), t.TempDir(), []string{"a.yml"}, nil, nil, "proj", nil, func(ComposeEvent) {})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	msg := apperr.DeepestMessage(err)
+	if !strings.Contains(msg, "pull access denied") {
+		t.Fatalf("error should carry the resource event's details, got %q", msg)
+	}
+	if strings.Contains(msg, `{"`) {
+		t.Fatalf("error should not show JSON, got %q", msg)
+	}
+}
+
+// ssh writes "Session open refused by peer" to stderr as PLAIN TEXT, never as a
+// compose event, and dockercli.IsSSHSessionLimit finds it through
+// apperr.DeepestMessage. planner.Apply uses that to name how many services were
+// started concurrently — a diagnostic that disappears if deriving a readable
+// compose message discards the undecodable lines. Both must survive.
+func TestComposeUpWithProgress_KeepsSSHSessionLimitSignature(t *testing.T) {
+	stderr := `{"error":true,"message":"Error response from daemon: cannot start"}` + "\n" +
+		"Session open refused by peer\nConnection closed by 10.0.0.1 port 22"
+	f := &fakeExec{outConfigYAML: secretDoc, finalStderr: &stderr, errUp: errors.New("exit status 255")}
+	c := &Client{exec: f, identifier: "demo"}
+	_, err := c.ComposeUpWithProgress(context.Background(), t.TempDir(), []string{"a.yml"}, nil, nil, "proj", nil, func(ComposeEvent) {})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !IsSSHSessionLimit(err) {
+		t.Fatalf("the ssh signature must stay reachable, got %q", apperr.DeepestMessage(err))
+	}
+	if !strings.Contains(apperr.DeepestMessage(err), "cannot start") {
+		t.Fatalf("compose's own message must still lead, got %q", apperr.DeepestMessage(err))
 	}
 }
 
@@ -69,8 +120,8 @@ func TestComposeUpWithProgress_IgnoresStaleErrorFromEarlierAttempt(t *testing.T)
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if strings.Contains(err.Error(), staleMsg) {
-		t.Fatalf("error must not carry an earlier attempt's message, got %q", err)
+	if strings.Contains(apperr.DeepestMessage(err), staleMsg) {
+		t.Fatalf("error must not carry an earlier attempt's message, got %q", apperr.DeepestMessage(err))
 	}
 }
 
@@ -90,11 +141,12 @@ func TestComposeUpWithProgress_NoErrorEventSurfacesPlainTextStderr(t *testing.T)
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if !strings.Contains(err.Error(), plainText) {
-		t.Fatalf("error should surface the plain-text stderr, got %q", err)
+	msg := apperr.DeepestMessage(err)
+	if !strings.Contains(msg, plainText) {
+		t.Fatalf("error should surface the plain-text stderr, got %q", msg)
 	}
-	if strings.Contains(err.Error(), `{"`) {
-		t.Fatalf("error should not show JSON, got %q", err)
+	if strings.Contains(msg, `{"`) {
+		t.Fatalf("error should not show JSON, got %q", msg)
 	}
 }
 
