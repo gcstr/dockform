@@ -3,6 +3,7 @@ package dockercli
 import (
 	"context"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/goccy/go-yaml"
@@ -26,7 +27,13 @@ type fakeExec struct {
 	errHash       error
 	hashCalls     int
 	// progress
-	progressLines      [][]byte // replayed into Options.StderrLine by RunDetailed
+	progressLines [][]byte // replayed into Options.StderrLine by RunDetailed
+	// finalStderr overrides Result.Stderr for a call made with StderrLine set.
+	// nil means the common (no-retry) case where the final attempt's buffered
+	// stderr is exactly what was streamed: join(progressLines, "\n"). Set it to
+	// simulate an SSH retry where the streamed lines (from an earlier, failed
+	// attempt) disagree with what the final attempt actually left in stderr.
+	finalStderr        *string
 	errUp              error
 	errProgressProbe   error
 	progressProbeCalls int
@@ -54,13 +61,23 @@ func (f *fakeExec) RunWithStdout(ctx context.Context, stdout io.Writer, args ...
 }
 func (f *fakeExec) RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error) {
 	f.lastDir, f.lastArgs, f.lastWithEnv, f.lastStdin = opts.Dir, args, len(opts.Env) > 0, opts.StdinData
+	stderr := ""
 	if opts.StderrLine != nil {
 		for _, line := range f.progressLines {
 			opts.StderrLine(line)
 		}
+		if f.finalStderr != nil {
+			stderr = *f.finalStderr
+		} else {
+			parts := make([]string, len(f.progressLines))
+			for i, l := range f.progressLines {
+				parts[i] = string(l)
+			}
+			stderr = strings.Join(parts, "\n")
+		}
 	}
 	out, err := f.dispatch(args)
-	return Result{Stdout: out, Stderr: "", ExitCode: 0}, err
+	return Result{Stdout: out, Stderr: stderr, ExitCode: 0}, err
 }
 func (f *fakeExec) dispatch(args []string) (string, error) {
 	if hasSuffix(args, []string{"config", "--quiet"}) {

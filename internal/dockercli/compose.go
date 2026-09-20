@@ -1,6 +1,7 @@
 package dockercli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -60,9 +61,12 @@ func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profil
 //
 // Progress is advisory. `--progress json` is used only when this compose accepts
 // it (see supportsProgressJSON); otherwise this is exactly ComposeUp and onEvent
-// is never called. A line that does not decode is dropped. On failure, when
-// compose reported an error event, the returned error carries that event's
-// message: in this mode stderr is JSON, and would otherwise be what the user sees.
+// is never called. A line that does not decode is dropped. On failure, the
+// returned error's message is re-derived from the final attempt's buffered
+// stderr (see composeFailureMessage) rather than anything the StderrLine
+// callback saw: on an SSH retry that callback also receives the failed
+// attempt's lines, which can include a real compose error event that did not
+// cause the final failure.
 func (c *Client) ComposeUpWithProgress(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string, onEvent func(ComposeEvent)) (string, error) {
 	if onEvent == nil || !c.supportsProgressJSON(ctx, workingDir, files, profiles, envFiles, inlineEnv) {
 		return c.ComposeUp(ctx, workingDir, files, profiles, envFiles, projectName, inlineEnv)
@@ -79,26 +83,73 @@ func (c *Client) ComposeUpWithProgress(ctx context.Context, workingDir string, f
 	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
 	args = append(args, "--progress", "json", "up", "-d")
 
-	var composeErr string
 	res, err := c.exec.RunDetailed(ctx, Options{
 		Dir:       workingDir,
 		Env:       inlineEnv,
 		StdinData: doc,
 		StderrLine: func(line []byte) {
-			ev, ok := ParseComposeEvent(line)
-			if !ok {
-				return
+			if ev, ok := ParseComposeEvent(line); ok {
+				onEvent(ev)
 			}
+		},
+	}, args...)
+	if err == nil {
+		return res.Stdout, nil
+	}
+	if msg, ok := composeFailureMessage(res.Stderr); ok {
+		return res.Stdout, apperr.Wrap("dockercli.ComposeUpWithProgress", apperr.External, err, "%s", msg)
+	}
+	return res.Stdout, err
+}
+
+// composeFailureMessage extracts a human-readable cause from a failed `up`'s
+// buffered stderr. exec.go declares its stderr buffer inside the per-attempt
+// retry loop and reassigns Result on each attempt, so res.Stderr always holds
+// only the FINAL attempt's output — scanning it, rather than accumulating
+// state in the StderrLine callback across attempts, is what keeps an earlier
+// attempt's message from being reported as the cause of a later, unrelated
+// failure.
+//
+// It prefers compose's own error event (the last one found, if several). When
+// the final attempt reports none — an SSH drop, a killed process — it falls
+// back to the stderr lines that did not decode as compose events at all: in
+// --progress json mode those are exactly the plain-text lines (an SSH error,
+// a daemon message) a user would have seen without this flag. When neither
+// exists, it reports nothing, and the caller's original error is left as-is.
+func composeFailureMessage(stderr string) (string, bool) {
+	var composeErr string
+	var plainText []string
+	for _, line := range splitStderrLines(stderr) {
+		if ev, ok := ParseComposeEvent(line); ok {
 			if ev.Kind == EventError && ev.Message != "" {
 				composeErr = ev.Message
 			}
-			onEvent(ev)
-		},
-	}, args...)
-	if err != nil && composeErr != "" {
-		return res.Stdout, apperr.Wrap("dockercli.ComposeUpWithProgress", apperr.External, err, "%s", composeErr)
+			continue
+		}
+		plainText = append(plainText, string(line))
 	}
-	return res.Stdout, err
+	if composeErr != "" {
+		return composeErr, true
+	}
+	if len(plainText) > 0 {
+		return strings.Join(plainText, "\n"), true
+	}
+	return "", false
+}
+
+// splitStderrLines splits raw buffered stderr into the same non-empty lines
+// exec.go's per-attempt StderrLine callback (lineSplitter) would have
+// delivered.
+func splitStderrLines(stderr string) [][]byte {
+	var lines [][]byte
+	for _, line := range bytes.Split([]byte(stderr), []byte("\n")) {
+		line = bytes.TrimRight(line, "\r")
+		if len(line) == 0 {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 // supportsProgressJSON reports whether this compose accepts `--progress json`.
