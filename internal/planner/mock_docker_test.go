@@ -5,12 +5,17 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/gcstr/dockform/internal/dockercli"
 )
 
 // mockDockerClient provides a mock implementation of DockerClient for testing.
+// BuildPlan fans out over stacks in parallel goroutines, so a single mock
+// instance is hit concurrently by tests. mu guards every field below.
 type mockDockerClient struct {
+	mu sync.Mutex
+
 	// Mock data to return
 	volumes         []string
 	allVolumes      []string
@@ -92,23 +97,29 @@ func newMockDocker() *mockDockerClient {
 
 // Volume operations
 func (m *mockDockerClient) ListAllVolumes(ctx context.Context) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.listVolumesError != nil {
 		return nil, m.listVolumesError
 	}
 	if m.allVolumes != nil {
-		return m.allVolumes, nil
+		return append([]string(nil), m.allVolumes...), nil
 	}
-	return m.volumes, nil
+	return append([]string(nil), m.volumes...), nil
 }
 
 func (m *mockDockerClient) ListVolumes(ctx context.Context) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.listVolumesError != nil {
 		return nil, m.listVolumesError
 	}
-	return m.volumes, nil
+	return append([]string(nil), m.volumes...), nil
 }
 
 func (m *mockDockerClient) CreateVolume(ctx context.Context, name string, labels map[string]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.createVolumeError != nil {
 		return m.createVolumeError
 	}
@@ -118,6 +129,8 @@ func (m *mockDockerClient) CreateVolume(ctx context.Context, name string, labels
 }
 
 func (m *mockDockerClient) RemoveVolume(ctx context.Context, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.removedVolumes = append(m.removedVolumes, name)
 	// Remove from volumes slice
 	for i, v := range m.volumes {
@@ -131,6 +144,8 @@ func (m *mockDockerClient) RemoveVolume(ctx context.Context, name string) error 
 
 // Volume file operations
 func (m *mockDockerClient) ReadFileFromVolume(ctx context.Context, volumeName, targetPath, relFile string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	content, exists := m.volumeFiles[volumeName]
 	if !exists {
 		return "", nil
@@ -139,6 +154,8 @@ func (m *mockDockerClient) ReadFileFromVolume(ctx context.Context, volumeName, t
 }
 
 func (m *mockDockerClient) ReadIndexFilesFromVolumes(ctx context.Context, volumeNames []string, relFile string) (map[string]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.readIndexBatchCalls++
 	res := make(map[string]string, len(volumeNames))
 	for _, v := range volumeNames {
@@ -148,6 +165,8 @@ func (m *mockDockerClient) ReadIndexFilesFromVolumes(ctx context.Context, volume
 }
 
 func (m *mockDockerClient) RunVolumeScript(ctx context.Context, volumeName, targetPath, script string, env []string) (dockercli.VolumeScriptResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.runVolumeScriptRuns++
 	// Mock implementation - just return success
 	if m.runVolumeScriptError != nil {
@@ -157,6 +176,8 @@ func (m *mockDockerClient) RunVolumeScript(ctx context.Context, volumeName, targ
 }
 
 func (m *mockDockerClient) WriteFileToVolume(ctx context.Context, volumeName, targetPath, relFile, content string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.writeFileError != nil {
 		return m.writeFileError
 	}
@@ -168,6 +189,8 @@ func (m *mockDockerClient) WriteFileToVolume(ctx context.Context, volumeName, ta
 }
 
 func (m *mockDockerClient) ExtractTarToVolume(ctx context.Context, volumeName, targetPath string, tarReader io.Reader) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.extractTarError != nil {
 		return m.extractTarError
 	}
@@ -176,6 +199,8 @@ func (m *mockDockerClient) ExtractTarToVolume(ctx context.Context, volumeName, t
 }
 
 func (m *mockDockerClient) RemovePathsFromVolume(ctx context.Context, volumeName, targetPath string, relPaths []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.removePathsError != nil {
 		return m.removePathsError
 	}
@@ -188,20 +213,30 @@ func (m *mockDockerClient) RemovePathsFromVolume(ctx context.Context, volumeName
 
 // Network operations
 func (m *mockDockerClient) ListNetworks(ctx context.Context) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.listNetworksError != nil {
 		return nil, m.listNetworksError
 	}
-	return m.networks, nil
+	return append([]string(nil), m.networks...), nil
 }
 
 func (m *mockDockerClient) ListComposeNetworks(ctx context.Context) (map[string]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.listNetworksError != nil {
 		return nil, m.listNetworksError
 	}
-	return m.composeNetworks, nil
+	out := make(map[string]string, len(m.composeNetworks))
+	for k, v := range m.composeNetworks {
+		out[k] = v
+	}
+	return out, nil
 }
 
 func (m *mockDockerClient) CreateNetwork(ctx context.Context, name string, labels map[string]string, opts ...dockercli.NetworkCreateOpts) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.createNetworkError != nil {
 		return m.createNetworkError
 	}
@@ -211,6 +246,8 @@ func (m *mockDockerClient) CreateNetwork(ctx context.Context, name string, label
 }
 
 func (m *mockDockerClient) RemoveNetwork(ctx context.Context, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.removedNetworks = append(m.removedNetworks, name)
 	// Remove from networks slice
 	for i, n := range m.networks {
@@ -228,13 +265,17 @@ func (m *mockDockerClient) InspectNetwork(ctx context.Context, name string) (doc
 
 // Container operations
 func (m *mockDockerClient) ListComposeContainersAll(ctx context.Context) ([]dockercli.PsBrief, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.listComposeContainersError != nil {
 		return nil, m.listComposeContainersError
 	}
-	return m.containers, nil
+	return append([]dockercli.PsBrief(nil), m.containers...), nil
 }
 
 func (m *mockDockerClient) ListContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.listContainersUsingVolError != nil {
 		return nil, m.listContainersUsingVolError
 	}
@@ -250,6 +291,8 @@ func (m *mockDockerClient) ListContainersUsingVolume(ctx context.Context, volume
 }
 
 func (m *mockDockerClient) ListRunningContainersUsingVolume(ctx context.Context, volumeName string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.runningContainersUsingVolume != nil {
 		return append([]string(nil), m.runningContainersUsingVolume...), nil
 	}
@@ -263,6 +306,8 @@ func (m *mockDockerClient) ListRunningContainersUsingVolume(ctx context.Context,
 }
 
 func (m *mockDockerClient) RestartContainer(ctx context.Context, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.restartError != nil {
 		return m.restartError
 	}
@@ -271,6 +316,8 @@ func (m *mockDockerClient) RestartContainer(ctx context.Context, name string) er
 }
 
 func (m *mockDockerClient) StopContainers(ctx context.Context, names []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.stopContainersError != nil {
 		return m.stopContainersError
 	}
@@ -279,6 +326,8 @@ func (m *mockDockerClient) StopContainers(ctx context.Context, names []string) e
 }
 
 func (m *mockDockerClient) StartContainers(ctx context.Context, names []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.startContainersError != nil {
 		return m.startContainersError
 	}
@@ -287,11 +336,15 @@ func (m *mockDockerClient) StartContainers(ctx context.Context, names []string) 
 }
 
 func (m *mockDockerClient) RemoveContainer(ctx context.Context, name string, force bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.removedContainers = append(m.removedContainers, name)
 	return nil
 }
 
 func (m *mockDockerClient) UpdateContainerLabels(ctx context.Context, containerName string, labels map[string]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.containerLabels == nil {
 		m.containerLabels = make(map[string]map[string]string)
 	}
@@ -305,6 +358,8 @@ func (m *mockDockerClient) UpdateContainerLabels(ctx context.Context, containerN
 }
 
 func (m *mockDockerClient) InspectContainerLabels(ctx context.Context, containerName string, keys []string) (map[string]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.inspectLabelsError != nil {
 		return nil, m.inspectLabelsError
 	}
@@ -321,6 +376,8 @@ func (m *mockDockerClient) InspectContainerLabels(ctx context.Context, container
 
 // Compose operations (minimal implementations for testing)
 func (m *mockDockerClient) ComposeConfigFull(ctx context.Context, root string, files []string, profiles []string, envFiles []string, inline []string) (dockercli.ComposeConfigDoc, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.composeConfigFullCalls++
 	if m.composeConfigFullError != nil {
 		return dockercli.ComposeConfigDoc{}, m.composeConfigFullError
@@ -359,6 +416,8 @@ func (m *mockDockerClient) ComposeConfigServices(ctx context.Context, root strin
 }
 
 func (m *mockDockerClient) ComposeConfigHash(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project, serviceName, identifier string, inline []string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.composeConfigHashError != nil {
 		return "", m.composeConfigHashError
 	}
@@ -366,10 +425,12 @@ func (m *mockDockerClient) ComposeConfigHash(ctx context.Context, root string, f
 }
 
 func (m *mockDockerClient) ComposePs(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string) ([]dockercli.ComposePsItem, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.composePsError != nil {
 		return nil, m.composePsError
 	}
-	return m.composePsItems, nil
+	return append([]dockercli.ComposePsItem(nil), m.composePsItems...), nil
 }
 
 func (m *mockDockerClient) ComposeUp(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string) (string, error) {
@@ -377,7 +438,10 @@ func (m *mockDockerClient) ComposeUp(ctx context.Context, root string, files []s
 }
 
 func (m *mockDockerClient) ComposeUpWithProgress(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string, onEvent func(dockercli.ComposeEvent)) (string, error) {
-	for _, ev := range m.progressEvents {
+	m.mu.Lock()
+	events := append([]dockercli.ComposeEvent(nil), m.progressEvents...)
+	m.mu.Unlock()
+	for _, ev := range events {
 		onEvent(ev)
 	}
 	return "compose up output", nil
@@ -385,6 +449,8 @@ func (m *mockDockerClient) ComposeUpWithProgress(ctx context.Context, root strin
 
 // Batch container operations
 func (m *mockDockerClient) InspectContainerLabelsBatch(ctx context.Context, containers []string, labelKeys []string) (map[string]map[string]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	result := make(map[string]map[string]string)
 	for _, container := range containers {
 		if containerLabels, exists := m.containerLabels[container]; exists {
@@ -401,6 +467,8 @@ func (m *mockDockerClient) InspectContainerLabelsBatch(ctx context.Context, cont
 }
 
 func (m *mockDockerClient) InspectMultipleContainerLabels(ctx context.Context, containerNames []string, keys []string) (map[string]map[string]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	result := make(map[string]map[string]string)
 	for _, name := range containerNames {
 		if labels, ok := m.containerLabels[name]; ok {
