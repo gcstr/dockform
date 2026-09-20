@@ -308,7 +308,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Ref.Type == planner.ResourceStack {
 			if g := m.groupFor(msg.Ref); g != nil {
 				for _, child := range g.items {
-					if stackResolves(msg.Ref, child.Ref) && child.State != planner.StateFailed {
+					if resolvesWithStack(msg.Ref, child.Ref, child.State) {
 						m.markDone(child, msg.Result)
 					}
 				}

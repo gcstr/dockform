@@ -149,7 +149,7 @@ func (p *Plain) Finish(ref planner.ResourceRef, result string) {
 	// it — see stackResolves. Without this a fully successful stack reported every
 	// one of its services as "not applied" in the summary below.
 	for _, child := range p.order {
-		if stackResolves(ref, child) && p.state[child] != planner.StateFailed {
+		if resolvesWithStack(ref, child, p.state[child]) {
 			p.state[child] = planner.StateDone
 			_, _ = fmt.Fprintf(p.w, "%s: %s\n", qualifiedLabel(child), result)
 		}
