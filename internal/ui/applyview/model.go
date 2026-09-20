@@ -15,6 +15,8 @@ type Item struct {
 	State      planner.ResourceState
 	Verb       string
 	Detail     string
+	Percent    int
+	HasPercent bool
 	Result     string
 	Err        error
 	Discovered bool
@@ -273,6 +275,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DetailMsg:
 		it := m.ensureItem(msg.Ref, true)
 		it.Detail = msg.Text
+		return m, nil
+
+	case ProgressMsg:
+		// itemFor, not ensureItem: a percentage must never create a line, and
+		// must never touch one that is not running.
+		it := m.itemFor(msg.Ref)
+		if it == nil || it.State != planner.StateRunning {
+			return m, nil
+		}
+		it.Percent, it.HasPercent = msg.Percent, true
 		return m, nil
 
 	case FinishMsg:

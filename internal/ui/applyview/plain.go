@@ -21,6 +21,8 @@ type Plain struct {
 	state   map[planner.ResourceRef]planner.ResourceState
 	causes  map[planner.ResourceRef]string
 	seeded  map[planner.ResourceRef]bool
+
+	milestone map[planner.ResourceRef]int
 }
 
 // NewPlain creates a plain reporter writing to w. now is injected for tests.
@@ -35,6 +37,8 @@ func NewPlain(w io.Writer, now func() time.Time) *Plain {
 		state:   map[planner.ResourceRef]planner.ResourceState{},
 		causes:  map[planner.ResourceRef]string{},
 		seeded:  map[planner.ResourceRef]bool{},
+
+		milestone: map[planner.ResourceRef]int{},
 	}
 }
 
@@ -94,8 +98,33 @@ func (p *Plain) Start(ref planner.ResourceRef, verb string) {
 func (p *Plain) Detail(ref planner.ResourceRef, text string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if text == "" {
+		return
+	}
 	p.track(ref)
 	_, _ = fmt.Fprintf(p.w, "%s: %s\n", qualifiedLabel(ref), text)
+}
+
+// Progress prints a percentage only when it crosses a milestone — 25, 50, 75 or
+// 100 — once per milestone per line. The interactive view redraws a percentage
+// in place; a log cannot, and printing every update would bury the run.
+func (p *Plain) Progress(ref planner.ResourceRef, percent int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.state[ref] != planner.StateRunning {
+		return
+	}
+	reached := 0
+	for _, m := range []int{25, 50, 75, 100} {
+		if percent >= m {
+			reached = m
+		}
+	}
+	if reached == 0 || reached <= p.milestone[ref] {
+		return
+	}
+	p.milestone[ref] = reached
+	_, _ = fmt.Fprintf(p.w, "%s: %d%%\n", qualifiedLabel(ref), percent)
 }
 
 func (p *Plain) Finish(ref planner.ResourceRef, result string) {

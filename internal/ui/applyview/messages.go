@@ -17,6 +17,12 @@ type DetailMsg struct {
 	Text string
 }
 
+// ProgressMsg reports a running line's completion percentage.
+type ProgressMsg struct {
+	Ref     planner.ResourceRef
+	Percent int
+}
+
 // FinishMsg moves a line to done with a past-tense result.
 type FinishMsg struct {
 	Ref    planner.ResourceRef

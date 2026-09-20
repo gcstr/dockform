@@ -86,6 +86,9 @@ func (it *Item) status() string {
 		if it.Detail != "" {
 			return it.Detail
 		}
+		if it.HasPercent {
+			return fmt.Sprintf("%s %d%%", it.Verb, it.Percent)
+		}
 		return it.Verb + "…"
 	default:
 		return "pending"
