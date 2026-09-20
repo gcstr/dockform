@@ -52,6 +52,7 @@ type DockerClient interface {
 	ComposeConfigHashes(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, services []string, identifier string, inline []string) (map[string]string, error)
 	ComposePs(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string) ([]dockercli.ComposePsItem, error)
 	ComposeUp(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string) (string, error)
+	ComposeUpWithProgress(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string, onEvent func(dockercli.ComposeEvent)) (string, error)
 }
 
 // Ensure that dockercli.Client implements DockerClient interface

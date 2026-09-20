@@ -26,6 +26,12 @@ type mockDockerClient struct {
 	composePsItems         []dockercli.ComposePsItem
 	volumeFiles            map[string]string            // volumeName -> file content
 	containerLabels        map[string]map[string]string // containerName -> labels
+	// composeConfigDocs, keyed by stack root, overrides ComposeConfigFull's
+	// default document when set.
+	composeConfigDocs map[string]dockercli.ComposeConfigDoc
+	// progressEvents are replayed into ComposeUpWithProgress's onEvent, the way
+	// real compose streams them.
+	progressEvents []dockercli.ComposeEvent
 
 	// Track operations performed
 	createdVolumes         []string
@@ -319,6 +325,9 @@ func (m *mockDockerClient) ComposeConfigFull(ctx context.Context, root string, f
 	if m.composeConfigFullError != nil {
 		return dockercli.ComposeConfigDoc{}, m.composeConfigFullError
 	}
+	if doc, ok := m.composeConfigDocs[root]; ok {
+		return doc, nil
+	}
 	// Mirror compose's default project name (the directory) unless a test overrides it.
 	name := strings.ToLower(filepath.Base(root))
 	if override, ok := m.composeProjectNames[root]; ok {
@@ -364,6 +373,13 @@ func (m *mockDockerClient) ComposePs(ctx context.Context, root string, files []s
 }
 
 func (m *mockDockerClient) ComposeUp(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string) (string, error) {
+	return "compose up output", nil
+}
+
+func (m *mockDockerClient) ComposeUpWithProgress(ctx context.Context, root string, files []string, profiles []string, envFiles []string, project string, inline []string, onEvent func(dockercli.ComposeEvent)) (string, error) {
+	for _, ev := range m.progressEvents {
+		onEvent(ev)
+	}
 	return "compose up output", nil
 }
 

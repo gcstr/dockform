@@ -212,7 +212,8 @@ func (p *Planner) applyStackChangesForContext(ctx context.Context, cfg manifest.
 		// Perform compose up
 		stackRef := ResourceRef{Context: contextName, Type: ResourceStack, Name: stackName}
 		progress.Start(stackRef, "starting")
-		if _, err := client.ComposeUp(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline); err != nil {
+		tracker := newStackTracker(ctx, client, progress, contextName, stackName, stack, services, inline)
+		if _, err := client.ComposeUpWithProgress(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, proj, inline, tracker.OnEvent); err != nil {
 			// Each service opens its own SSH session, so the stack's size is
 			// what overflows the host's MaxSessions limit. Name it here, where
 			// it is known; the transport layer cannot see it.
