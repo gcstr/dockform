@@ -24,6 +24,23 @@ type stackProgress struct {
 	lines   map[string]*serviceLine
 	pulls   map[string]*pullProgress
 	waiting map[string]bool
+
+	// first identifies the event that opened the run. exec.go retries an SSH
+	// failure and compose replays its whole stream, so seeing that exact event
+	// again is the one reliable marker that a new attempt has started.
+	first     eventID
+	firstSeen bool
+}
+
+// eventID is an event's identity for replay detection. Layer events are
+// excluded by noteAttempt: a layer can repeat an identical event within one
+// attempt (measured in pull_shared_base_layer.jsonl), and the first event of a
+// pull is always the image's own "Pulling" anyway.
+type eventID struct {
+	kind   dockercli.EventKind
+	name   string
+	status string
+	text   string
 }
 
 type serviceLine struct {
@@ -55,6 +72,7 @@ var containerVerbs = map[string]string{
 
 // OnEvent handles one event. It is the callback handed to ComposeUpWithProgress.
 func (s *stackProgress) OnEvent(ev dockercli.ComposeEvent) {
+	s.noteAttempt(ev)
 	switch ev.Kind {
 	case dockercli.EventContainer:
 		s.onContainer(ev)
@@ -63,6 +81,27 @@ func (s *stackProgress) OnEvent(ev dockercli.ComposeEvent) {
 	case dockercli.EventLayer:
 		s.onLayer(ev)
 	}
+}
+
+// noteAttempt drops the state a new attempt invalidates. Only waits are
+// transient this way: a wait the dropped attempt never resolved is never
+// cleared, because attempt 2 may not need to wait on that dependency again —
+// it would sit on the stack line for the whole rest of the run. Everything
+// else a replay touches is either idempotent or folded with max.
+func (s *stackProgress) noteAttempt(ev dockercli.ComposeEvent) {
+	if ev.Kind == dockercli.EventLayer {
+		return
+	}
+	id := eventID{ev.Kind, ev.Name, ev.Status, ev.Text}
+	if !s.firstSeen {
+		s.first, s.firstSeen = id, true
+		return
+	}
+	if id != s.first || len(s.waiting) == 0 {
+		return
+	}
+	clear(s.waiting)
+	s.renderWaits()
 }
 
 func (s *stackProgress) onContainer(ev dockercli.ComposeEvent) {
@@ -118,6 +157,11 @@ func (s *stackProgress) onImage(ev dockercli.ComposeEvent) {
 	if ev.Status != "Working" || ev.Text != "Pulling" {
 		return
 	}
+	// A new pull of this image starts here. On the first attempt this is a
+	// no-op; on an SSH retry it discards the previous attempt's byte maxima and
+	// high-water mark, which would otherwise freeze the line at the percentage
+	// the dropped attempt reached until the re-download passed it.
+	delete(s.pulls, ev.Name)
 	for _, svc := range s.resolver.servicesForImage(ev.Name) {
 		if !s.changed[svc] {
 			continue

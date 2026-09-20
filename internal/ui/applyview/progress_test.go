@@ -127,6 +127,23 @@ func TestPlainProgress_JumpPrintsOncePerCrossing(t *testing.T) {
 	}
 }
 
+// Start begins a line's percentages afresh, matching Model's StartMsg, which
+// resets Percent/HasPercent. Carrying the old milestone over would swallow the
+// new run's readings up to it.
+func TestPlainProgress_StartResetsTheMilestone(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewPlain(&buf, fixedClock(time.Second))
+	p.Seed([]planner.ResourceRef{pgRef})
+	p.Start(pgRef, "pulling")
+	p.Progress(pgRef, 100)
+	p.Start(pgRef, "pulling")
+	before := buf.Len()
+	p.Progress(pgRef, 30)
+	if !strings.Contains(buf.String()[before:], ": 30%") {
+		t.Fatalf("a restarted line swallowed its percentage: %q", buf.String()[before:])
+	}
+}
+
 func TestPlainProgress_IgnoresALineThatIsNotRunning(t *testing.T) {
 	var buf bytes.Buffer
 	p := NewPlain(&buf, fixedClock(time.Second))

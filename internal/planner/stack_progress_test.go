@@ -118,14 +118,64 @@ func TestStackProgress_PullReportsIncreasingPercentages(t *testing.T) {
 	if len(calls) == 0 || calls[0] != "start:pulling" {
 		t.Fatalf("first call = %v, want start:pulling", calls)
 	}
-	var pcts []int
-	for _, c := range calls {
+	assertClimbsTo100(t, run.percentages(svcRef("db")))
+}
+
+// percentages returns every "progress:N" recorded against ref, in order.
+func (r trackerRun) percentages(ref ResourceRef) []int {
+	var out []int
+	for _, c := range r.calls(ref) {
 		if pct, ok := strings.CutPrefix(c, "progress:"); ok {
 			n, _ := strconv.Atoi(pct)
-			pcts = append(pcts, n)
+			out = append(out, n)
 		}
 	}
-	assertClimbsTo100(t, pcts)
+	return out
+}
+
+// Options.StderrLine does not disable exec.go's SSH retry, so attempt 2 replays
+// the same layer ids into the same tracker. The accumulator folds with max and
+// suppresses any reading at or below the last one, so without a reset the line
+// sits frozen at attempt 1's high-water mark until the re-download passes it.
+func TestStackProgress_ARetriedPullRestartsThePercentage(t *testing.T) {
+	run := newTrackerRun("skqmulti", map[string]dockercli.ComposeService{"db": {Image: "postgres:16.4-bookworm"}}, "db")
+	events := composeFixture(t, "pull_multilayer.jsonl")
+	run.replay(events[:len(events)*3/4]) // attempt 1: an SSH drop mid-pull
+	first := run.percentages(svcRef("db"))
+	if len(first) == 0 || first[len(first)-1] < 50 {
+		t.Fatalf("attempt 1 must reach a high-water mark worth being stuck at: %v", first)
+	}
+	run.replay(events) // attempt 2: compose starts over
+	all := run.percentages(svcRef("db"))
+	second := all[len(first):]
+	if len(second) == 0 {
+		t.Fatal("attempt 2 reported no percentage at all")
+	}
+	if high := first[len(first)-1]; second[0] >= high {
+		t.Fatalf("attempt 2 began at %d%%, still stuck at attempt 1's %d%%: %v", second[0], high, all)
+	}
+	assertClimbsTo100(t, second)
+}
+
+// A wait the dropped attempt never resolved would otherwise sit on the stack
+// line for the rest of the run: attempt 2 need not wait on that dependency
+// again, so no Healthy ever arrives to clear it.
+func TestStackProgress_AReplayClearsAnUnresolvedWait(t *testing.T) {
+	run := newTrackerRun("skqhc", map[string]dockercli.ComposeService{"db": {}, "app": {}, "bystander": {}}, "app")
+	events := composeFixture(t, "depends_on_healthy.jsonl")
+	cut := 0
+	for i, ev := range events {
+		if ev.Text == "Waiting" {
+			cut = i + 1
+			break
+		}
+	}
+	run.replay(events[:cut]) // attempt 1 dies while db is still starting up
+	run.replay(events[:1])   // attempt 2 opens with the same first event
+	calls := run.calls(probeStackRef)
+	if len(calls) == 0 || calls[len(calls)-1] != "detail:" {
+		t.Fatalf("stack line still shows the stale wait: %v", calls)
+	}
 }
 
 func waitEvent(container, text string) dockercli.ComposeEvent {

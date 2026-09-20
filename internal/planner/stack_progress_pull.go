@@ -12,10 +12,10 @@ import "github.com/gcstr/dockform/internal/dockercli"
 //   - A layer's total is only reported once it starts downloading, and docker
 //     downloads a few layers at a time, so nothing is reported until every
 //     announced layer has a total.
-//   - A layer is announced only by "Pulling fs layer". A layer already on disk
-//     emits a single "Already exists" with no total; counting it as announced
-//     would stop a percentage ever appearing for any pull sharing a base layer
-//     with a cached image.
+//   - A layer is announced only by "Pulling fs layer", and "Already exists"
+//     un-announces it. A layer already on disk emits a single "Already exists"
+//     with no total; counting it as announced would stop a percentage ever
+//     appearing for any pull sharing a base layer with a cached image.
 type pullProgress struct {
 	announced  map[string]bool
 	total      map[string]int64
@@ -38,12 +38,23 @@ func newPullProgress() *pullProgress {
 // compute one and it is higher than the last one reported.
 func (p *pullProgress) observe(ev dockercli.ComposeEvent) (int, bool) {
 	id := ev.Name
-	if ev.Total > 0 {
+	if _, seen := p.total[id]; !seen && ev.Total > 0 {
+		// A layer's size is fixed, so record it once. Taking a later, larger
+		// total (an uncompressed size on Extracting, say) would grow the
+		// denominator without growing the numerator: the percentage would drop,
+		// observe would suppress it, and the reading would freeze for the rest
+		// of the pull.
 		p.total[id] = ev.Total
 	}
 	switch ev.Text {
 	case "Pulling fs layer":
 		p.announced[id] = true
+	case "Already exists":
+		// Docker can dedupe a layer mid-pull, after announcing it, against an
+		// identical one already being fetched. No Downloading follows, so no
+		// total ever arrives, and an announced layer without a total disables
+		// the percentage for the whole image.
+		delete(p.announced, id)
 	case "Downloading":
 		p.downloaded[id] = max(p.downloaded[id], ev.Current)
 	case "Download complete":

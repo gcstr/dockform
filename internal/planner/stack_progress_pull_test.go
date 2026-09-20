@@ -89,6 +89,38 @@ func TestPullProgress_AlreadyExistsLayerIsNotAnnounced(t *testing.T) {
 	}
 }
 
+// A layer's size is fixed once it is known. Extracting reports the same total
+// as Downloading in every capture, but if a daemon ever reported the
+// uncompressed size there instead, a growing denominator would drop the
+// percentage — and "never decreases" would then freeze the reading for the rest
+// of the image's pull.
+func TestPullProgress_LayerTotalIsRecordedOnlyOnce(t *testing.T) {
+	p := newPullProgress()
+	p.observe(layer("a", "Pulling fs layer", 0, 0))
+	if pct, ok := p.observe(layer("a", "Downloading", 100, 100)); !ok || pct != 50 {
+		t.Fatalf("got %d, %v; want 50, true", pct, ok)
+	}
+	pct, ok := p.observe(layer("a", "Extracting", 50, 500))
+	if !ok || pct != 75 {
+		t.Fatalf("got %d, %v; want 75, true (a later, larger total must be ignored)", pct, ok)
+	}
+}
+
+// Docker can dedupe a layer mid-pull against an identical one it is already
+// fetching: "Pulling fs layer" then "Already exists", with no Downloading and
+// so no total, ever. Left announced it blocks the percentage for every layer of
+// the image, and the line degrades to a bare "pulling…".
+func TestPullProgress_LayerDedupedMidPullDoesNotBlockTheReading(t *testing.T) {
+	p := newPullProgress()
+	p.observe(layer("a", "Pulling fs layer", 0, 0))
+	p.observe(layer("b", "Pulling fs layer", 0, 0))
+	p.observe(layer("b", "Already exists", 0, 0))
+	pct, ok := p.observe(layer("a", "Downloading", 50, 100))
+	if !ok || pct != 25 {
+		t.Fatalf("got %d, %v; want 25, true (the deduped layer must stop counting)", pct, ok)
+	}
+}
+
 func TestPullProgress_OnlyReportsAChange(t *testing.T) {
 	p := newPullProgress()
 	p.observe(layer("a", "Pulling fs layer", 0, 0))

@@ -92,6 +92,9 @@ func (p *Plain) Start(ref planner.ResourceRef, verb string) {
 	p.track(ref)
 	p.state[ref] = planner.StateRunning
 	p.started[ref] = p.now()
+	// A restarted line starts its percentages over, as Model does on StartMsg.
+	// Keeping the old milestone would swallow the new run's early readings.
+	delete(p.milestone, ref)
 	_, _ = fmt.Fprintf(p.w, "%s: %s\n", qualifiedLabel(ref), verb)
 }
 
