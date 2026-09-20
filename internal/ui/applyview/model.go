@@ -269,6 +269,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		it := m.ensureItem(msg.Ref, true)
 		it.State = planner.StateRunning
 		it.Verb = msg.Verb
+		it.Detail = ""
+		it.Percent = 0
+		it.HasPercent = false
 		it.started = m.now()
 		return m, nil
 

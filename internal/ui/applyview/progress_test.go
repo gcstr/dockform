@@ -52,8 +52,39 @@ func TestModel_ProgressNeverCreatesOrRevivesALine(t *testing.T) {
 	if m.itemFor(unseeded) != nil {
 		t.Fatal("Progress created a line for an unseeded ref")
 	}
-	if got := m.itemFor(pgRef).status(); got != "created" {
+	it := m.itemFor(pgRef)
+	if got := it.status(); got != "created" {
 		t.Fatalf("status = %q, want %q", got, "created")
+	}
+	// status() alone would stay green even if Progress wrote to a finished
+	// item: StateDone ignores HasPercent/Percent unconditionally. Assert on
+	// the fields directly so a regression that lets Progress touch a
+	// non-running line is actually caught.
+	if it.HasPercent {
+		t.Fatal("Progress revived a finished line: HasPercent set after Finish")
+	}
+}
+
+// A line that starts a new phase starts clean: no detail or percentage
+// carried over from whatever the previous phase left behind.
+func TestModel_StartResetsDetailAndPercent(t *testing.T) {
+	m := apply(New(fixedClock(time.Second)),
+		tea.WindowSizeMsg{Width: 80},
+		SeedMsg{Items: []planner.ResourceRef{pgRef}},
+		StartMsg{Ref: pgRef, Verb: "pulling"},
+		DetailMsg{Ref: pgRef, Text: "8/23 files"},
+		ProgressMsg{Ref: pgRef, Percent: 60},
+		StartMsg{Ref: pgRef, Verb: "creating"},
+	)
+	it := m.itemFor(pgRef)
+	if it.Detail != "" {
+		t.Fatalf("Detail = %q, want empty after Start", it.Detail)
+	}
+	if it.HasPercent {
+		t.Fatalf("HasPercent = true, want false after Start")
+	}
+	if got := it.status(); got != "creating…" {
+		t.Fatalf("status = %q, want %q", got, "creating…")
 	}
 }
 
