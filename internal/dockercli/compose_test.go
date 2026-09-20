@@ -25,6 +25,11 @@ type fakeExec struct {
 	errPs         error
 	errHash       error
 	hashCalls     int
+	// progress
+	progressLines      [][]byte // replayed into Options.StderrLine by RunDetailed
+	errUp              error
+	errProgressProbe   error
+	progressProbeCalls int
 }
 
 func (f *fakeExec) Run(ctx context.Context, args ...string) (string, error) {
@@ -49,10 +54,19 @@ func (f *fakeExec) RunWithStdout(ctx context.Context, stdout io.Writer, args ...
 }
 func (f *fakeExec) RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error) {
 	f.lastDir, f.lastArgs, f.lastWithEnv, f.lastStdin = opts.Dir, args, len(opts.Env) > 0, opts.StdinData
+	if opts.StderrLine != nil {
+		for _, line := range f.progressLines {
+			opts.StderrLine(line)
+		}
+	}
 	out, err := f.dispatch(args)
 	return Result{Stdout: out, Stderr: "", ExitCode: 0}, err
 }
 func (f *fakeExec) dispatch(args []string) (string, error) {
+	if hasSuffix(args, []string{"config", "--quiet"}) {
+		f.progressProbeCalls++
+		return "", f.errProgressProbe
+	}
 	if hasSuffix(args, []string{"config", "--services"}) {
 		return f.outServices, f.errServices
 	}
@@ -70,7 +84,7 @@ func (f *fakeExec) dispatch(args []string) (string, error) {
 		return f.outHash, f.errHash
 	}
 	if hasSuffix(args, []string{"up", "-d"}) {
-		return "", nil
+		return "", f.errUp
 	}
 	return "", nil
 }

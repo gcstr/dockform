@@ -55,6 +55,74 @@ func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profil
 	return c.runCompose(ctx, workingDir, inlineEnv, doc, args...)
 }
 
+// ComposeUpWithProgress runs `docker compose up -d` like ComposeUp, additionally
+// reporting compose's progress to onEvent as it happens.
+//
+// Progress is advisory. `--progress json` is used only when this compose accepts
+// it (see supportsProgressJSON); otherwise this is exactly ComposeUp and onEvent
+// is never called. A line that does not decode is dropped. On failure, when
+// compose reported an error event, the returned error carries that event's
+// message: in this mode stderr is JSON, and would otherwise be what the user sees.
+func (c *Client) ComposeUpWithProgress(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string, onEvent func(ComposeEvent)) (string, error) {
+	if onEvent == nil || !c.supportsProgressJSON(ctx, workingDir, files, profiles, envFiles, inlineEnv) {
+		return c.ComposeUp(ctx, workingDir, files, profiles, envFiles, projectName, inlineEnv)
+	}
+	chosenFiles := files
+	var doc []byte
+	if c.identifier != "" {
+		d, err := c.buildLabeledProject(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier, inlineEnv)
+		if err != nil {
+			return "", apperr.Wrap("dockercli.ComposeUpWithProgress", apperr.External, err, "add identifier labels to the stack in %s (compose up was not run)", workingDir)
+		}
+		doc, chosenFiles = d, []string{"-"}
+	}
+	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
+	args = append(args, "--progress", "json", "up", "-d")
+
+	var composeErr string
+	res, err := c.exec.RunDetailed(ctx, Options{
+		Dir:       workingDir,
+		Env:       inlineEnv,
+		StdinData: doc,
+		StderrLine: func(line []byte) {
+			ev, ok := ParseComposeEvent(line)
+			if !ok {
+				return
+			}
+			if ev.Kind == EventError && ev.Message != "" {
+				composeErr = ev.Message
+			}
+			onEvent(ev)
+		},
+	}, args...)
+	if err != nil && composeErr != "" {
+		return res.Stdout, apperr.Wrap("dockercli.ComposeUpWithProgress", apperr.External, err, "%s", composeErr)
+	}
+	return res.Stdout, err
+}
+
+// supportsProgressJSON reports whether this compose accepts `--progress json`.
+//
+// `config --quiet` validates the flag and is read-only; `version` accepts any
+// --progress value and cannot tell. Only a positive answer is cached: a failure
+// can also mean a broken compose file or a transient error, and remembering it
+// would turn progress off for every other stack on this host. A false negative
+// only falls back to ComposeUp, and the real `up` then reports any real problem.
+func (c *Client) supportsProgressJSON(ctx context.Context, workingDir string, files, profiles, envFiles, inlineEnv []string) bool {
+	c.progressMu.Lock()
+	defer c.progressMu.Unlock()
+	if c.progressJSONOK {
+		return true
+	}
+	args := c.composeBaseArgs(files, profiles, envFiles, "")
+	args = append(args, "--progress", "json", "config", "--quiet")
+	if _, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...); err != nil {
+		return false
+	}
+	c.progressJSONOK = true
+	return true
+}
+
 // ComposePull runs `docker compose pull [services...]` using the given compose
 // configuration. When services is empty, compose pulls images for every
 // service in the project. The returned string is the raw stdout of the
