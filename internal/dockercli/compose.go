@@ -52,6 +52,9 @@ func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profil
 		doc, chosenFiles = d, []string{"-"}
 	}
 	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
+	if dir := syntheticProjectDir(c.identifier, doc); dir != "" {
+		args = append(args, "--project-directory", dir)
+	}
 	args = append(args, "up", "-d")
 
 	return c.runCompose(ctx, workingDir, inlineEnv, doc, args...)
@@ -82,6 +85,9 @@ func (c *Client) ComposeUpWithProgress(ctx context.Context, workingDir string, f
 		doc, chosenFiles = d, []string{"-"}
 	}
 	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
+	if dir := syntheticProjectDir(c.identifier, doc); dir != "" {
+		args = append(args, "--project-directory", dir)
+	}
 	args = append(args, "--progress", "json", "up", "-d")
 
 	res, err := c.exec.RunDetailed(ctx, Options{
@@ -398,6 +404,39 @@ func (c *Client) composeCacheKey(workingDir string, files, profiles, envFiles []
 	writePart("envfiles", envFiles)
 	writePart("inline", inlineEnv)
 	return b.String()
+}
+
+// syntheticProjectDir is the project directory dockform hands compose on the
+// `up` that consumes a piped labeled document. Compose stamps the project
+// directory on every container it creates, as
+// com.docker.compose.project.working_dir, and would otherwise record this
+// process's cwd: the operator's local stack path, which means nothing on a
+// remote host and leaks their username and layout. The result names no real
+// directory; it records which identifier and project manage the container,
+// identically for every operator.
+//
+// Its basename is the project name on purpose. When a document lacks name:,
+// compose derives the project name from the project directory's basename, so
+// the project cannot change even then.
+//
+// Only safe on that `up`: the piped document is already fully interpolated,
+// so the moved directory has nothing left to resolve. Never pass it to the
+// `config` call that renders the document — compose stops auto-loading the
+// stack's .env once the project directory moves.
+//
+// It returns "" when there is no document, no identifier, or no top-level
+// name:, leaving compose's default untouched rather than inventing a value.
+func syntheticProjectDir(identifier string, doc []byte) string {
+	if identifier == "" || len(doc) == 0 {
+		return ""
+	}
+	var head struct {
+		Name string `yaml:"name"`
+	}
+	if err := yaml.Unmarshal(doc, &head); err != nil || head.Name == "" {
+		return ""
+	}
+	return "/dockform/" + identifier + "/" + head.Name
 }
 
 // buildLabeledProject renders the effective project via `docker compose config`
