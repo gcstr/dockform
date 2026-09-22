@@ -16,3 +16,23 @@ func TestIsRemoteContext_TunnelSocketCountsAsRemote(t *testing.T) {
 		t.Error("the local docker socket must not count as remote")
 	}
 }
+
+// IsRemote applies the same rule as the per-host --parallel cap, so the two
+// can never disagree about which daemons are remote.
+func TestClientIsRemote(t *testing.T) {
+	cases := []struct {
+		name   string
+		client *Client
+		want   bool
+	}{
+		{"default context", New("default"), false},
+		{"named context", New("hetzner-one"), true},
+		{"ssh host override", NewWithHost("default", "ssh://user@host"), true},
+		{"local socket override", NewWithHost("default", "unix:///var/run/docker.sock"), false},
+	}
+	for _, tc := range cases {
+		if got := tc.client.IsRemote(); got != tc.want {
+			t.Errorf("%s: IsRemote() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

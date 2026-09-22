@@ -59,6 +59,15 @@ func validateBindMountsInComposeFile(stackKey string, stack Stack) error {
 	}
 	msg.WriteString("\nBind mounts reference paths on the Docker daemon's filesystem, not your local machine.\n")
 	msg.WriteString("When using remote Docker contexts, these paths would be resolved on the remote server.\n\n")
+	msg.WriteString(filesetMigrationSteps(context, stackName))
+
+	return apperr.New("manifest.validateBindMounts", apperr.InvalidInput, "%s", msg.String())
+}
+
+// filesetMigrationSteps is the fix both bind-mount errors recommend: move the
+// files into a fileset so dockform ships them to the remote host.
+func filesetMigrationSteps(context, stackName string) string {
+	var msg strings.Builder
 	msg.WriteString("Solution: Use Dockform filesets for syncing local files to remote volumes.\n\n")
 	msg.WriteString("Migration steps:\n")
 	fmt.Fprintf(&msg, "  1. Create a 'volumes/' directory in your stack: %s/%s/volumes/\n", context, stackName)
@@ -74,8 +83,24 @@ func validateBindMountsInComposeFile(stackKey string, stack Stack) error {
 	fmt.Fprintf(&msg, "           %s_config: {}\n\n", stackName)
 	msg.WriteString("Dockform will auto-discover the fileset and sync files correctly to the remote server.\n")
 	msg.WriteString("See: https://github.com/gcstr/dockform#filesets for more information.")
+	return msg.String()
+}
 
-	return apperr.New("manifest.validateBindMounts", apperr.InvalidInput, "%s", msg.String())
+// LocalBindMountsMessage explains why a stack on a remote context must not
+// bind sources from the project, lists the resolved sources, and says how to
+// move them to filesets.
+func LocalBindMountsMessage(stackKey string, sources []string) string {
+	context, stackName, _ := ParseStackKey(stackKey)
+	var msg strings.Builder
+	fmt.Fprintf(&msg, "stack %s binds paths from your local project, but context %s is remote.\n\n", stackKey, context)
+	msg.WriteString("Local bind sources:\n")
+	for _, s := range sources {
+		fmt.Fprintf(&msg, "  - %s\n", s)
+	}
+	msg.WriteString("\nThe remote daemon does not have these paths. It creates a missing bind source as an\n")
+	msg.WriteString("empty directory, so the container starts against an empty folder instead of failing.\n\n")
+	msg.WriteString(filesetMigrationSteps(context, stackName))
+	return msg.String()
 }
 
 // detectBindMounts returns the relative bind mount sources declared by any
@@ -162,4 +187,82 @@ func isRelativeBindSource(source string) bool {
 	return strings.HasPrefix(source, "./") ||
 		strings.HasPrefix(source, "../") ||
 		strings.HasPrefix(source, "~/")
+}
+
+// LocalBindSources returns the bind sources that point into the project: each
+// source that is one of projectDirs or lies beneath one. A remote daemon has
+// none of these paths, and it creates a missing bind source as an empty
+// directory, so the container starts against an empty folder instead of
+// failing.
+//
+// sources must be resolved absolute paths, as `compose config` emits them, and
+// bind sources only: the caller filters out named volumes and tmpfs. Empty
+// entries in projectDirs are ignored. The result is sorted and de-duplicated.
+//
+// Containment is a path check, never a string prefix, so /proj-other is not
+// inside /proj. Each path is also compared in its symlink-resolved form, so
+// /var/... and /private/var/... agree on macOS even for a source that does not
+// exist yet (see realPath).
+func LocalBindSources(sources []string, projectDirs ...string) []string {
+	var dirs []string
+	for _, d := range projectDirs {
+		if d != "" && filepath.Clean(d) != "/" {
+			dirs = append(dirs, pathForms(d)...)
+		}
+	}
+	var out []string
+	for _, src := range sources {
+		if src == "" {
+			continue
+		}
+		src = filepath.Clean(src)
+		if slices.Contains(out, src) {
+			continue
+		}
+		if withinAny(pathForms(src), dirs) {
+			out = append(out, src)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// pathForms returns p cleaned and, when it differs, its symlink-resolved form.
+func pathForms(p string) []string {
+	clean := filepath.Clean(p)
+	if resolved := realPath(clean); resolved != clean {
+		return []string{clean, resolved}
+	}
+	return []string{clean}
+}
+
+// realPath resolves symlinks in the longest existing prefix of p and re-appends
+// the rest. A bind source usually does not exist on this machine, and
+// filepath.EvalSymlinks alone fails on a missing path.
+func realPath(p string) string {
+	rest := ""
+	for cur := p; ; {
+		if resolved, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return p
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
+}
+
+// withinAny reports whether any form of a path is one of dirs or beneath it.
+func withinAny(forms, dirs []string) bool {
+	for _, f := range forms {
+		for _, d := range dirs {
+			rel, err := filepath.Rel(d, f)
+			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return true
+			}
+		}
+	}
+	return false
 }

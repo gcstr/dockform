@@ -86,6 +86,13 @@ func isRemoteContext(contextName, hostOverride string) bool {
 	return contextName != "" && contextName != "default"
 }
 
+// IsRemote reports whether this client's daemon is on another machine: an
+// ssh:// host, a tunnel socket, or any named non-"default" context. It is the
+// same rule that caps --parallel per remote host.
+func (c *Client) IsRemote() bool {
+	return isRemoteContext(c.contextName, c.hostOverride)
+}
+
 // WithIdentifier sets an optional label identifier to scope discovery.
 func (c *Client) WithIdentifier(id string) *Client {
 	c.identifier = id
