@@ -1,6 +1,6 @@
 services:
   traefik:
-    image: traefik:v3.0
+    image: traefik:v3.6
     container_name: traefik
     restart: unless-stopped
     ports:
