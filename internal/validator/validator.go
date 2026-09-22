@@ -105,7 +105,8 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 		// secrets for variable interpolation may fail validation but work at apply.
 		// See TECHNICAL_DEBT.md for details.
 		if len(stack.Files) > 0 && stack.Root != "" {
-			if _, err := client.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, []string{}); err != nil {
+			doc, err := client.ComposeConfigFull(ctx, stack.Root, stack.Files, stack.Profiles, stack.EnvFile, []string{})
+			if err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
@@ -115,6 +116,15 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 					return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose files %v for stack %s", stack.Files, stackName)
 				}
 				return apperr.Wrap("validator.Validate", apperr.External, err, "invalid compose file for stack %s", stackName)
+			}
+
+			// A remote daemon has none of the project's paths and creates a
+			// missing bind source as an empty directory. Judging the resolved
+			// document covers interpolated sources and include:'d files too.
+			if client.IsRemote() {
+				if local := manifest.LocalBindSources(bindSources(doc), cfg.BaseDir, stack.Root); len(local) > 0 {
+					return apperr.New("validator.Validate", apperr.InvalidInput, "%s", manifest.LocalBindMountsMessage(stackKey, local))
+				}
 			}
 		}
 
@@ -231,4 +241,19 @@ func statFailure(what, path string, err error) string {
 		err = pathErr.Err
 	}
 	return fmt.Sprintf("%s %s: %v", what, path, err)
+}
+
+// bindSources returns the source of every bind mount in a resolved compose
+// document. Named volumes, tmpfs and the like are skipped: only a bind mount
+// carries a host path.
+func bindSources(doc dockercli.ComposeConfigDoc) []string {
+	var out []string
+	for _, svc := range doc.Services {
+		for _, v := range svc.Volumes {
+			if v.Type == "bind" && v.Source != "" {
+				out = append(out, v.Source)
+			}
+		}
+	}
+	return out
 }
