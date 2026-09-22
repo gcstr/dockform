@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
 )
@@ -55,6 +56,19 @@ func withStubDocker(t *testing.T) func() {
 		t.Fatalf("set PATH: %v", err)
 	}
 	return func() { _ = os.Setenv("PATH", oldPath) }
+}
+
+// assertPrintedMissing checks the message the CLI actually prints for a path
+// that does not exist. That is apperr.DeepestMessage, not err.Error(): the CLI
+// prints the deepest Msg, so the path and the reason have to live there.
+func assertPrintedMissing(t *testing.T, err error, dir, name string) {
+	t.Helper()
+	msg := apperr.DeepestMessage(err)
+	for _, want := range []string{dir, name, "does not exist"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("printed message %q lacks %q", msg, want)
+		}
+	}
 }
 
 func TestValidate_Succeeds_WithCompleteConfigAndFiles(t *testing.T) {
@@ -144,9 +158,11 @@ stacks:
 		t.Fatalf("load: %v", err)
 	}
 	factory := dockercli.NewClientFactory()
-	if err := Validate(context.Background(), cfg, factory); err == nil {
+	err = Validate(context.Background(), cfg, factory)
+	if err == nil {
 		t.Fatalf("expected error for missing env file")
 	}
+	assertPrintedMissing(t, err, tmp, "missing.env")
 }
 
 func TestValidate_Fails_WhenStackSopsSecretMissing(t *testing.T) {
@@ -179,9 +195,11 @@ stacks:
 		t.Fatalf("load: %v", err)
 	}
 	factory := dockercli.NewClientFactory()
-	if err := Validate(context.Background(), cfg, factory); err == nil {
+	err = Validate(context.Background(), cfg, factory)
+	if err == nil {
 		t.Fatalf("expected error for missing sops secret file")
 	}
+	assertPrintedMissing(t, err, tmp, "secrets.env")
 }
 
 func TestValidate_Fails_WhenSopsAgeKeyMissing(t *testing.T) {
@@ -296,9 +314,11 @@ stacks:
 		t.Fatalf("load: %v", err)
 	}
 	factory := dockercli.NewClientFactory()
-	if err := Validate(context.Background(), cfg, factory); err == nil {
+	err = Validate(context.Background(), cfg, factory)
+	if err == nil {
 		t.Fatalf("expected error for missing compose file")
 	}
+	assertPrintedMissing(t, err, tmp, "docker-compose.yaml")
 }
 
 func TestValidate_Identifier_Invalid(t *testing.T) {
@@ -566,5 +586,62 @@ stacks:
 	}
 	if cfg.Identifier != "my-project" {
 		t.Errorf("identifier mismatch: expected 'my-project', got '%s'", cfg.Identifier)
+	}
+}
+
+func TestValidate_Fails_WhenFilesetSourceMissing(t *testing.T) {
+	defer withStubDocker(t)()
+	tmp := t.TempDir()
+	mustWrite := func(path string, content string) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "services: {}\n")
+	yml := []byte(`identifier: test-id
+contexts:
+  default: {}
+stacks:
+  default/website:
+    root: website
+    files:
+      - docker-compose.yaml
+    filesets:
+      html:
+        source: website/html
+        target_volume: html
+        target_path: /usr/share/nginx/html
+`)
+	mustWrite(filepath.Join(tmp, "dockform.yml"), string(yml))
+	cfg, err := manifest.Load(tmp)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	err = Validate(context.Background(), cfg, dockercli.NewClientFactory())
+	if err == nil {
+		t.Fatalf("expected error for missing fileset source")
+	}
+	assertPrintedMissing(t, err, tmp, filepath.Join("website", "html"))
+}
+
+func TestStatFailure_ReportsTheReasonOnceWithoutRepeatingThePath(t *testing.T) {
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	if err := os.Mkdir(locked, 0o000); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	target := filepath.Join(locked, "inside")
+	_, err := os.Stat(target)
+	if err == nil || os.IsNotExist(err) {
+		t.Skipf("need a permission error, got %v (running as root?)", err)
+	}
+	got := statFailure("fileset x source", target, err)
+	want := "fileset x source " + target + ": permission denied"
+	if got != want {
+		t.Errorf("statFailure = %q, want %q", got, want)
 	}
 }
