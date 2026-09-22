@@ -86,6 +86,22 @@ func TestSimplePlanApplyLifecycle(t *testing.T) {
 		t.Fatalf("expected running container with label io.dockform.identifier=%s", identifier)
 	}
 
+	// Compose stamps the project directory on every container. It must be the
+	// synthetic /dockform/<identifier>/<project>, never this machine's stack
+	// path, which would leak the operator's layout to a remote host.
+	labels := dockerLines(t, ctx, "inspect", "--format",
+		`{{index .Config.Labels "com.docker.compose.project.working_dir"}}|{{index .Config.Labels "com.docker.compose.project"}}`, names[0])
+	if len(labels) != 1 {
+		t.Fatalf("inspect %s: expected one line, got %v", names[0], labels)
+	}
+	workingDir, project, _ := strings.Cut(labels[0], "|")
+	if want := "/dockform/" + identifier + "/" + project; workingDir != want {
+		t.Fatalf("working_dir label = %q, want %q", workingDir, want)
+	}
+	if strings.Contains(workingDir, tempDir) {
+		t.Fatalf("working_dir label leaks the local stack path: %q", workingDir)
+	}
+
 	// Assert volume exists by label
 	vols := dockerLines(t, ctx, "volume", "ls", "--format", "{{.Name}}", "--filter", "label=io.dockform.identifier="+identifier)
 	if len(vols) == 0 {

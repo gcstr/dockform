@@ -12,6 +12,7 @@ import (
 
 type fakeExec struct {
 	lastArgs    []string
+	calls       [][]string // every call's args, in order
 	lastDir     string
 	lastWithEnv bool
 	lastStdin   []byte
@@ -45,10 +46,12 @@ func (f *fakeExec) Run(ctx context.Context, args ...string) (string, error) {
 	return "", nil
 }
 func (f *fakeExec) RunInDir(ctx context.Context, dir string, args ...string) (string, error) {
+	f.calls = append(f.calls, args)
 	f.lastDir, f.lastArgs, f.lastWithEnv = dir, args, false
 	return f.dispatch(args)
 }
 func (f *fakeExec) RunInDirWithEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
+	f.calls = append(f.calls, args)
 	f.lastDir, f.lastArgs, f.lastWithEnv = dir, args, true
 	return f.dispatch(args)
 }
@@ -61,6 +64,7 @@ func (f *fakeExec) RunWithStdout(ctx context.Context, stdout io.Writer, args ...
 	return nil
 }
 func (f *fakeExec) RunDetailed(ctx context.Context, opts Options, args ...string) (Result, error) {
+	f.calls = append(f.calls, args)
 	f.lastDir, f.lastArgs, f.lastWithEnv, f.lastStdin = opts.Dir, args, len(opts.Env) > 0, opts.StdinData
 	stderr := ""
 	if opts.StderrLine != nil {
