@@ -2,6 +2,8 @@ package validator
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -93,7 +95,7 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 				p = filepath.Join(stack.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s compose file %s", stackKey, f)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "%s", statFailure("stack "+stackKey+" compose file", p, err))
 			}
 		}
 
@@ -123,7 +125,7 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 				p = filepath.Join(stack.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s env file %s", stackKey, e)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "%s", statFailure("stack "+stackKey+" env file", p, err))
 			}
 		}
 
@@ -137,7 +139,7 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 				p = filepath.Join(stack.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "stack %s sops secret %s", stackKey, sp)
+				return apperr.Wrap("validator.Validate", apperr.NotFound, err, "%s", statFailure("stack "+stackKey+" sops secret", p, err))
 			}
 		}
 	}
@@ -149,7 +151,7 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 		}
 		st, err := os.Stat(fs.SourceAbs)
 		if err != nil {
-			return apperr.Wrap("validator.Validate", apperr.NotFound, err, "fileset %s source", name)
+			return apperr.Wrap("validator.Validate", apperr.NotFound, err, "%s", statFailure("fileset "+name+" source", fs.SourceAbs, err))
 		}
 		if !st.IsDir() {
 			return apperr.New("validator.Validate", apperr.InvalidInput, "fileset %s source is not a directory: %s", name, fs.SourceAbs)
@@ -198,7 +200,7 @@ func ValidateContext(ctx context.Context, cfg manifest.Config, contextName strin
 				p = filepath.Join(stack.Root, p)
 			}
 			if _, err := os.Stat(p); err != nil {
-				return apperr.Wrap("validator.ValidateDaemon", apperr.NotFound, err, "stack %s compose file %s", stackKey, f)
+				return apperr.Wrap("validator.ValidateDaemon", apperr.NotFound, err, "%s", statFailure("stack "+stackKey+" compose file", p, err))
 			}
 		}
 
@@ -214,4 +216,19 @@ func ValidateContext(ctx context.Context, cfg manifest.Config, contextName strin
 	}
 
 	return nil
+}
+
+// statFailure describes a path the manifest names that os.Stat could not read.
+// The CLI prints apperr.DeepestMessage, and a Stat error is not an *apperr.E,
+// so this message is all the user sees: it must carry the resolved path and
+// the reason on its own.
+func statFailure(what, path string, err error) string {
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Sprintf("%s %s does not exist", what, path)
+	}
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		err = pathErr.Err
+	}
+	return fmt.Sprintf("%s %s: %v", what, path, err)
 }
