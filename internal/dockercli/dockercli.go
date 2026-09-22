@@ -9,6 +9,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/util"
@@ -35,6 +36,11 @@ type Client struct {
 	hostOverride string // Manifest-provided DOCKER_HOST override
 
 	composeCache *LRUCache[string, ComposeConfigDoc]
+
+	// progressJSONOK records that this compose accepts --progress json. Only a
+	// positive answer is remembered; see supportsProgressJSON.
+	progressMu     sync.Mutex
+	progressJSONOK bool
 }
 
 func New(contextName string) *Client {

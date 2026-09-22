@@ -86,6 +86,9 @@ func (it *Item) status() string {
 		if it.Detail != "" {
 			return it.Detail
 		}
+		if it.HasPercent {
+			return fmt.Sprintf("%s %d%%", it.Verb, it.Percent)
+		}
 		return it.Verb + "…"
 	default:
 		return "pending"
@@ -106,8 +109,8 @@ func (m Model) itemStatus(it *Item) string {
 
 // depthZeroCount returns how many depth-0 (top-level) lines a group holds. A
 // service nested under a stack (Ref.Parent set) shares its parent stack's own
-// result and timing — it never gets an independent Start — so counting it
-// separately would double-count the same unit of work. For a Stacks group this
+// result and timing — a nested service is the same compose call as its stack,
+// so counting it separately would double-count that work. For a Stacks group this
 // means the count reflects how many STACKS were touched, not stacks-plus-
 // services; the pending and done branches of a collapsed group both call this
 // so they can never disagree with each other the way "9 pending" vs. "3
@@ -133,9 +136,10 @@ func (g *Group) depthZeroCount() int {
 // items overlap.
 //
 // Only depth-0 items participate, for the same reason depthZeroCount only
-// counts them: a nested service's Result and elapsed are inherited from its
-// stack's own Finish, so folding it in here would both double-count the verb
-// and widen the time window with a duplicate of an interval already counted.
+// counts them: a nested service is the same compose call as its stack, so
+// counting it separately would double-count that work — folding it in here
+// would also double-count the verb and widen the time window with a
+// duplicate of an interval already counted.
 func (g *Group) summary() (breakdown string, total time.Duration) {
 	counts := map[string]int{}
 	var order []string

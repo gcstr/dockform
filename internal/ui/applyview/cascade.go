@@ -2,15 +2,13 @@ package applyview
 
 import "github.com/gcstr/dockform/internal/planner"
 
-// stackResolves reports whether child resolves together with stack, which has
-// just finished.
+// stackResolves reports whether child belongs to stack, which has just finished.
 //
-// The planner drives compose at stack granularity: one ComposeUp call per stack
-// covers every service in it, so a stack finishing is the only signal its
-// services will ever get. Both renderers have to agree on that rule — when only
-// the interactive one implemented it, a successful stack's services were still
-// reported "not applied" in CI, which is why this lives here rather than inside
-// either renderer.
+// The planner drives compose at stack granularity — one compose call per stack —
+// so a stack finishing resolves its services. Live progress events can also
+// finish a service on its own before its stack does; resolvesWithStack decides
+// which children the stack still resolves. Both renderers go through that
+// function, so they cannot disagree.
 //
 // Every field is compared deliberately: two hosts routinely run stacks with the
 // same name, and one host routinely runs two stacks that share a service name.
@@ -19,6 +17,15 @@ func stackResolves(stack, child planner.ResourceRef) bool {
 		child.Type == planner.ResourceService &&
 		child.Context == stack.Context &&
 		child.Parent == stack.Name
+}
+
+// resolvesWithStack reports whether child takes stack's result when stack
+// finishes. A child still pending or running does. A child that live progress
+// events already finished keeps its own result and timing, and a failed child
+// is never overwritten.
+func resolvesWithStack(stack, child planner.ResourceRef, childState planner.ResourceState) bool {
+	return stackResolves(stack, child) &&
+		(childState == planner.StatePending || childState == planner.StateRunning)
 }
 
 // countsTowardTotal reports whether ref should be counted in the resource

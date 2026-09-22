@@ -1,8 +1,10 @@
 package dockercli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,6 +55,150 @@ func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profil
 	args = append(args, "up", "-d")
 
 	return c.runCompose(ctx, workingDir, inlineEnv, doc, args...)
+}
+
+// ComposeUpWithProgress runs `docker compose up -d` like ComposeUp, additionally
+// reporting compose's progress to onEvent as it happens.
+//
+// Progress is advisory. `--progress json` is used only when this compose accepts
+// it (see supportsProgressJSON); otherwise this is exactly ComposeUp and onEvent
+// is never called. A line that does not decode is dropped. On failure, the
+// returned error's message is re-derived from the final attempt's buffered
+// stderr (see composeFailureMessage) rather than anything the StderrLine
+// callback saw: on an SSH retry that callback also receives the failed
+// attempt's lines, which can include a real compose error event that did not
+// cause the final failure.
+func (c *Client) ComposeUpWithProgress(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string, onEvent func(ComposeEvent)) (string, error) {
+	if onEvent == nil || !c.supportsProgressJSON(ctx, workingDir, files, profiles, envFiles, inlineEnv) {
+		return c.ComposeUp(ctx, workingDir, files, profiles, envFiles, projectName, inlineEnv)
+	}
+	chosenFiles := files
+	var doc []byte
+	if c.identifier != "" {
+		d, err := c.buildLabeledProject(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier, inlineEnv)
+		if err != nil {
+			return "", apperr.Wrap("dockercli.ComposeUpWithProgress", apperr.External, err, "add identifier labels to the stack in %s (compose up was not run)", workingDir)
+		}
+		doc, chosenFiles = d, []string{"-"}
+	}
+	args := c.composeBaseArgs(chosenFiles, profiles, envFiles, projectName)
+	args = append(args, "--progress", "json", "up", "-d")
+
+	res, err := c.exec.RunDetailed(ctx, Options{
+		Dir:       workingDir,
+		Env:       inlineEnv,
+		StdinData: doc,
+		StderrLine: func(line []byte) {
+			// This runs on os/exec's stderr copy goroutine, which this package
+			// does not own: a panic there is unrecoverable from here and would
+			// kill the whole apply. Progress is advisory, so swallow it — the
+			// cost of a bug in the tracker must be lost display detail, never a
+			// failed apply.
+			defer func() { _ = recover() }()
+			if ev, ok := ParseComposeEvent(line); ok {
+				onEvent(ev)
+			}
+		},
+	}, args...)
+	if err == nil {
+		return res.Stdout, nil
+	}
+	if msg, ok := composeFailureMessage(res.Stderr); ok {
+		// Re-wrap the Exec error's CAUSE, not the Exec error itself. Its Msg is
+		// the raw --progress json stderr, and apperr.DeepestMessage — what every
+		// user-facing printer reports — keeps the deepest Msg, so leaving it in
+		// the chain means the derived message is never the one shown.
+		cause := err
+		var e *apperr.E
+		if errors.As(err, &e) && e.Err != nil {
+			cause = e.Err
+		}
+		return res.Stdout, apperr.Wrap("dockercli.ComposeUpWithProgress", apperr.External, cause, "%s", msg)
+	}
+	return res.Stdout, err
+}
+
+// composeFailureMessage extracts a human-readable cause from a failed `up`'s
+// buffered stderr. exec.go declares its stderr buffer inside the per-attempt
+// retry loop and reassigns Result on each attempt, so res.Stderr always holds
+// only the FINAL attempt's output — scanning it, rather than accumulating
+// state in the StderrLine callback across attempts, is what keeps an earlier
+// attempt's message from being reported as the cause of a later, unrelated
+// failure.
+//
+// It prefers compose's own terminal error event (the last one found, if
+// several), falling back to the failing resource's own "details" when a compose
+// release reports the resource but no terminal line.
+//
+// The undecodable lines are always appended after it, never discarded: in
+// --progress json mode those are exactly the plain-text lines (an SSH error, a
+// daemon message) a user would have seen without this flag, and IsSSHSessionLimit
+// looks for one of them — "Session open refused by peer" — through
+// apperr.DeepestMessage. Dropping them would silently disable planner.Apply's
+// SSH-exhaustion diagnostic. When there is nothing of either kind, it reports
+// nothing and the caller's original error is left as-is.
+func composeFailureMessage(stderr string) (string, bool) {
+	var composeErr, resourceErr string
+	var plainText []string
+	for _, line := range splitStderrLines(stderr) {
+		if ev, ok := ParseComposeEvent(line); ok {
+			switch {
+			case ev.Kind == EventError && ev.Message != "":
+				composeErr = ev.Message
+			case ev.Status == "Error" && ev.Message != "":
+				resourceErr = ev.Message
+			}
+			continue
+		}
+		plainText = append(plainText, string(line))
+	}
+	if composeErr == "" {
+		composeErr = resourceErr
+	}
+	if composeErr != "" {
+		return strings.Join(append([]string{composeErr}, plainText...), "\n"), true
+	}
+	if len(plainText) > 0 {
+		return strings.Join(plainText, "\n"), true
+	}
+	return "", false
+}
+
+// splitStderrLines splits raw buffered stderr into the same non-empty lines
+// exec.go's per-attempt StderrLine callback (lineSplitter) would have
+// delivered.
+func splitStderrLines(stderr string) [][]byte {
+	var lines [][]byte
+	for _, line := range bytes.Split([]byte(stderr), []byte("\n")) {
+		line = bytes.TrimRight(line, "\r")
+		if len(line) == 0 {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// supportsProgressJSON reports whether this compose accepts `--progress json`.
+//
+// `config --quiet` validates the flag and is read-only; `version` accepts any
+// --progress value and cannot tell. Only a positive answer is cached: a failure
+// can also mean a broken compose file or a transient error, and remembering it
+// would turn progress off for every other stack on this host. A false negative
+// only falls back to ComposeUp, and the real `up` then reports any real problem.
+func (c *Client) supportsProgressJSON(ctx context.Context, workingDir string, files, profiles, envFiles, inlineEnv []string) bool {
+	c.progressMu.Lock()
+	defer c.progressMu.Unlock()
+	if c.progressJSONOK {
+		return true
+	}
+	args := c.composeBaseArgs(files, profiles, envFiles, "")
+	args = append(args, "--progress", "json", "config", "--quiet")
+	if _, err := c.runInDirOptionalEnv(ctx, workingDir, inlineEnv, args...); err != nil {
+		return false
+	}
+	c.progressJSONOK = true
+	return true
 }
 
 // ComposePull runs `docker compose pull [services...]` using the given compose

@@ -37,6 +37,10 @@ func (r *reporter) Detail(ref planner.ResourceRef, text string) {
 	r.emit(DetailMsg{Ref: ref, Text: text})
 }
 
+func (r *reporter) Progress(ref planner.ResourceRef, percent int) {
+	r.emit(ProgressMsg{Ref: ref, Percent: percent})
+}
+
 func (r *reporter) Finish(ref planner.ResourceRef, result string) {
 	r.emit(FinishMsg{Ref: ref, Result: result})
 }

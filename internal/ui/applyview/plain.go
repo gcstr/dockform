@@ -21,6 +21,8 @@ type Plain struct {
 	state   map[planner.ResourceRef]planner.ResourceState
 	causes  map[planner.ResourceRef]string
 	seeded  map[planner.ResourceRef]bool
+
+	milestone map[planner.ResourceRef]int
 }
 
 // NewPlain creates a plain reporter writing to w. now is injected for tests.
@@ -35,6 +37,8 @@ func NewPlain(w io.Writer, now func() time.Time) *Plain {
 		state:   map[planner.ResourceRef]planner.ResourceState{},
 		causes:  map[planner.ResourceRef]string{},
 		seeded:  map[planner.ResourceRef]bool{},
+
+		milestone: map[planner.ResourceRef]int{},
 	}
 }
 
@@ -88,14 +92,42 @@ func (p *Plain) Start(ref planner.ResourceRef, verb string) {
 	p.track(ref)
 	p.state[ref] = planner.StateRunning
 	p.started[ref] = p.now()
+	// A restarted line starts its percentages over, as Model does on StartMsg.
+	// Keeping the old milestone would swallow the new run's early readings.
+	delete(p.milestone, ref)
 	_, _ = fmt.Fprintf(p.w, "%s: %s\n", qualifiedLabel(ref), verb)
 }
 
 func (p *Plain) Detail(ref planner.ResourceRef, text string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if text == "" {
+		return
+	}
 	p.track(ref)
 	_, _ = fmt.Fprintf(p.w, "%s: %s\n", qualifiedLabel(ref), text)
+}
+
+// Progress prints a percentage only when it crosses a milestone — 25, 50, 75 or
+// 100 — once per milestone per line. The interactive view redraws a percentage
+// in place; a log cannot, and printing every update would bury the run.
+func (p *Plain) Progress(ref planner.ResourceRef, percent int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.state[ref] != planner.StateRunning {
+		return
+	}
+	reached := 0
+	for _, m := range []int{25, 50, 75, 100} {
+		if percent >= m {
+			reached = m
+		}
+	}
+	if reached == 0 || reached <= p.milestone[ref] {
+		return
+	}
+	p.milestone[ref] = reached
+	_, _ = fmt.Fprintf(p.w, "%s: %d%%\n", qualifiedLabel(ref), percent)
 }
 
 func (p *Plain) Finish(ref planner.ResourceRef, result string) {
@@ -120,7 +152,7 @@ func (p *Plain) Finish(ref planner.ResourceRef, result string) {
 	// it — see stackResolves. Without this a fully successful stack reported every
 	// one of its services as "not applied" in the summary below.
 	for _, child := range p.order {
-		if stackResolves(ref, child) && p.state[child] != planner.StateFailed {
+		if resolvesWithStack(ref, child, p.state[child]) {
 			p.state[child] = planner.StateDone
 			_, _ = fmt.Fprintf(p.w, "%s: %s\n", qualifiedLabel(child), result)
 		}

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/gcstr/dockform/internal/planner"
 )
 
@@ -76,5 +78,61 @@ func TestBothRenderersAgreeOnTotal(t *testing.T) {
 
 	if ttyTotal != 3 {
 		t.Fatalf("sanity check failed: want 3 counted resources (vol, web, db — not the stack), got %d", ttyTotal)
+	}
+}
+
+func TestResolvesWithStack_OnlyPendingOrRunningChildren(t *testing.T) {
+	stack := planner.ResourceRef{Context: "ctx", Type: planner.ResourceStack, Name: "app"}
+	child := planner.ResourceRef{Context: "ctx", Type: planner.ResourceService, Name: "web", Parent: "app"}
+	other := planner.ResourceRef{Context: "ctx", Type: planner.ResourceService, Name: "web", Parent: "elsewhere"}
+	for _, tc := range []struct {
+		name  string
+		child planner.ResourceRef
+		state planner.ResourceState
+		want  bool
+	}{
+		{"pending child resolves", child, planner.StatePending, true},
+		{"running child resolves", child, planner.StateRunning, true},
+		{"finished child keeps its own result", child, planner.StateDone, false},
+		{"failed child is never overwritten", child, planner.StateFailed, false},
+		{"another stack's child is untouched", other, planner.StatePending, false},
+	} {
+		if got := resolvesWithStack(stack, tc.child, tc.state); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestModel_StackFinishLeavesAFinishedChildsResult(t *testing.T) {
+	stack := planner.ResourceRef{Context: "ctx", Type: planner.ResourceStack, Name: "app"}
+	web := planner.ResourceRef{Context: "ctx", Type: planner.ResourceService, Name: "web", Parent: "app"}
+	m := apply(New(fixedClock(time.Second)),
+		tea.WindowSizeMsg{Width: 80},
+		SeedMsg{Items: []planner.ResourceRef{stack, web}},
+		StartMsg{Ref: stack, Verb: "starting"},
+		StartMsg{Ref: web, Verb: "recreating"},
+		FinishMsg{Ref: web, Result: "recreated"},
+		FinishMsg{Ref: stack, Result: "started"},
+	)
+	if got := m.itemFor(web).Result; got != "recreated" {
+		t.Fatalf("child result = %q, want %q", got, "recreated")
+	}
+}
+
+func TestPlain_StackFinishDoesNotReprintAFinishedChild(t *testing.T) {
+	stack := planner.ResourceRef{Context: "ctx", Type: planner.ResourceStack, Name: "app"}
+	web := planner.ResourceRef{Context: "ctx", Type: planner.ResourceService, Name: "web", Parent: "app"}
+	var buf bytes.Buffer
+	p := NewPlain(&buf, fixedClock(time.Second))
+	p.Seed([]planner.ResourceRef{stack, web})
+	p.Start(stack, "starting")
+	p.Start(web, "recreating")
+	p.Finish(web, "recreated")
+	p.Finish(stack, "started")
+	if n := strings.Count(buf.String(), "service app/web: recreated"); n != 1 {
+		t.Fatalf("child finish printed %d times, want 1:\n%s", n, buf.String())
+	}
+	if strings.Contains(buf.String(), "service app/web: started") {
+		t.Fatalf("child was overwritten with the stack's result:\n%s", buf.String())
 	}
 }

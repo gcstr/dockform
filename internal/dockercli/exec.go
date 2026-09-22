@@ -65,6 +65,11 @@ type Options struct {
 	// the retry/backoff loop: a down host must not be serialized behind other
 	// calls or retried during a reachability check.
 	Probe bool
+	// StderrLine, when set, receives each line of stderr as it is written, while
+	// stderr is still buffered into Result.Stderr exactly as without it. Unlike
+	// streaming stdout it does not disable the SSH retry loop, so a consumer
+	// sees every attempt's lines and must tolerate a replay.
+	StderrLine func(line []byte)
 }
 
 // Result contains structured outcome of a command.
@@ -192,9 +197,18 @@ func (s SystemExec) RunDetailed(ctx context.Context, opts Options, args ...strin
 		} else {
 			cmd.Stdout = &stdout
 		}
-		cmd.Stderr = &stderr
+		var lines *lineSplitter
+		if opts.StderrLine != nil {
+			lines = &lineSplitter{emit: opts.StderrLine}
+			cmd.Stderr = io.MultiWriter(&stderr, lines)
+		} else {
+			cmd.Stderr = &stderr
+		}
 
 		runErr = cmd.Run()
+		if lines != nil {
+			lines.Flush()
+		}
 
 		exitCode := 0
 		if cmd.ProcessState != nil {

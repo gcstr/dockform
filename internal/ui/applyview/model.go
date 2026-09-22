@@ -15,6 +15,8 @@ type Item struct {
 	State      planner.ResourceState
 	Verb       string
 	Detail     string
+	Percent    int
+	HasPercent bool
 	Result     string
 	Err        error
 	Discovered bool
@@ -267,12 +269,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		it := m.ensureItem(msg.Ref, true)
 		it.State = planner.StateRunning
 		it.Verb = msg.Verb
+		it.Detail = ""
+		it.Percent = 0
+		it.HasPercent = false
 		it.started = m.now()
 		return m, nil
 
 	case DetailMsg:
 		it := m.ensureItem(msg.Ref, true)
 		it.Detail = msg.Text
+		return m, nil
+
+	case ProgressMsg:
+		// itemFor, not ensureItem: a percentage must never create a line, and
+		// must never touch one that is not running.
+		it := m.itemFor(msg.Ref)
+		if it == nil || it.State != planner.StateRunning {
+			return m, nil
+		}
+		it.Percent, it.HasPercent = msg.Percent, true
 		return m, nil
 
 	case FinishMsg:
@@ -293,7 +308,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Ref.Type == planner.ResourceStack {
 			if g := m.groupFor(msg.Ref); g != nil {
 				for _, child := range g.items {
-					if stackResolves(msg.Ref, child.Ref) && child.State != planner.StateFailed {
+					if resolvesWithStack(msg.Ref, child.Ref, child.State) {
 						m.markDone(child, msg.Result)
 					}
 				}

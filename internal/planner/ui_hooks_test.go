@@ -2,6 +2,7 @@ package planner
 
 import (
 	"errors"
+	"strconv"
 	"sync"
 	"testing"
 )
@@ -35,6 +36,10 @@ func (r *recordingReporter) Start(ref ResourceRef, verb string) {
 
 func (r *recordingReporter) Detail(ref ResourceRef, text string) {
 	r.add("detail", ref, text)
+}
+
+func (r *recordingReporter) Progress(ref ResourceRef, percent int) {
+	r.add("progress", ref, strconv.Itoa(percent))
 }
 
 func (r *recordingReporter) Finish(ref ResourceRef, result string) {

@@ -31,6 +31,10 @@ type ProgressReporter interface {
 	Start(ref ResourceRef, verb string)
 	// Detail replaces a running line's sub-status, e.g. "8/23 files".
 	Detail(ref ResourceRef, text string)
+	// Progress reports a running line's completion, 0-100. Renderers decide how
+	// often to show it: an interactive view redraws it in place, while a log
+	// must not print a line for every update.
+	Progress(ref ResourceRef, percent int)
 	// Finish moves a line to StateDone. result is past tense: "created". An
 	// empty result is a distinct "found nothing to do" signal for a ref that
 	// was only ever reported via Start, never seeded: both renderers treat it
@@ -48,6 +52,7 @@ type nopReporter struct{}
 func (nopReporter) Seed([]ResourceRef)         {}
 func (nopReporter) Start(ResourceRef, string)  {}
 func (nopReporter) Detail(ResourceRef, string) {}
+func (nopReporter) Progress(ResourceRef, int)  {}
 func (nopReporter) Finish(ResourceRef, string) {}
 func (nopReporter) Fail(ResourceRef, error)    {}
 

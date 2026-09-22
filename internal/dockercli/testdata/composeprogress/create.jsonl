@@ -1,0 +1,10 @@
+{"id":"Network skqfixture_default","status":"Working","text":"Creating"}
+{"id":"Network skqfixture_default","status":"Done","text":"Created"}
+{"id":"Container skqfixture-alpha-1","status":"Working","text":"Creating"}
+{"id":"Container skqfixture-alpha-1","status":"Done","text":"Created"}
+{"id":"Container skqfixture-beta-1","status":"Working","text":"Creating"}
+{"id":"Container skqfixture-beta-1","status":"Done","text":"Created"}
+{"id":"Container skqfixture-alpha-1","status":"Working","text":"Starting"}
+{"id":"Container skqfixture-alpha-1","status":"Done","text":"Started"}
+{"id":"Container skqfixture-beta-1","status":"Working","text":"Starting"}
+{"id":"Container skqfixture-beta-1","status":"Done","text":"Started"}
