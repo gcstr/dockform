@@ -31,6 +31,9 @@ func TestLocalBindSources(t *testing.T) {
 		{"a sibling sharing the prefix is not inside", []string{base + "-other/x"}, []string{base}, nil},
 		{"empty project dirs are ignored", []string{"/var/run/docker.sock"}, []string{"", ""}, nil},
 		{"sorted and de-duplicated", []string{filepath.Join(root, "b"), filepath.Join(root, "a"), filepath.Join(root, "b")}, []string{root}, []string{filepath.Join(root, "a"), filepath.Join(root, "b")}},
+		{"a project dir of / is ignored rather than matching everything", []string{"/var/run/docker.sock", "/srv/x"}, []string{"/"}, nil},
+		{"a / project dir does not disable the other one", []string{filepath.Join(root, "cfg"), "/var/run/docker.sock"}, []string{"/", root}, []string{filepath.Join(root, "cfg")}},
+		{"a trailing slash is the same source", []string{filepath.Join(root, "a"), filepath.Join(root, "a") + "/"}, []string{root}, []string{filepath.Join(root, "a")}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

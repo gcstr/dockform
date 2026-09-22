@@ -206,13 +206,17 @@ func isRelativeBindSource(source string) bool {
 func LocalBindSources(sources []string, projectDirs ...string) []string {
 	var dirs []string
 	for _, d := range projectDirs {
-		if d != "" {
+		if d != "" && filepath.Clean(d) != "/" {
 			dirs = append(dirs, pathForms(d)...)
 		}
 	}
 	var out []string
 	for _, src := range sources {
-		if src == "" || slices.Contains(out, src) {
+		if src == "" {
+			continue
+		}
+		src = filepath.Clean(src)
+		if slices.Contains(out, src) {
 			continue
 		}
 		if withinAny(pathForms(src), dirs) {
