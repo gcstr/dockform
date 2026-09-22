@@ -163,3 +163,77 @@ func isRelativeBindSource(source string) bool {
 		strings.HasPrefix(source, "../") ||
 		strings.HasPrefix(source, "~/")
 }
+
+// LocalBindSources returns the bind sources that point into the project: each
+// source that is one of projectDirs or lies beneath one. A remote daemon has
+// none of these paths, and it creates a missing bind source as an empty
+// directory, so the container starts against an empty folder instead of
+// failing.
+//
+// sources must be resolved absolute paths, as `compose config` emits them, and
+// bind sources only: the caller filters out named volumes and tmpfs. Empty
+// entries in projectDirs are ignored. The result is sorted and de-duplicated.
+//
+// Containment is a path check, never a string prefix, so /proj-other is not
+// inside /proj. Each path is also compared in its symlink-resolved form, so
+// /var/... and /private/var/... agree on macOS even for a source that does not
+// exist yet (see realPath).
+func LocalBindSources(sources []string, projectDirs ...string) []string {
+	var dirs []string
+	for _, d := range projectDirs {
+		if d != "" {
+			dirs = append(dirs, pathForms(d)...)
+		}
+	}
+	var out []string
+	for _, src := range sources {
+		if src == "" || slices.Contains(out, src) {
+			continue
+		}
+		if withinAny(pathForms(src), dirs) {
+			out = append(out, src)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// pathForms returns p cleaned and, when it differs, its symlink-resolved form.
+func pathForms(p string) []string {
+	clean := filepath.Clean(p)
+	if resolved := realPath(clean); resolved != clean {
+		return []string{clean, resolved}
+	}
+	return []string{clean}
+}
+
+// realPath resolves symlinks in the longest existing prefix of p and re-appends
+// the rest. A bind source usually does not exist on this machine, and
+// filepath.EvalSymlinks alone fails on a missing path.
+func realPath(p string) string {
+	rest := ""
+	for cur := p; ; {
+		if resolved, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return p
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
+}
+
+// withinAny reports whether any form of a path is one of dirs or beneath it.
+func withinAny(forms, dirs []string) bool {
+	for _, f := range forms {
+		for _, d := range dirs {
+			rel, err := filepath.Rel(d, f)
+			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return true
+			}
+		}
+	}
+	return false
+}
