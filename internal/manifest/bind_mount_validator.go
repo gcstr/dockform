@@ -59,6 +59,15 @@ func validateBindMountsInComposeFile(stackKey string, stack Stack) error {
 	}
 	msg.WriteString("\nBind mounts reference paths on the Docker daemon's filesystem, not your local machine.\n")
 	msg.WriteString("When using remote Docker contexts, these paths would be resolved on the remote server.\n\n")
+	msg.WriteString(filesetMigrationSteps(context, stackName))
+
+	return apperr.New("manifest.validateBindMounts", apperr.InvalidInput, "%s", msg.String())
+}
+
+// filesetMigrationSteps is the fix both bind-mount errors recommend: move the
+// files into a fileset so dockform ships them to the remote host.
+func filesetMigrationSteps(context, stackName string) string {
+	var msg strings.Builder
 	msg.WriteString("Solution: Use Dockform filesets for syncing local files to remote volumes.\n\n")
 	msg.WriteString("Migration steps:\n")
 	fmt.Fprintf(&msg, "  1. Create a 'volumes/' directory in your stack: %s/%s/volumes/\n", context, stackName)
@@ -74,8 +83,24 @@ func validateBindMountsInComposeFile(stackKey string, stack Stack) error {
 	fmt.Fprintf(&msg, "           %s_config: {}\n\n", stackName)
 	msg.WriteString("Dockform will auto-discover the fileset and sync files correctly to the remote server.\n")
 	msg.WriteString("See: https://github.com/gcstr/dockform#filesets for more information.")
+	return msg.String()
+}
 
-	return apperr.New("manifest.validateBindMounts", apperr.InvalidInput, "%s", msg.String())
+// LocalBindMountsMessage explains why a stack on a remote context must not
+// bind sources from the project, lists the resolved sources, and says how to
+// move them to filesets.
+func LocalBindMountsMessage(stackKey string, sources []string) string {
+	context, stackName, _ := ParseStackKey(stackKey)
+	var msg strings.Builder
+	fmt.Fprintf(&msg, "stack %s binds paths from your local project, but context %s is remote.\n\n", stackKey, context)
+	msg.WriteString("Local bind sources:\n")
+	for _, s := range sources {
+		fmt.Fprintf(&msg, "  - %s\n", s)
+	}
+	msg.WriteString("\nThe remote daemon does not have these paths. It creates a missing bind source as an\n")
+	msg.WriteString("empty directory, so the container starts against an empty folder instead of failing.\n\n")
+	msg.WriteString(filesetMigrationSteps(context, stackName))
+	return msg.String()
 }
 
 // detectBindMounts returns the relative bind mount sources declared by any
