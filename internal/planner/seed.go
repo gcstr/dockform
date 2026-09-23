@@ -3,8 +3,8 @@ package planner
 // SeedRefs returns the apply view's line list for one context, in the same order
 // the plan renderer prints: volumes, networks, stacks (sorted, each followed by
 // its changed services), filesets (sorted), then orphan containers. Resources
-// whose action is ActionNoop are omitted — they are not work and must not occupy
-// a line.
+// that are not pending work (ActionNoop, ActionKeep — see Action.pending) are omitted:
+// they must not occupy a line.
 //
 // Deliberately does NOT use ResourcePlan.AllResources (resource.go:483): that
 // helper iterates the Stacks and Filesets maps unsorted, so its order varies
@@ -25,7 +25,7 @@ func SeedRefs(contextName string, rp *ResourcePlan) []ResourceRef {
 		switch title {
 		case SectionTitle(ResourceVolume):
 			for _, res := range rp.Volumes {
-				if res.Action == ActionNoop {
+				if !res.Action.pending() {
 					continue
 				}
 				refs = append(refs, ResourceRef{Context: contextName, Type: ResourceVolume, Name: res.Name})
@@ -33,7 +33,7 @@ func SeedRefs(contextName string, rp *ResourcePlan) []ResourceRef {
 
 		case SectionTitle(ResourceNetwork):
 			for _, res := range rp.Networks {
-				if res.Action == ActionNoop {
+				if !res.Action.pending() {
 					continue
 				}
 				refs = append(refs, ResourceRef{Context: contextName, Type: ResourceNetwork, Name: res.Name})
@@ -43,7 +43,7 @@ func SeedRefs(contextName string, rp *ResourcePlan) []ResourceRef {
 			for _, stackName := range sortedKeys(rp.Stacks) {
 				var changed []Resource
 				for _, svc := range rp.Stacks[stackName] {
-					if svc.Action == ActionNoop {
+					if !svc.Action.pending() {
 						continue
 					}
 					changed = append(changed, svc)
@@ -66,7 +66,7 @@ func SeedRefs(contextName string, rp *ResourcePlan) []ResourceRef {
 			for _, fsName := range sortedKeys(rp.Filesets) {
 				hasChange := false
 				for _, item := range rp.Filesets[fsName] {
-					if item.Action != ActionNoop {
+					if item.Action.pending() {
 						hasChange = true
 						break
 					}
@@ -79,7 +79,7 @@ func SeedRefs(contextName string, rp *ResourcePlan) []ResourceRef {
 
 		case SectionTitle(ResourceContainer):
 			for _, res := range rp.Containers {
-				if res.Action == ActionNoop {
+				if !res.Action.pending() {
 					continue
 				}
 				refs = append(refs, ResourceRef{Context: contextName, Type: ResourceContainer, Name: res.Name})
