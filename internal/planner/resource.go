@@ -580,6 +580,33 @@ func (rp *ResourcePlan) CountActions() (create, update, delete int) {
 	return create, update, delete
 }
 
+// HasDeletes reports whether the plan removes anything. Unlike CountActions,
+// which feeds the display summary and skips unnamed fileset lines, it looks at
+// every resource in every section, so destroy can never mistake real work for
+// an all-kept plan.
+func (rp *ResourcePlan) HasDeletes() bool {
+	if rp == nil {
+		return false
+	}
+	for _, list := range [][]Resource{rp.Volumes, rp.Networks, rp.Containers} {
+		for _, r := range list {
+			if r.Action == ActionDelete {
+				return true
+			}
+		}
+	}
+	for _, m := range []map[string][]Resource{rp.Stacks, rp.Filesets} {
+		for _, list := range m {
+			for _, r := range list {
+				if r.Action == ActionDelete {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // AllResources returns all resources from the plan as a flat list (for testing)
 func (rp *ResourcePlan) AllResources() []Resource {
 	var all []Resource

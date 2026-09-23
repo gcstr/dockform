@@ -62,7 +62,7 @@ networks and volumes are preserved.`,
 
 			// Everything left is kept by destroy: false: there is nothing to
 			// confirm, and prompting for the identifier would suggest otherwise.
-			if _, _, deletes := plan.Resources.CountActions(); deletes == 0 {
+			if !plan.Resources.HasDeletes() {
 				ctx.Printer.Plain("Nothing to destroy: every remaining resource is kept by destroy: false.")
 				return nil
 			}

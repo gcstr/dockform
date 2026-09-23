@@ -305,6 +305,64 @@ exit 0
 	}
 }
 
+// A destroy whose only pending work is a fileset volume (e.g. a re-run after
+// a partial failure, with containers already gone) must still be treated as
+// having work: it should prompt for confirmation, not short-circuit to
+// "Nothing to destroy".
+func TestDestroy_FilesetVolumeOnly_StillDestroys(t *testing.T) {
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
+cmd="$1"; shift
+case "$cmd" in
+  version)
+    exit 0 ;;
+  volume)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "site-html"; exit 0; fi
+    if [ "$sub" = "rm" ]; then exit 0; fi ;;
+  network)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then exit 0; fi ;;
+  ps)
+    exit 0 ;;
+  inspect)
+    echo "{}"
+    exit 0 ;;
+esac
+exit 0
+`)
+	defer undo()
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "website", "html"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "website", "docker-compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := "identifier: demo\ncontexts:\n  default: {}\nstacks:\n  default/website:\n    root: website\n    files:\n      - docker-compose.yaml\n    filesets:\n      data:\n        source: website/html\n        target_volume: site-html\n        target_path: /data\n"
+	cfgPath := filepath.Join(dir, "dockform.yml")
+	if err := os.WriteFile(cfgPath, []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := cli.TestNewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader("demo\n")) // correct identifier confirms
+	root.SetArgs([]string{"destroy", "--manifest", cfgPath})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("destroy execute: %v", err)
+	}
+	got := out.String()
+	if strings.Contains(got, "Nothing to destroy") {
+		t.Errorf("a pending fileset volume delete was mistaken for nothing to destroy:\n%s", got)
+	}
+	if !strings.Contains(got, "Type the identifier") {
+		t.Errorf("expected destroy to prompt for confirmation; got:\n%s", got)
+	}
+}
+
 func TestDestroy_InvalidConfigPath_ReturnsError(t *testing.T) {
 	root := cli.TestNewRootCmd()
 	var out bytes.Buffer

@@ -55,3 +55,57 @@ func TestActionKeep_IsNeverSeededAsPendingWork(t *testing.T) {
 		}
 	}
 }
+
+func TestHasDeletes(t *testing.T) {
+	cases := []struct {
+		name string
+		rp   *ResourcePlan
+		want bool
+	}{
+		{
+			name: "fileset delete with empty Name is still a delete",
+			rp: &ResourcePlan{
+				Filesets: map[string][]Resource{
+					"site": {NewResource(ResourceFile, "", ActionDelete, "will be destroyed")},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "only kept volumes and networks",
+			rp: &ResourcePlan{
+				Volumes:  []Resource{NewResource(ResourceVolume, "data", ActionKeep, "")},
+				Networks: []Resource{NewResource(ResourceNetwork, "keepnet", ActionKeep, "")},
+			},
+			want: false,
+		},
+		{
+			name: "only no-ops",
+			rp: &ResourcePlan{
+				Volumes: []Resource{NewResource(ResourceVolume, "data", ActionNoop, "")},
+			},
+			want: false,
+		},
+		{
+			name: "a stack service delete",
+			rp: &ResourcePlan{
+				Stacks: map[string][]Resource{
+					"web": {NewResource(ResourceService, "app", ActionDelete, "will be destroyed")},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "nil plan",
+			rp:   nil,
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.rp.HasDeletes(); got != tc.want {
+				t.Errorf("HasDeletes() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
