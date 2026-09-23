@@ -3,8 +3,8 @@ package planner
 // SeedRefs returns the apply view's line list for one context, in the same order
 // the plan renderer prints: volumes, networks, stacks (sorted, each followed by
 // its changed services), filesets (sorted), then orphan containers. Resources
-// whose action is ActionNoop are omitted — they are not work and must not occupy
-// a line.
+// that are not pending work (ActionNoop, ActionKeep — see Action.pending) are omitted:
+// they must not occupy a line.
 //
 // Deliberately does NOT use ResourcePlan.AllResources (resource.go:483): that
 // helper iterates the Stacks and Filesets maps unsorted, so its order varies

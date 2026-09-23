@@ -113,3 +113,27 @@ func TestDestroy_KeepWinsOverFilesetTargeting(t *testing.T) {
 		t.Errorf("kept fileset-target volume data was removed: %v", m.removedVolumes)
 	}
 }
+
+// Under a scoped destroy, context-level volumes are never touched, so a kept
+// one produces no plan line at all and is never removed.
+func TestDestroy_ScopedDestroyNeitherListsNorRemovesKeptContextVolume(t *testing.T) {
+	cfg := keepCfg()
+	cfg.Targeted = true
+	cfg.Stacks = map[string]manifest.Stack{}
+
+	p, err := NewWithDocker(keepMock()).BuildDestroyPlan(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("build destroy plan: %v", err)
+	}
+	if a, ok := actionsByName(p)["volume data"]; ok {
+		t.Errorf("scoped destroy listed kept context volume data with action %q; want no line", a)
+	}
+
+	m := keepMock()
+	if err := NewWithDocker(m).Destroy(context.Background(), cfg); err != nil {
+		t.Fatalf("destroy: %v", err)
+	}
+	if slices.Contains(m.removedVolumes, "data") {
+		t.Errorf("scoped destroy removed kept context volume data: %v", m.removedVolumes)
+	}
+}

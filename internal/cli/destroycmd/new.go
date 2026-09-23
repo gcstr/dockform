@@ -22,8 +22,9 @@ This command will:
 - Prompt for confirmation by typing the identifier name
 - Destroy resources in the correct order (containers → networks → volumes)
 
-Warning: This operation is irreversible and will destroy ALL managed resources,
-regardless of what's in your current configuration file.
+Warning: This operation is irreversible. It destroys every managed resource,
+whether or not your configuration still declares it — except context volumes
+and networks declared with 'destroy: false', which are kept and listed as kept.
 
 Use --stack or --context to scope the destroy. When scoped, only the targeted
 stacks' services and their own fileset volumes are removed; shared context-level
@@ -63,7 +64,7 @@ networks and volumes are preserved.`,
 			// Everything left is kept by destroy: false: there is nothing to
 			// confirm, and prompting for the identifier would suggest otherwise.
 			if !plan.Resources.HasDeletes() {
-				ctx.Printer.Plain("Nothing to destroy: every remaining resource is kept by destroy: false.")
+				ctx.Printer.Plain("Nothing to destroy: everything in scope is kept by destroy: false.")
 				return nil
 			}
 
