@@ -21,6 +21,10 @@ type destroyScope struct {
 	targeted bool
 	// projects is the set of "context/project" keys belonging to targeted stacks.
 	projects map[string]bool
+	// kept holds the context volumes and networks the manifest declares with
+	// `destroy: false`, keyed by keptKey. Consulted by the plan builder AND
+	// the executor, so they cannot disagree about what survives.
+	kept map[string]bool
 }
 
 // allowsStack reports whether a discovered compose project on contextName is in scope.
@@ -34,6 +38,35 @@ func (s destroyScope) allowsStack(contextName, project string) bool {
 	return s.projects[manifest.MakeStackKey(contextName, normalizeComposeProject(project))]
 }
 
+// keeps reports whether destroy must leave this volume or network in place
+// because the manifest declares it with `destroy: false`.
+func (s destroyScope) keeps(contextName string, kind ResourceType, name string) bool {
+	return s.kept[keptKey(contextName, kind, name)]
+}
+
+func keptKey(contextName string, kind ResourceType, name string) string {
+	return contextName + "\x00" + string(kind) + "\x00" + name
+}
+
+// keptResources collects every context volume and network declared with
+// `destroy: false`.
+func keptResources(cfg *manifest.Config) map[string]bool {
+	kept := map[string]bool{}
+	for contextName, contextCfg := range cfg.Contexts {
+		for name, spec := range contextCfg.Volumes {
+			if spec.Kept() {
+				kept[keptKey(contextName, ResourceVolume, name)] = true
+			}
+		}
+		for name, spec := range contextCfg.Networks {
+			if spec.Kept() {
+				kept[keptKey(contextName, ResourceNetwork, name)] = true
+			}
+		}
+	}
+	return kept
+}
+
 // newDestroyScope computes the destroy scope from a (possibly targeted) config.
 // The targeted config's Stacks/DiscoveredStacks have already been filtered by
 // ResolveTargets, so they describe exactly the stacks in scope. Each targeted
@@ -42,7 +75,7 @@ func (s destroyScope) allowsStack(contextName, project string) bool {
 // guess: a wrong guess removes nothing, or another stack's containers.
 func (p *Planner) newDestroyScope(ctx context.Context, cfg *manifest.Config) (destroyScope, error) {
 	if !cfg.Targeted {
-		return destroyScope{targeted: false}, nil
+		return destroyScope{targeted: false, kept: keptResources(cfg)}, nil
 	}
 	projects := make(map[string]bool)
 	for key, stack := range cfg.GetAllStacks() {
@@ -64,7 +97,7 @@ func (p *Planner) newDestroyScope(ctx context.Context, cfg *manifest.Config) (de
 		}
 		projects[manifest.MakeStackKey(contextName, project)] = true
 	}
-	return destroyScope{targeted: true, projects: projects}, nil
+	return destroyScope{targeted: true, projects: projects, kept: keptResources(cfg)}, nil
 }
 
 // BuildDestroyPlan creates a plan to destroy all managed resources.
@@ -169,6 +202,10 @@ func (p *Planner) buildDestroyPlanForContext(ctx context.Context, client DockerC
 			return nil, apperr.Wrap("planner.BuildDestroyPlan", apperr.External, err, "context %s: list networks", contextName)
 		}
 		for _, network := range networks {
+			if scope.keeps(contextName, ResourceNetwork, network) {
+				rp.Networks = append(rp.Networks, NewResource(ResourceNetwork, network, ActionKeep, ""))
+				continue
+			}
 			res := NewResource(ResourceNetwork, network, ActionDelete, "will be destroyed")
 			rp.Networks = append(rp.Networks, res)
 		}
@@ -181,7 +218,18 @@ func (p *Planner) buildDestroyPlanForContext(ctx context.Context, client DockerC
 	}
 
 	for _, volume := range volumes {
-		if filesetName, hasFileset := volumeToFileset[volume]; hasFileset {
+		filesetName, hasFileset := volumeToFileset[volume]
+		if !hasFileset && scope.targeted {
+			// Non-fileset volumes are shared/context-level: only removed in a
+			// full (untargeted) destroy, so there is nothing to keep here.
+			continue
+		}
+		// The flag wins over fileset targeting.
+		if scope.keeps(contextName, ResourceVolume, volume) {
+			rp.Volumes = append(rp.Volumes, NewResource(ResourceVolume, volume, ActionKeep, ""))
+			continue
+		}
+		if hasFileset {
 			if _, exists := rp.Filesets[filesetName]; !exists {
 				rp.Filesets[filesetName] = []Resource{}
 			}
@@ -189,9 +237,7 @@ func (p *Planner) buildDestroyPlanForContext(ctx context.Context, client DockerC
 			details := fmt.Sprintf("volume %s at %s will be destroyed", volume, fsConfig.TargetPath)
 			res := NewResource(ResourceFile, "", ActionDelete, details)
 			rp.Filesets[filesetName] = append(rp.Filesets[filesetName], res)
-		} else if !scope.targeted {
-			// Non-fileset volumes are shared/context-level: only removed in a
-			// full (untargeted) destroy.
+		} else {
 			res := NewResource(ResourceVolume, volume, ActionDelete, "will be destroyed")
 			rp.Volumes = append(rp.Volumes, res)
 		}
@@ -330,6 +376,9 @@ func (p *Planner) destroyContext(ctx context.Context, client DockerClient, conte
 			}
 		}
 		for _, network := range networks {
+			if scope.keeps(contextName, ResourceNetwork, network) {
+				continue
+			}
 			if p.spinner != nil {
 				p.spinner.SetLabel(fmt.Sprintf("removing network %s on %s", network, contextName))
 			}
@@ -360,6 +409,9 @@ func (p *Planner) destroyContext(ctx context.Context, client DockerClient, conte
 			if _, isFileset := volumeToFileset[volume]; !isFileset {
 				continue
 			}
+		}
+		if scope.keeps(contextName, ResourceVolume, volume) {
+			continue
 		}
 		if p.spinner != nil {
 			p.spinner.SetLabel(fmt.Sprintf("removing volume %s on %s", volume, contextName))
