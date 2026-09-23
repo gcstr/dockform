@@ -17,7 +17,15 @@ const (
 	ActionDelete    Action = "delete"
 	ActionReconcile Action = "reconcile"
 	ActionNoop      Action = "no-op"
+	// ActionKeep marks a resource destroy leaves in place because the manifest
+	// declares it with `destroy: false`. Shown like a change, counted like a
+	// no-op: it is never a create, update or delete, and never pending work.
+	ActionKeep Action = "keep"
 )
+
+// pending reports whether a resource with this action is work the run must do.
+// A no-op and a kept resource are not.
+func (a Action) pending() bool { return a != ActionNoop && a != ActionKeep }
 
 // ResourceType represents the type of infrastructure resource
 type ResourceType string
@@ -82,7 +90,7 @@ func actionToChangeType(action Action) ui.ChangeType {
 		return ui.Remove
 	case ActionReconcile:
 		return ui.Change
-	case ActionNoop:
+	case ActionNoop, ActionKeep:
 		return ui.Noop
 	default:
 		return ui.Info
@@ -110,6 +118,11 @@ func (r Resource) FormatAction() string {
 			return r.Details
 		}
 		return "up-to-date"
+	case ActionKeep:
+		if r.Details != "" {
+			return r.Details
+		}
+		return "kept (destroy: false)"
 	default:
 		return string(r.Action)
 	}

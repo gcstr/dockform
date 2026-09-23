@@ -25,7 +25,7 @@ func SeedRefs(contextName string, rp *ResourcePlan) []ResourceRef {
 		switch title {
 		case SectionTitle(ResourceVolume):
 			for _, res := range rp.Volumes {
-				if res.Action == ActionNoop {
+				if !res.Action.pending() {
 					continue
 				}
 				refs = append(refs, ResourceRef{Context: contextName, Type: ResourceVolume, Name: res.Name})
@@ -33,7 +33,7 @@ func SeedRefs(contextName string, rp *ResourcePlan) []ResourceRef {
 
 		case SectionTitle(ResourceNetwork):
 			for _, res := range rp.Networks {
-				if res.Action == ActionNoop {
+				if !res.Action.pending() {
 					continue
 				}
 				refs = append(refs, ResourceRef{Context: contextName, Type: ResourceNetwork, Name: res.Name})
@@ -43,7 +43,7 @@ func SeedRefs(contextName string, rp *ResourcePlan) []ResourceRef {
 			for _, stackName := range sortedKeys(rp.Stacks) {
 				var changed []Resource
 				for _, svc := range rp.Stacks[stackName] {
-					if svc.Action == ActionNoop {
+					if !svc.Action.pending() {
 						continue
 					}
 					changed = append(changed, svc)
@@ -66,7 +66,7 @@ func SeedRefs(contextName string, rp *ResourcePlan) []ResourceRef {
 			for _, fsName := range sortedKeys(rp.Filesets) {
 				hasChange := false
 				for _, item := range rp.Filesets[fsName] {
-					if item.Action != ActionNoop {
+					if item.Action.pending() {
 						hasChange = true
 						break
 					}
@@ -79,7 +79,7 @@ func SeedRefs(contextName string, rp *ResourcePlan) []ResourceRef {
 
 		case SectionTitle(ResourceContainer):
 			for _, res := range rp.Containers {
-				if res.Action == ActionNoop {
+				if !res.Action.pending() {
 					continue
 				}
 				refs = append(refs, ResourceRef{Context: contextName, Type: ResourceContainer, Name: res.Name})
