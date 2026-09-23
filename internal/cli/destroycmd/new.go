@@ -60,6 +60,13 @@ networks and volumes are preserved.`,
 
 			ctx.Printer.Plain("%s", out)
 
+			// Everything left is kept by destroy: false: there is nothing to
+			// confirm, and prompting for the identifier would suggest otherwise.
+			if _, _, deletes := plan.Resources.CountActions(); deletes == 0 {
+				ctx.Printer.Plain("Nothing to destroy: every remaining resource is kept by destroy: false.")
+				return nil
+			}
+
 			// Get confirmation from user (requires typing identifier)
 			confirmed, err := common.GetDestroyConfirmation(cmd, ctx.Printer, common.DestroyConfirmationOptions{
 				SkipConfirmation: skipConfirm,

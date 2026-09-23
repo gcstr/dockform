@@ -2,6 +2,8 @@ package destroycmd_test
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -244,6 +246,63 @@ exit 0
 	}
 	// Should complete successfully (no error, no cancellation)
 	// Note: Progress bar output may not appear in test environment
+}
+
+// When everything left is kept, there is nothing to confirm: destroy shows
+// what it is keeping, says there is nothing to destroy, and does not prompt.
+func TestDestroy_OnlyKeptResources_NothingToDestroy(t *testing.T) {
+	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
+cmd="$1"; shift
+case "$cmd" in
+  version)
+    exit 0 ;;
+  volume)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "app-volume"; exit 0; fi ;;
+  network)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then exit 0; fi ;;
+  ps)
+    exit 0 ;;
+  inspect)
+    echo "{}"
+    exit 0 ;;
+esac
+exit 0
+`)
+	defer undo()
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "website"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "website", "docker-compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := "identifier: demo\ncontexts:\n  default:\n    volumes:\n      app-volume:\n        destroy: false\nstacks:\n  default/website:\n    root: website\n    files:\n      - docker-compose.yaml\n"
+	cfgPath := filepath.Join(dir, "dockform.yml")
+	if err := os.WriteFile(cfgPath, []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := cli.TestNewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader("")) // a prompt would read EOF and cancel
+	root.SetArgs([]string{"destroy", "--manifest", cfgPath})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("destroy execute: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"app-volume", "kept (destroy: false)", "Nothing to destroy"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output lacks %q; got:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "Type the identifier") {
+		t.Errorf("there is nothing to confirm, but destroy prompted:\n%s", got)
+	}
 }
 
 func TestDestroy_InvalidConfigPath_ReturnsError(t *testing.T) {
