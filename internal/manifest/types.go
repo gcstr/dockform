@@ -163,10 +163,23 @@ type NetworkSpec struct {
 	Gateway      string            `yaml:"gateway"`
 	IPRange      string            `yaml:"ip_range"`
 	AuxAddresses map[string]string `yaml:"aux_addresses"`
+	// Destroy set to false keeps this network when `dockform destroy` runs;
+	// the operator removes it by hand. Omitted or true: destroyed as usual.
+	Destroy *bool `yaml:"destroy"`
 }
 
-// TopLevelResourceSpec is an empty marker for explicitly declared volumes.
-type TopLevelResourceSpec struct{}
+// Kept reports whether `dockform destroy` must leave this network in place.
+func (s NetworkSpec) Kept() bool { return s.Destroy != nil && !*s.Destroy }
+
+// TopLevelResourceSpec configures an explicitly declared volume.
+type TopLevelResourceSpec struct {
+	// Destroy set to false keeps this volume when `dockform destroy` runs;
+	// the operator removes it by hand. Omitted or true: destroyed as usual.
+	Destroy *bool `yaml:"destroy"`
+}
+
+// Kept reports whether `dockform destroy` must leave this volume in place.
+func (s TopLevelResourceSpec) Kept() bool { return s.Destroy != nil && !*s.Destroy }
 
 // Ownership defines optional ownership and permission settings for fileset files.
 type Ownership struct {
