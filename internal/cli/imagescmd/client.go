@@ -13,7 +13,7 @@ import (
 type composeClient interface {
 	ComposeConfigFull(ctx context.Context, workingDir string, files, profiles, envFiles []string, inlineEnv []string) (dockercli.ComposeConfigDoc, error)
 	ComposePull(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, services []string, inlineEnv []string) (string, error)
-	ComposeUp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string) (string, error)
+	ComposeUpServices(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, services []string, inlineEnv []string) (string, error)
 }
 
 // clientGetter resolves the compose client for a docker context name.

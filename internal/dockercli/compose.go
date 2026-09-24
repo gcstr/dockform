@@ -39,6 +39,21 @@ func (c *Client) runCompose(ctx context.Context, workingDir string, inlineEnv []
 // ComposeUp runs docker compose up -d with the given parameters.
 // workingDir is where compose files and relative paths are resolved.
 func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string) (string, error) {
+	return c.composeUp(ctx, "dockercli.ComposeUp", workingDir, files, profiles, envFiles, projectName, inlineEnv, nil)
+}
+
+// ComposeUpServices runs `docker compose up -d --no-deps <services>`: only the
+// named services are created or recreated, and their dependencies are left as
+// they are. With no services it refuses rather than bringing up the whole stack.
+func (c *Client) ComposeUpServices(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, services []string, inlineEnv []string) (string, error) {
+	if len(services) == 0 {
+		return "", apperr.New("dockercli.ComposeUpServices", apperr.InvalidInput, "no services given; refusing to bring up the whole stack in %s", workingDir)
+	}
+	return c.composeUp(ctx, "dockercli.ComposeUpServices", workingDir, files, profiles, envFiles, projectName, inlineEnv, append([]string{"--no-deps"}, services...))
+}
+
+// composeUp runs `docker compose up -d` followed by extra.
+func (c *Client) composeUp(ctx context.Context, op, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv, extra []string) (string, error) {
 	// Choose compose files (overlay or user files)
 	chosenFiles := files
 	var doc []byte
@@ -47,7 +62,7 @@ func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profil
 		// identifier label, invisible to destroy and prune. Refuse instead.
 		d, err := c.buildLabeledProject(ctx, workingDir, files, profiles, envFiles, projectName, c.identifier, inlineEnv)
 		if err != nil {
-			return "", apperr.Wrap("dockercli.ComposeUp", apperr.External, err, "add identifier labels to the stack in %s (compose up was not run)", workingDir)
+			return "", apperr.Wrap(op, apperr.External, err, "add identifier labels to the stack in %s (compose up was not run)", workingDir)
 		}
 		doc, chosenFiles = d, []string{"-"}
 	}
@@ -56,6 +71,7 @@ func (c *Client) ComposeUp(ctx context.Context, workingDir string, files, profil
 		args = append(args, "--project-directory", dir)
 	}
 	args = append(args, "up", "-d")
+	args = append(args, extra...)
 
 	return c.runCompose(ctx, workingDir, inlineEnv, doc, args...)
 }
