@@ -93,9 +93,10 @@ Please visit https://dockform.io for the full documentation.
 ### Homebrew
 
 ```sh
-brew tap gcstr/dockform
-brew install dockform
+brew install gcstr/dockform/dockform
 ```
+
+The full name adds the tap and trusts just this formula, as Homebrew 6+ requires for third-party taps.
 
 ### Go
 
