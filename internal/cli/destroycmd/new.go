@@ -23,7 +23,7 @@ This command will:
 - Destroy resources in the correct order (containers → networks → volumes)
 
 Warning: This operation is irreversible. It destroys every managed resource,
-whether or not your configuration still declares it — except context volumes
+whether or not your configuration still declares it, except context volumes
 and networks declared with 'destroy: false', which are kept and listed as kept.
 
 Use --stack or --context to scope the destroy. When scoped, only the targeted
