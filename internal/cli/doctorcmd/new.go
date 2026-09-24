@@ -93,7 +93,7 @@ func New() *cobra.Command {
 
 			// Render
 			// Top header
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Dockform (v%s) Doctor — health scan\n", buildinfo.Version())
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Dockform (v%s) Doctor: health scan\n", buildinfo.Version())
 			if host != "" {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Context: %s  •  Host: %s\n\n", ctxName, host)
 			} else {
@@ -114,7 +114,7 @@ func New() *cobra.Command {
 				case StatusFail:
 					icon = ui.RedText("×")
 				}
-				line = fmt.Sprintf("│ %s %s %s — %s", icon, bracketedID, r.title, r.summary)
+				line = fmt.Sprintf("│ %s %s %s: %s", icon, bracketedID, r.title, r.summary)
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), line)
 				if r.status == StatusWarn && r.note != "" {
 					PrintIndentedLines(cmd.OutOrStdout(), r.note)
@@ -381,7 +381,7 @@ func checkHelperImage(ctx context.Context, docker *dockercli.Client) checkResult
 	exists, err := docker.ImageExists(ctx, img)
 	if err != nil {
 		// Non-fatal; treat as warn because registry may be offline
-		return checkResult{id: "helper", title: "Helper image", status: StatusWarn, summary: fmt.Sprintf("check failed — %s", strings.TrimSpace(err.Error())), note: "Note: Could not verify helper image presence."}
+		return checkResult{id: "helper", title: "Helper image", status: StatusWarn, summary: fmt.Sprintf("check failed: %s", strings.TrimSpace(err.Error())), note: "Note: Could not verify helper image presence."}
 	}
 	if !exists {
 		return checkResult{id: "helper", title: "Helper image missing", status: StatusWarn, summary: img, note: "Note: Skipped pulling (no registry access). Run again when online."}

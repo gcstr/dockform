@@ -71,7 +71,7 @@ func formatServiceNames(names []string) string {
 // stack, sorted for deterministic output.
 func formatAvailableServices(inputs []images.CheckInput) string {
 	if len(inputs) == 0 {
-		return "  (none — scope is empty)"
+		return "  (none, scope is empty)"
 	}
 
 	// Sort stacks first for stable output.

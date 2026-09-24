@@ -27,7 +27,7 @@ func TestDoctorCmd_AllHealthy(t *testing.T) {
 	output := out.String()
 
 	// Check header
-	if !strings.Contains(output, "Doctor — health scan") {
+	if !strings.Contains(output, "Doctor: health scan") {
 		t.Errorf("missing header, got: %q", output)
 	}
 	if !strings.Contains(output, "Context: default") {

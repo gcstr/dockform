@@ -217,7 +217,7 @@ func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes 
 			}
 
 			if r.DigestStale && len(r.NewerTags) == 0 && r.Error == "" {
-				pr.Plain("  %-40s %s no tag_pattern configured — run `docker compose pull`", imageRef, ui.YellowText("⚠"))
+				pr.Plain("  %-40s %s no tag_pattern configured; run `docker compose pull`", imageRef, ui.YellowText("⚠"))
 				continue
 			}
 

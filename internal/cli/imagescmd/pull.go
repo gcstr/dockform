@@ -101,7 +101,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(stale) == 0 {
-		pr.Plain("%s  All images are current — no digest drift detected.", ui.GreenText("✓"))
+		pr.Plain("%s  All images are current, no digest drift detected.", ui.GreenText("✓"))
 		return nil
 	}
 

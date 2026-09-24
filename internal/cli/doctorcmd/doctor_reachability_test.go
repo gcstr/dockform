@@ -154,14 +154,14 @@ func TestDoctorCmd_MultipleContexts_ProbedIndependently(t *testing.T) {
 		}
 	}
 	// Reachable contexts should be marked pass.
-	if !strings.Contains(output, `[context:up1] Context "up1" reachable — ok`) {
+	if !strings.Contains(output, `[context:up1] Context "up1" reachable: ok`) {
 		t.Errorf("expected up1 to pass, got: %q", output)
 	}
-	if !strings.Contains(output, `[context:up2] Context "up2" reachable — ok`) {
+	if !strings.Contains(output, `[context:up2] Context "up2" reachable: ok`) {
 		t.Errorf("expected up2 to pass, got: %q", output)
 	}
 	// The down context should be marked failed/unreachable.
-	if !strings.Contains(output, `[context:down] Context "down" reachable — unreachable`) {
+	if !strings.Contains(output, `[context:down] Context "down" reachable: unreachable`) {
 		t.Errorf("expected down to fail as unreachable, got: %q", output)
 	}
 	if !strings.Contains(output, "exit code 1") {
@@ -197,7 +197,7 @@ func TestDoctorCmd_ContextFlag_ScopesToSingleContext(t *testing.T) {
 	if !strings.Contains(output, `Context: up1`) {
 		t.Errorf("expected header to show the overridden context, got: %q", output)
 	}
-	if !strings.Contains(output, `[context] Active context reachable — "up1"`) {
+	if !strings.Contains(output, `[context] Active context reachable: "up1"`) {
 		t.Errorf("expected single active-context check for up1, got: %q", output)
 	}
 	if !strings.Contains(output, "8 PASS, 0 WARN, 0 FAIL") {
@@ -224,7 +224,7 @@ func TestDoctorCmd_NoManifest_FallsBackToActiveContext(t *testing.T) {
 	}
 
 	output := out.String()
-	if !strings.Contains(output, `[context] Active context reachable — "default"`) {
+	if !strings.Contains(output, `[context] Active context reachable: "default"`) {
 		t.Errorf("expected fallback single-context check, got: %q", output)
 	}
 	if !strings.Contains(output, "manifest contexts were not checked") {
