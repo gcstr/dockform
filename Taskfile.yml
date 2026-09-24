@@ -8,7 +8,7 @@ vars:
   BIN: '{{.ENV.BIN | default "dockform"}}'
   COVER_OUT: '{{.ENV.COVER_OUT | default "cover.out"}}'
   GOLANGCI_LINT_PKG: '{{.ENV.GOLANGCI_LINT_PKG | default "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"}}'
-  GOLANGCI_LINT_VERSION: '{{.ENV.GOLANGCI_LINT_VERSION | default "v2.5.0"}}'
+  GOLANGCI_LINT_VERSION: '{{.ENV.GOLANGCI_LINT_VERSION | default "v2.14.0"}}'
   ARGS: '{{.ENV.ARGS | default ""}}'
   CURRENT_TAG: 
     sh: git describe --abbrev=0 --tags
