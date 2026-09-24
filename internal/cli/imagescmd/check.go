@@ -73,7 +73,8 @@ available in scope.`,
 
 	cmd.Flags().Bool("json", false, "Output results as JSON")
 	cmd.Flags().Bool("all", false, "Show all images, including those that are up to date")
-	cmd.Flags().Bool("sequential", false, "Disable parallel checks (reserved for future use)")
+	cmd.Flags().Bool("sequential", false, "Deprecated: has no effect")
+	_ = cmd.Flags().MarkDeprecated("sequential", "it has no effect and will be removed")
 
 	common.AddTargetFlags(cmd)
 
