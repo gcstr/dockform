@@ -356,8 +356,11 @@ func TestRenderUpgradeTerminal_DigestStaleNoTagPattern(t *testing.T) {
 	if !strings.Contains(got, "no tag_pattern configured") {
 		t.Errorf("expected 'no tag_pattern configured', got: %q", got)
 	}
-	if !strings.Contains(got, "docker compose pull") {
-		t.Errorf("expected 'docker compose pull' hint, got: %q", got)
+	if !strings.Contains(got, "run `dockform images pull`") {
+		t.Errorf("expected 'dockform images pull' hint, got: %q", got)
+	}
+	if strings.Contains(got, "docker compose pull") {
+		t.Errorf("hint should point at dockform, not raw compose, got: %q", got)
 	}
 }
 
