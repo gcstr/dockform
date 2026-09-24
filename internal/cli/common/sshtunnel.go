@@ -73,6 +73,46 @@ func EffectiveSSHTransport(cmd *cobra.Command, t SSHTransport) SSHTransport {
 // through it. It must run before any client for those contexts exists. On any
 // failure it opens nothing and returns an error naming each failed context.
 func ActivateSSHTunnels(cmd *cobra.Command, cfg *manifest.Config) error {
+	failures, err := openSSHTunnels(cmd, cfg, false)
+	if err != nil || len(failures) == 0 {
+		return err
+	}
+	failed := make([]string, 0, len(failures))
+	for _, f := range failures {
+		failed = append(failed, describeTunnelFailure(f.Context, f.endpoint, f.Err))
+	}
+	return apperr.Wrap("common.ActivateSSHTunnels", apperr.Unavailable, ErrSSHTunnel,
+		"could not open an SSH tunnel:\n%s", strings.Join(failed, "\n"))
+}
+
+// TunnelFailure is one context whose SSH tunnel could not be opened.
+type TunnelFailure struct {
+	Context string
+	Err     error
+
+	endpoint sshtunnel.Endpoint
+}
+
+// Cause renders the failure for a single-line report: a plain-language reason
+// when ssh's output is recognised, then the raw detail.
+func (f TunnelFailure) Cause() string {
+	detail := f.Err.Error()
+	if reason := sshtunnel.Reason(detail); reason != "" {
+		return fmt.Sprintf("SSH tunnel to %s failed: %s (%s)", f.endpoint.Dest, reason, detail)
+	}
+	return fmt.Sprintf("SSH tunnel to %s failed: %s", f.endpoint.Dest, detail)
+}
+
+// ActivateSSHTunnelsPartial is ActivateSSHTunnels for diagnostics: contexts
+// whose tunnel opens are pointed at it, and each one that fails is returned,
+// sorted by context, and left on its original endpoint.
+func ActivateSSHTunnelsPartial(cmd *cobra.Command, cfg *manifest.Config) ([]TunnelFailure, error) {
+	return openSSHTunnels(cmd, cfg, true)
+}
+
+// openSSHTunnels opens a tunnel for every ssh:// context. With keepPartial
+// false, any failure closes every tunnel and repoints nothing.
+func openSSHTunnels(cmd *cobra.Command, cfg *manifest.Config, keepPartial bool) ([]TunnelFailure, error) {
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
@@ -85,12 +125,12 @@ func ActivateSSHTunnels(cmd *cobra.Command, cfg *manifest.Config) error {
 	}
 	targets := tunnelTargets(cfg, lookupDockerEndpoints(ctx, lookup))
 	if len(targets) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	m, err := sshtunnel.NewManager()
 	if err != nil {
-		return apperr.Wrap("common.ActivateSSHTunnels", apperr.Internal, err, "create tunnel directory")
+		return nil, apperr.Wrap("common.ActivateSSHTunnels", apperr.Internal, err, "create tunnel directory")
 	}
 	names := make([]string, 0, len(targets))
 	for name := range targets {
@@ -99,10 +139,10 @@ func ActivateSSHTunnels(cmd *cobra.Command, cfg *manifest.Config) error {
 	sort.Strings(names)
 
 	var (
-		mu      sync.Mutex
-		wg      sync.WaitGroup
-		sockets = make(map[string]string, len(names))
-		failed  []string
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+		sockets  = make(map[string]string, len(names))
+		failures []TunnelFailure
 	)
 	for i, name := range names {
 		wg.Add(1)
@@ -112,19 +152,18 @@ func ActivateSSHTunnels(cmd *cobra.Command, cfg *manifest.Config) error {
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				failed = append(failed, describeTunnelFailure(name, ep, err))
+				failures = append(failures, TunnelFailure{Context: name, Err: err, endpoint: ep})
 				return
 			}
 			sockets[name] = local
 		}(name, m.SocketPath(i), targets[name])
 	}
 	wg.Wait()
+	sort.Slice(failures, func(i, j int) bool { return failures[i].Context < failures[j].Context })
 
-	if len(failed) > 0 {
+	if len(sockets) == 0 || (len(failures) > 0 && !keepPartial) {
 		m.Close()
-		sort.Strings(failed)
-		return apperr.Wrap("common.ActivateSSHTunnels", apperr.Unavailable, ErrSSHTunnel,
-			"could not open an SSH tunnel:\n%s", strings.Join(failed, "\n"))
+		return failures, nil
 	}
 	for name, local := range sockets {
 		cc := cfg.Contexts[name]
@@ -137,7 +176,7 @@ func ActivateSSHTunnels(cmd *cobra.Command, cfg *manifest.Config) error {
 		base = context.Background()
 	}
 	root.SetContext(context.WithValue(base, sshTunnelKey{}, m))
-	return nil
+	return failures, nil
 }
 
 // openChecked opens a tunnel to the default Docker socket and verifies the

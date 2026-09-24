@@ -231,3 +231,54 @@ func TestDoctorCmd_NoManifest_FallsBackToActiveContext(t *testing.T) {
 		t.Errorf("expected a note that manifest contexts were not checked, got: %q", output)
 	}
 }
+
+// TestDoctorCmd_SSHTunnelFailure_ReportedPerContext verifies doctor goes
+// through the SSH tunnel transport like apply does: a context whose tunnel
+// cannot open fails with the SSH reason, and the other contexts are still
+// probed and reported.
+func TestDoctorCmd_SSHTunnelFailure_ReportedPerContext(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses Unix shell script; skipping on Windows")
+	}
+	// A fake ssh that fails authentication, set up before the docker stub so
+	// the stub's PATH restore keeps it and t.Setenv's cleanup removes it.
+	sshDir := t.TempDir()
+	sshScript := "#!/bin/sh\necho 'nobody@remote.invalid: Permission denied (publickey).' >&2\nexit 255\n"
+	if err := os.WriteFile(filepath.Join(sshDir, "ssh"), []byte(sshScript), 0o755); err != nil {
+		t.Fatalf("write ssh stub: %v", err)
+	}
+	t.Setenv("PATH", sshDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("DOCKFORM_SSH_TRANSPORT", "")
+	defer withMultiContextDoctorStub(t)()
+
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "dockform.yml")
+	manifestYAML := "identifier: demo\ncontexts:\n  local: {}\n  remote:\n    host: ssh://nobody@remote.invalid\n"
+	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	root := cli.TestNewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"doctor", "--manifest", manifestPath})
+
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected doctor to fail when a context's SSH tunnel cannot open")
+	}
+
+	output := out.String()
+	if !strings.Contains(output, `[context:remote] Context "remote" reachable: SSH tunnel failed`) {
+		t.Errorf("expected remote to fail on its SSH tunnel, got: %q", output)
+	}
+	if !strings.Contains(output, "SSH tunnel to nobody@remote.invalid failed") || !strings.Contains(output, "Permission denied") {
+		t.Errorf("expected the SSH reason for remote, got: %q", output)
+	}
+	if !strings.Contains(output, `[context:local] Context "local" reachable: ok`) {
+		t.Errorf("expected local to still be probed and pass, got: %q", output)
+	}
+	if strings.Index(output, "context:local") > strings.Index(output, "context:remote") {
+		t.Errorf("expected context lines sorted by name, got: %q", output)
+	}
+}
