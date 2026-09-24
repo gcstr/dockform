@@ -2,6 +2,7 @@ package imagescmd
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -114,96 +115,83 @@ func buildStackFiles(cfg *manifest.Config) map[string][]string {
 	return stackFiles
 }
 
+// renderUpgradeTerminal reports an upgrade as tables, like images check: one
+// for the tags that were (or, in a dry run, would be) rewritten, one for the
+// images that could not be upgraded and why, and a count of the rest.
 func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes []images.FileChange, stackFiles map[string][]string, dryRun bool) {
 	if len(results) == 0 {
 		pr.Plain("No images found.")
 		return
 	}
 
-	// Build a quick lookup: (stack, service) -> FileChange
 	type changeKey struct{ stack, service string }
 	changeMap := make(map[changeKey]images.FileChange, len(changes))
 	for _, c := range changes {
 		changeMap[changeKey{c.StackKey, c.Service}] = c
 	}
 
-	// Group results by stack for display.
-	type stackGroup struct {
-		key     string
-		results []images.ImageStatus
-	}
-
-	seen := make(map[string]int)
-	var groups []stackGroup
-
-	for _, r := range results {
-		idx, ok := seen[r.Stack]
-		if !ok {
-			idx = len(groups)
-			seen[r.Stack] = idx
-			groups = append(groups, stackGroup{key: r.Stack})
+	sorted := append([]images.ImageStatus(nil), results...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Stack != sorted[j].Stack {
+			return sorted[i].Stack < sorted[j].Stack
 		}
-		groups[idx].results = append(groups[idx].results, r)
-	}
-
-	// Sort groups for deterministic output.
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].key < groups[j].key
+		return sorted[i].Service < sorted[j].Service
 	})
 
-	boldStyle := lipgloss.NewStyle().Bold(true)
-	for i, g := range groups {
-		if i > 0 {
+	var upgraded, notUpgraded [][]tableCell
+	latest := 0
+	for _, r := range sorted {
+		stack, image := plainCell(r.Stack), plainCell(imageNameWithoutTag(r.Image))
+		tag := plainCell(r.CurrentTag)
+		switch {
+		case r.Error != "":
+			notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, warnCell(r.Error)})
+		case len(r.NewerTags) > 0:
+			to := tableCell{text: r.NewerTags[0], style: ui.YellowText}
+			fc, changed := changeMap[changeKey{r.Stack, r.Service}]
+			switch {
+			case changed:
+				upgraded = append(upgraded, []tableCell{stack, image, tag, to, plainCell(filepath.Base(fc.File))})
+			case dryRun && len(stackFiles[r.Stack]) > 0:
+				upgraded = append(upgraded, []tableCell{stack, image, tag, to})
+			default:
+				notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, warnCell(fmt.Sprintf("%s available, but the tag was not found in the compose files", r.NewerTags[0]))})
+			}
+		case r.DigestStale:
+			reason := "digest changed, no newer tag; run `dockform images pull`"
+			if !r.HasTagPattern {
+				reason = "no tag_pattern configured; digest changed, run `dockform images pull`"
+			}
+			notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, warnCell(reason)})
+		default:
+			latest++
+		}
+	}
+
+	printed := false
+	section := func(line string) {
+		if printed {
 			pr.Plain("")
 		}
-		pr.Plain("%s", boldStyle.Render(g.key))
+		printed = true
+		pr.Plain("%s", line)
+	}
 
-		for _, r := range g.results {
-			imageRef := r.Image
-
-			if r.Error != "" {
-				pr.Plain("  %-40s %s %s", imageRef, ui.YellowText("⚠"), r.Error)
-				continue
-			}
-
-			if len(r.NewerTags) > 0 {
-				newTag := r.NewerTags[0]
-
-				// Derive image name without tag.
-				imageName := r.Image
-				if idx := strings.LastIndex(r.Image, ":"); idx != -1 {
-					imageName = r.Image[:idx]
-				}
-
-				newRef := imageName + ":" + newTag
-
-				ck := changeKey{r.Stack, r.Service}
-				if fc, ok := changeMap[ck]; ok {
-					// File was updated (real run).
-					composeFile := filepath.Base(fc.File)
-					pr.Plain("  %s → %s   (%s updated)", imageRef, newRef, composeFile)
-				} else if dryRun {
-					// Check if it would be found in compose files.
-					files := stackFiles[r.Stack]
-					if len(files) > 0 {
-						pr.Plain("  %s → %s   (dry run)", imageRef, newRef)
-					} else {
-						pr.Plain("  %-40s %s tag not found in compose file", imageRef+" → "+newRef, ui.YellowText("⚠"))
-					}
-				} else {
-					// Upgrade ran but image wasn't found in files.
-					pr.Plain("  %-40s %s tag not found in compose file", imageRef+" → "+newRef, ui.YellowText("⚠"))
-				}
-				continue
-			}
-
-			if r.DigestStale && len(r.NewerTags) == 0 && r.Error == "" {
-				pr.Plain("  %-40s %s no tag_pattern configured; run `dockform images pull`", imageRef, ui.YellowText("⚠"))
-				continue
-			}
-
-			pr.Plain("  %-40s %s already latest", imageRef, ui.GreenText("✓"))
+	if len(upgraded) > 0 {
+		if dryRun {
+			section(fmt.Sprintf("%s  %d image(s) would be upgraded (dry run)\n", ui.YellowText("↑"), len(upgraded)))
+			printTable(pr, []string{"STACK", "IMAGE", "FROM", "TO"}, upgraded)
+		} else {
+			section(fmt.Sprintf("%s  %d image(s) upgraded\n", ui.GreenText("↑"), len(upgraded)))
+			printTable(pr, []string{"STACK", "IMAGE", "FROM", "TO", "FILE"}, upgraded)
 		}
+	}
+	if len(notUpgraded) > 0 {
+		section(fmt.Sprintf("%s  %d image(s) not upgraded\n", ui.YellowText("⚠"), len(notUpgraded)))
+		printTable(pr, []string{"STACK", "IMAGE", "TAG", "REASON"}, notUpgraded)
+	}
+	if latest > 0 {
+		section(fmt.Sprintf("%s  %d image(s) already latest", ui.GreenText("✓"), latest))
 	}
 
 	// Footer: remind the user to apply the tag changes.
@@ -215,5 +203,58 @@ func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes 
 			dim.Render("Run "),
 			cmdStyle.Render("dockform apply"),
 			dim.Render(" to publish the changes."))
+	}
+}
+
+// tableCell is one table cell: its text, and an optional style applied after
+// padding so column widths come from the plain text.
+type tableCell struct {
+	text  string
+	style func(string) string
+}
+
+func plainCell(s string) tableCell { return tableCell{text: s} }
+
+func warnCell(s string) tableCell {
+	return tableCell{text: "! " + s, style: ui.YellowText}
+}
+
+// printTable prints rows under a faint bold header in the images check style,
+// padding every column but the last to its widest cell.
+func printTable(pr ui.Printer, header []string, rows [][]tableCell) {
+	widths := make([]int, len(header))
+	for i, h := range header {
+		widths[i] = len(h)
+	}
+	for _, row := range rows {
+		for i, c := range row {
+			if len(c.text) > widths[i] {
+				widths[i] = len(c.text)
+			}
+		}
+	}
+	pad := func(i int, s string) string {
+		if i == len(header)-1 {
+			return s
+		}
+		return fmt.Sprintf("%-*s", widths[i], s)
+	}
+
+	headerStyle := lipgloss.NewStyle().Faint(true).Bold(true)
+	cols := make([]string, len(header))
+	for i, h := range header {
+		cols[i] = headerStyle.Render(pad(i, h))
+	}
+	pr.Plain("  %s", strings.Join(cols, "  "))
+	for _, row := range rows {
+		cols = cols[:0]
+		for i, c := range row {
+			cell := pad(i, c.text)
+			if c.style != nil {
+				cell = c.style(cell)
+			}
+			cols = append(cols, cell)
+		}
+		pr.Plain("  %s", strings.TrimRight(strings.Join(cols, "  "), " "))
 	}
 }

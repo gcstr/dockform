@@ -394,14 +394,17 @@ func TestRenderUpgradeTerminal_ImageUpgraded(t *testing.T) {
 	renderUpgradeTerminal(pr, results, changes, stackFiles, false)
 
 	got := stripANSI(buf.String())
-	if !strings.Contains(got, "nginx:1.25") {
-		t.Errorf("expected old ref 'nginx:1.25', got: %q", got)
+	if !strings.Contains(got, "1 image(s) upgraded") {
+		t.Errorf("expected the upgraded heading, got: %q", got)
 	}
-	if !strings.Contains(got, "nginx:1.27") {
-		t.Errorf("expected new ref 'nginx:1.27', got: %q", got)
+	if !strings.Contains(got, "STACK        IMAGE  FROM  TO    FILE") {
+		t.Errorf("expected the upgrade table header, got: %q", got)
 	}
-	if !strings.Contains(got, "docker-compose.yaml updated") {
-		t.Errorf("expected '(docker-compose.yaml updated)', got: %q", got)
+	if !strings.Contains(got, "default/web  nginx  1.25  1.27  docker-compose.yaml") {
+		t.Errorf("expected a row with stack, image, old tag, new tag and file, got: %q", got)
+	}
+	if !strings.Contains(got, "Run dockform apply to publish the changes.") {
+		t.Errorf("expected the apply reminder, got: %q", got)
 	}
 }
 
@@ -541,5 +544,62 @@ func TestBuildStackFiles_EmptyFiles(t *testing.T) {
 	paths := result["default/web"]
 	if len(paths) != 0 {
 		t.Errorf("expected empty paths, got %v", paths)
+	}
+}
+
+func TestRenderUpgradeTerminal_DryRunHasNoFileColumn(t *testing.T) {
+	var buf bytes.Buffer
+	results := []images.ImageStatus{
+		{Stack: "default/web", Service: "nginx", Image: "nginx:1.25", CurrentTag: "1.25", NewerTags: []string{"1.27"}},
+	}
+	renderUpgradeTerminal(newTestPrinter(&buf), results, nil, map[string][]string{"default/web": {"/app/compose.yaml"}}, true)
+
+	got := stripANSI(buf.String())
+	if !strings.Contains(got, "1 image(s) would be upgraded (dry run)") {
+		t.Errorf("expected the dry-run heading, got: %q", got)
+	}
+	if strings.Contains(got, "FILE") || strings.Contains(got, "apply") {
+		t.Errorf("a dry run rewrites nothing: no FILE column and no apply reminder, got: %q", got)
+	}
+}
+
+func TestRenderUpgradeTerminal_TagNotFoundIsNotUpgraded(t *testing.T) {
+	var buf bytes.Buffer
+	results := []images.ImageStatus{
+		{Stack: "default/web", Service: "nginx", Image: "nginx:1.25", CurrentTag: "1.25", NewerTags: []string{"1.27"}},
+	}
+	// Real run, but Upgrade found nothing to rewrite.
+	renderUpgradeTerminal(newTestPrinter(&buf), results, nil, map[string][]string{"default/web": {"/app/compose.yaml"}}, false)
+
+	got := stripANSI(buf.String())
+	if !strings.Contains(got, "1 image(s) not upgraded") || !strings.Contains(got, "1.27 available, but the tag was not found in the compose files") {
+		t.Errorf("expected the image under not upgraded with the reason, got: %q", got)
+	}
+	if strings.Contains(got, "image(s) upgraded") {
+		t.Errorf("nothing was rewritten, so nothing should be listed as upgraded, got: %q", got)
+	}
+}
+
+// The point of the table layout: images with nothing to do collapse into one
+// count line instead of a line each.
+func TestRenderUpgradeTerminal_LatestImagesAreOnlyCounted(t *testing.T) {
+	var buf bytes.Buffer
+	results := []images.ImageStatus{
+		{Stack: "default/web", Service: "nginx", Image: "nginx:1.25", CurrentTag: "1.25", NewerTags: []string{"1.27"}},
+		{Stack: "default/web", Service: "redis", Image: "redis:7", CurrentTag: "7", HasTagPattern: true},
+		{Stack: "default/db", Service: "postgres", Image: "postgres:16", CurrentTag: "16", HasTagPattern: true},
+		{Stack: "default/db", Service: "backup", Image: "backup:1", CurrentTag: "1", Error: "name unknown"},
+	}
+	changes := []images.FileChange{{StackKey: "default/web", Service: "nginx", File: "/app/compose.yaml", Image: "nginx", OldTag: "1.25", NewTag: "1.27"}}
+	renderUpgradeTerminal(newTestPrinter(&buf), results, changes, map[string][]string{"default/web": {"/app/compose.yaml"}}, false)
+
+	got := stripANSI(buf.String())
+	for _, want := range []string{"1 image(s) upgraded", "1 image(s) not upgraded", "! name unknown", "2 image(s) already latest"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q, got: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "redis") || strings.Contains(got, "postgres") {
+		t.Errorf("images already on the latest tag should only be counted, got: %q", got)
 	}
 }
