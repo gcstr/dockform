@@ -235,7 +235,9 @@ func (p *Planner) buildDestroyPlanForContext(ctx context.Context, client DockerC
 			}
 			fsConfig := allFilesets[filesetName]
 			details := fmt.Sprintf("volume %s at %s will be destroyed", volume, fsConfig.TargetPath)
-			res := NewResource(ResourceFile, "", ActionDelete, details)
+			// Named after the volume so the summary counts it: CountActions
+			// skips unnamed fileset lines as status messages.
+			res := NewResource(ResourceFile, volume, ActionDelete, details)
 			rp.Filesets[filesetName] = append(rp.Filesets[filesetName], res)
 		} else {
 			res := NewResource(ResourceVolume, volume, ActionDelete, "will be destroyed")

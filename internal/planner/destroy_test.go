@@ -292,3 +292,30 @@ func TestBuildDestroyPlan_StacksKeyedBarePerContext_PrefixedInAggregate(t *testi
 		t.Errorf("aggregate Resources.Stacks has %d entries, want 2 (one per context); got %v", len(plan.Resources.Stacks), plan.Resources.Stacks)
 	}
 }
+
+// Fileset volumes are real deletions, so the "N to destroy" summary must count
+// them alongside the plain volume and network it removes.
+func TestBuildDestroyPlan_CountsFilesetVolumes(t *testing.T) {
+	mock := newMockDocker()
+	mock.volumes = []string{"site-html", "scratch"}
+	mock.networks = []string{"web"}
+	cfg := manifest.Config{
+		Identifier: "test",
+		Contexts:   map[string]manifest.ContextConfig{"default": {}},
+		DiscoveredFilesets: map[string]manifest.FilesetSpec{
+			"default/website/data": {TargetVolume: "site-html", TargetPath: "/data"},
+		},
+	}
+
+	plan, err := NewWithDocker(mock).BuildDestroyPlan(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("BuildDestroyPlan failed: %v", err)
+	}
+	if _, _, d := plan.Resources.CountActions(); d != 3 {
+		t.Errorf("CountActions delete = %d, want 3 (fileset volume, volume, network)", d)
+	}
+	items := plan.Resources.Filesets["default/website/data"]
+	if len(items) != 1 || items[0].Name != "site-html" {
+		t.Errorf("fileset items = %+v, want one delete named site-html", items)
+	}
+}
