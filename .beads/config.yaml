@@ -56,3 +56,5 @@
 backup.git-push: false
 sync:
     remote: "git+ssh://hetzner-three/home/gcstr/workspace/dockform-beads.git"
+export:
+    auto: true
