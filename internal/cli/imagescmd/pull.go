@@ -2,6 +2,7 @@ package imagescmd
 
 import (
 	"context"
+	"fmt"
 	"sort"
 
 	"github.com/charmbracelet/lipgloss"
@@ -21,6 +22,8 @@ func newPullCmd() *cobra.Command {
 
 This updates images on the remote Docker daemon without modifying compose files.
 Use --recreate to also restart affected containers so they run the new image.
+Because that restarts running services, --recreate lists them and asks for
+confirmation first; pass --skip-confirmation to skip the prompt.
 
 With no positional arguments, every service in scope is considered. Pass
 service names to narrow the pull; combine with --stack to scope those names to
@@ -32,6 +35,7 @@ services available in scope.`,
 
 	cmd.Flags().Bool("recreate", false, "Recreate containers after pulling to apply the new image")
 	cmd.Flags().Bool("dry-run", false, "Show what would be pulled without making any changes")
+	cmd.Flags().Bool("skip-confirmation", false, "With --recreate, skip the confirmation prompt and recreate immediately")
 
 	common.AddTargetFlags(cmd)
 
@@ -91,23 +95,46 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	recreate, _ := cmd.Flags().GetBool("recreate")
+	skipConfirm, _ := cmd.Flags().GetBool("skip-confirmation")
 
 	if dryRun {
-		renderPullDryRun(pr, stale, recreate)
+		renderPullPreview(pr, stale, recreate, true)
 		return nil
 	}
 
 	allStacks := cfg.GetAllStacks()
 
-	err = common.SpinnerOperation(pr, "Pulling images...", func() error {
-		return executePull(cmd.Context(), stale, allStacks, factoryClientGetter(factory, cfg), cfg, recreate)
+	return confirmAndPull(cmd, pr, stale, recreate, skipConfirm, func() error {
+		err := common.SpinnerOperation(pr, "Pulling images...", func() error {
+			return executePull(cmd.Context(), stale, allStacks, factoryClientGetter(factory, cfg), cfg, recreate)
+		})
+		if err != nil {
+			return err
+		}
+		renderPullTerminal(pr, stale, recreate)
+		return nil
 	})
-	if err != nil {
-		return err
-	}
+}
 
-	renderPullTerminal(pr, stale, recreate)
-	return nil
+// confirmAndPull runs pull for the stale images. With --recreate it first
+// lists every service that will be recreated and asks, like apply: restarting
+// running containers cannot be undone. A plain pull only downloads images and
+// never asks.
+func confirmAndPull(cmd *cobra.Command, pr ui.StdPrinter, stale []images.ImageStatus, recreate, skipConfirm bool, pull func() error) error {
+	if recreate {
+		renderPullPreview(pr, stale, true, false)
+		confirmed, err := common.GetConfirmation(cmd, pr, common.ConfirmationOptions{
+			SkipConfirmation: skipConfirm,
+			Message:          "│ Dockform will pull these images and recreate the services listed above.\n│ Type yes to confirm.\n│",
+		})
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return nil
+		}
+	}
+	return pull()
 }
 
 // stackPullGroup aggregates stale images that belong to the same stack.
@@ -178,8 +205,15 @@ func executePull(ctx context.Context, stale []images.ImageStatus, allStacks map[
 	return nil
 }
 
-func renderPullDryRun(pr ui.Printer, stale []images.ImageStatus, recreate bool) {
-	pr.Plain("%s  %d image(s) with digest drift (dry run)\n", ui.YellowText("⚠"), len(stale))
+// renderPullPreview lists each stale image under its stack, with the service
+// that uses it: the images a pull would download and, with --recreate, the
+// services it would restart.
+func renderPullPreview(pr ui.Printer, stale []images.ImageStatus, recreate, dryRun bool) {
+	heading := fmt.Sprintf("%d image(s) with digest drift", len(stale))
+	if dryRun {
+		heading += " (dry run)"
+	}
+	pr.Plain("%s  %s\n", ui.YellowText("⚠"), heading)
 
 	boldStyle := lipgloss.NewStyle().Bold(true)
 	lastStack := ""
@@ -192,17 +226,27 @@ func renderPullDryRun(pr ui.Printer, stale []images.ImageStatus, recreate bool) 
 			pr.Plain("%s", boldStyle.Render(r.Stack))
 			lastStack = r.Stack
 		}
-		pr.Plain("  %s  %s", ui.YellowText("→"), r.Image)
+		pr.Plain("  %s  %s: %s", ui.YellowText("→"), r.Service, r.Image)
 	}
 
-	if recreate {
-		pr.Plain("\nContainers would be recreated after pull.")
-	} else {
+	switch {
+	case recreate && dryRun:
+		pr.Plain("\nThe services listed above would be recreated to run the new images.")
+	case recreate:
+		pr.Plain("\nThe services listed above will be recreated to run the new images.")
+	default:
 		pr.Plain("\nPass --recreate to restart containers with the new images.")
 	}
 }
 
+// renderPullTerminal reports a finished pull. After --recreate the preview
+// already listed every image and service, so only the summary line is printed.
 func renderPullTerminal(pr ui.Printer, stale []images.ImageStatus, recreate bool) {
+	if recreate {
+		pr.Plain("%s  %d image(s) pulled and containers recreated.", ui.GreenText("✓"), len(stale))
+		return
+	}
+
 	boldStyle := lipgloss.NewStyle().Bold(true)
 	lastStack := ""
 
@@ -218,10 +262,6 @@ func renderPullTerminal(pr ui.Printer, stale []images.ImageStatus, recreate bool
 	}
 
 	pr.Plain("")
-	if recreate {
-		pr.Plain("%s  %d image(s) pulled and containers recreated.", ui.GreenText("✓"), len(stale))
-	} else {
-		pr.Plain("%s  %d image(s) pulled.", ui.GreenText("✓"), len(stale))
-		pr.Plain("%s  Pass --recreate to restart containers with the new images.", ui.YellowText("→"))
-	}
+	pr.Plain("%s  %d image(s) pulled.", ui.GreenText("✓"), len(stale))
+	pr.Plain("%s  Pass --recreate to restart containers with the new images.", ui.YellowText("→"))
 }
