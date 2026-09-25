@@ -39,6 +39,9 @@ func TestInitCmd_CurrentDirectory(t *testing.T) {
 	if !strings.Contains(output, "Created dockform.yml:") {
 		t.Fatalf("expected success message, got: %q", output)
 	}
+	if !strings.Contains(output, "Run `dockform llm setup` so it learns dockform.") {
+		t.Errorf("expected a pointer to dockform llm setup, got: %q", output)
+	}
 
 	// Check that file was created
 	configPath := filepath.Join(tempDir, "dockform.yml")
@@ -90,6 +93,9 @@ func TestInitCmd_WithDirectory(t *testing.T) {
 	configPath := filepath.Join(targetDir, "dockform.yml")
 	if _, err := os.Stat(configPath); err != nil {
 		t.Fatalf("dockform.yml not created in target dir: %v", err)
+	}
+	if want := "Run `dockform llm setup " + targetDir + "`"; !strings.Contains(out.String(), want) {
+		t.Errorf("expected %q in the output, got: %q", want, out.String())
 	}
 }
 

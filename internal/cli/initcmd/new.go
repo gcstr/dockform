@@ -79,6 +79,14 @@ The generated file contains examples and comments explaining all available confi
 				return err
 			}
 
+			setup := "dockform llm setup"
+			if targetDir != "." {
+				setup += " " + targetDir
+			}
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Working with an AI agent? Run `%s` so it learns dockform.\n", setup); err != nil {
+				return err
+			}
+
 			return nil
 		},
 	}

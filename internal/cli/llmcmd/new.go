@@ -58,6 +58,7 @@ It is meant to be loaded into an agent's context at the start of a session.`,
 	cmd.Flags().Bool("no-project", false, "Leave out the \"This project\" section")
 	cmd.Flags().Bool("project-only", false, "Print only the \"This project\" section, to refresh it cheaply after changing the manifest or stacks")
 	cmd.MarkFlagsMutuallyExclusive("no-project", "project-only")
+	cmd.AddCommand(newSetupCmd())
 	return cmd
 }
 
