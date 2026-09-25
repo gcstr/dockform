@@ -66,4 +66,3 @@ func (p *Planner) getClientForContext(contextName string, cfg *manifest.Config) 
 	// Fallback to single client for backward compatibility
 	return p.docker
 }
-

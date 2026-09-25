@@ -165,7 +165,7 @@ func newSnapshotCmd() *cobra.Command {
 For multi-context setups, address the volume as <context>/<volume>
 (e.g. hetzner-two/netbird_data). A bare volume name is allowed only when a
 single context is configured.`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			clictx, err := common.SetupCLIContext(cmd)
@@ -269,7 +269,7 @@ func newRestoreCmd() *cobra.Command {
 For multi-context setups, address the volume as <context>/<volume>
 (e.g. hetzner-two/netbird_data). A bare volume name is allowed only when a
 single context is configured.`,
-		Args:  cobra.ExactArgs(2),
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			clictx, err := common.SetupCLIContext(cmd)

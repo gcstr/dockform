@@ -15,11 +15,11 @@ func multiContextConfig() *manifest.Config {
 			"aws":         {},
 		},
 		Stacks: map[string]manifest.Stack{
-			"hetzner-one/traefik":  {Root: "/h1/traefik"},
-			"hetzner-one/app":      {Root: "/h1/app"},
-			"hetzner-two/traefik":  {Root: "/h2/traefik"},
-			"hetzner-two/coredns":  {Root: "/h2/coredns"},
-			"aws/api":              {Root: "/aws/api"},
+			"hetzner-one/traefik": {Root: "/h1/traefik"},
+			"hetzner-one/app":     {Root: "/h1/app"},
+			"hetzner-two/traefik": {Root: "/h2/traefik"},
+			"hetzner-two/coredns": {Root: "/h2/coredns"},
+			"aws/api":             {Root: "/aws/api"},
 		},
 		DiscoveredStacks: map[string]manifest.Stack{
 			"aws/worker": {Root: "/aws/worker"},

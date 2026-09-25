@@ -15,7 +15,7 @@ func TestNormalize_DefaultsAndFiles(t *testing.T) {
 	cfg := Config{
 		Identifier: "test",
 		Contexts: map[string]ContextConfig{
-			"default":  {},
+			"default": {},
 		},
 		Stacks: map[string]Stack{
 			"default/web": {
@@ -45,7 +45,7 @@ func TestNormalize_InvalidStackKey(t *testing.T) {
 	cfg := Config{
 		Identifier: "test",
 		Contexts: map[string]ContextConfig{
-			"default":  {},
+			"default": {},
 		},
 		Stacks: map[string]Stack{"Bad Name": {Root: "/tmp"}},
 	}
@@ -106,7 +106,7 @@ func TestNormalize_InlineEnvLastWins(t *testing.T) {
 	cfg := Config{
 		Identifier: "test",
 		Contexts: map[string]ContextConfig{
-			"default":  {},
+			"default": {},
 		},
 		Stacks: map[string]Stack{
 			"default/web": {Root: "app", Environment: &Environment{Inline: []string{"FOO=A", "BAR=2", "BAZ=3"}}},
@@ -128,7 +128,7 @@ func TestNormalize_SopsSecretsValidation(t *testing.T) {
 	cfg := Config{
 		Identifier: "test",
 		Contexts: map[string]ContextConfig{
-			"default":  {},
+			"default": {},
 		},
 		Stacks: map[string]Stack{
 			"default/web": {Root: "app", SopsSecrets: []string{"secrets.env"}},
@@ -142,7 +142,7 @@ func TestNormalize_SopsSecretsValidation(t *testing.T) {
 	cfg2 := Config{
 		Identifier: "test",
 		Contexts: map[string]ContextConfig{
-			"default":  {},
+			"default": {},
 		},
 		Stacks: map[string]Stack{
 			"default/web": {Root: "app", SopsSecrets: []string{"secrets.txt"}},
@@ -336,8 +336,8 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 
 		cfg := Config{
 			Identifier: "test",
-		Contexts: map[string]ContextConfig{
-				"default":  {},
+			Contexts: map[string]ContextConfig{
+				"default": {},
 			},
 			Stacks: map[string]Stack{
 				"default/web": {Root: "app"}, // No Files specified, should auto-detect
@@ -373,8 +373,8 @@ func TestNormalize_DefaultComposeFileDetection(t *testing.T) {
 
 		cfg := Config{
 			Identifier: "test",
-		Contexts: map[string]ContextConfig{
-				"default":  {},
+			Contexts: map[string]ContextConfig{
+				"default": {},
 			},
 			Stacks: map[string]Stack{
 				"default/web": {Root: "app"}, // No Files specified, should auto-detect
@@ -661,8 +661,8 @@ func TestParseStackKey(t *testing.T) {
 func TestGetAllStacks(t *testing.T) {
 	cfg := Config{
 		Stacks: map[string]Stack{
-			"default/web":     {Profiles: []string{"prod"}}, // Augments discovered
-			"default/newstack": {Root: "/app/new"},          // Fallback (no discovered)
+			"default/web":      {Profiles: []string{"prod"}}, // Augments discovered
+			"default/newstack": {Root: "/app/new"},           // Fallback (no discovered)
 		},
 		DiscoveredStacks: map[string]Stack{
 			"default/api":      {Root: "/app/api"},
@@ -702,8 +702,8 @@ func TestGetAllStacks(t *testing.T) {
 func TestGetStacksForDaemon(t *testing.T) {
 	cfg := Config{
 		Stacks: map[string]Stack{
-			"default/web":    {Root: "/app/web"},
-			"default/api":    {Root: "/app/api"},
+			"default/web":     {Root: "/app/web"},
+			"default/api":     {Root: "/app/api"},
 			"hetzner/traefik": {Root: "/prod/traefik"},
 		},
 	}

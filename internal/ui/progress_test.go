@@ -34,4 +34,3 @@ func TestProgressStartIncrementAndStop(t *testing.T) {
 		t.Fatalf("expected stop to clear line, got %q", out)
 	}
 }
-

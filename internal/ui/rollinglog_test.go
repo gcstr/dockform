@@ -220,7 +220,6 @@ func TestModelCtrlCTriggersCancel(t *testing.T) {
 	}
 }
 
-
 func TestTruncOneRowANSI(t *testing.T) {
 	if truncOneRowANSI("abcdef", 2) != "" {
 		t.Fatalf("expected empty when width below border size")

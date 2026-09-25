@@ -5,3 +5,8 @@ run:
 
 # Note: v2 schema rejects v1-era issues.* keys like exclude-use-default/exclude-rules.
 # Keep config minimal and valid; add specific rules later with v2-compatible keys.
+
+# Fail on unformatted files, in task lint and in CI.
+formatters:
+  enable:
+    - gofmt
