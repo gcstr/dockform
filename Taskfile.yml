@@ -7,7 +7,6 @@ vars:
   MAIN: '{{.ENV.MAIN | default "./cmd/dockform"}}'
   BIN: '{{.ENV.BIN | default "dockform"}}'
   COVER_OUT: '{{.ENV.COVER_OUT | default "cover.out"}}'
-  GOLANGCI_LINT_PKG: '{{.ENV.GOLANGCI_LINT_PKG | default "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"}}'
   GOLANGCI_LINT_VERSION: '{{.ENV.GOLANGCI_LINT_VERSION | default "v2.14.0"}}'
   ARGS: '{{.ENV.ARGS | default ""}}'
   CURRENT_TAG: 
@@ -60,25 +59,35 @@ tasks:
       - '{{.GO}} vet {{.PKGS}}'
 
   lint:
-    desc: Run golangci-lint v2
+    desc: Run golangci-lint (installs the pinned version into GOPATH/bin if needed)
     cmds:
-      - cmd: |
-          set -euo pipefail
-          if ! command -v golangci-lint >/dev/null 2>&1 || ! golangci-lint --version 2>&1 | grep -q "version 2"; then
-            echo "Installing golangci-lint {{.GOLANGCI_LINT_VERSION}} to $(go env GOPATH)/bin"
-            curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- {{.GOLANGCI_LINT_VERSION}} -b $(go env GOPATH)/bin
-          fi
-          PATH=$(go env GOPATH)/bin:$PATH golangci-lint run
-        silent: true
+      - task: lint:install
+      - '"$(go env GOPATH)/bin/golangci-lint" run'
 
   lint:refresh:
-    desc: Force (re)install golangci-lint v2 and run
+    desc: Force (re)install the pinned golangci-lint and run
+    cmds:
+      - task: lint:install
+        vars: {FORCE: "true"}
+      - '"$(go env GOPATH)/bin/golangci-lint" run'
+
+  lint:install:
+    internal: true
+    # go install builds with the local Go, so the linter is never older than
+    # the Go it analyzes (an older build panics). It also avoids install.sh,
+    # whose checksum lookup breaks on releases that ship SBOMs.
     cmds:
       - cmd: |
           set -euo pipefail
-          echo "Reinstalling golangci-lint {{.GOLANGCI_LINT_VERSION}} to $(go env GOPATH)/bin"
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- {{.GOLANGCI_LINT_VERSION}} -b $(go env GOPATH)/bin
-          PATH=$(go env GOPATH)/bin:$PATH golangci-lint run
+          bin="$(go env GOPATH)/bin"
+          want="{{.GOLANGCI_LINT_VERSION}}"
+          if [ "{{.FORCE}}" != "true" ] && "$bin/golangci-lint" version 2>/dev/null | grep -q "version ${want#v} "; then
+            exit 0
+          fi
+          mkdir -p "$bin"
+          rm -f "$bin/golangci-lint"
+          echo "Installing golangci-lint $want to $bin"
+          GOBIN="$bin" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$want"
         silent: true
 
   deps:
