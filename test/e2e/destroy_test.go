@@ -278,7 +278,10 @@ func TestDestroy_SkipConfirmation_DestroyImmediately(t *testing.T) {
 	t.Logf("Successfully destroyed all resources with --skip-confirmation: %d containers, %d networks, %d volumes", len(containers), len(networks), len(volumes))
 }
 
-func TestDestroy_IndependentOfConfigFile(t *testing.T) {
+// DOCKFORM_RUN_ID used to make destroy target another identifier than the
+// manifest's. It no longer does: destroy with a different manifest must warn
+// and leave the other identifier's resources alone.
+func TestDestroy_RunIDDoesNotRetargetAnotherIdentifier(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not found in PATH")
 	}
@@ -328,31 +331,22 @@ func TestDestroy_IndependentOfConfigFile(t *testing.T) {
 		t.Fatalf("expected containers to be created before destroy")
 	}
 
-	// 2. CREATE A DIFFERENT CONFIG FILE: Test that destroy ignores config content
-	modifiedTempDir := t.TempDir()
-	src2 := filepath.Join("testdata", "scenarios", "example") // Different scenario
-	if err := copyTree(src2, modifiedTempDir); err != nil {
+	// 2. DESTROY WITH A DIFFERENT MANIFEST (identifier "demo") while
+	// DOCKFORM_RUN_ID still names the applied run.
+	otherDir := t.TempDir()
+	if err := copyTree(filepath.Join("testdata", "scenarios", "example"), otherDir); err != nil {
 		t.Fatalf("copy different scenario: %v", err)
 	}
-
-	// 3. DESTROY WITH DIFFERENT CONFIG: Should still find and destroy original resources
-	destroyOut, destroyErr, destroyCode := runCmdWithStdinDetailed(t, modifiedTempDir, env, bin, identifier+"\n", "destroy", "--manifest", modifiedTempDir)
-	if destroyCode != 0 {
-		t.Fatalf("destroy with different config failed with exit code %d\nSTDOUT:\n%s\nSTDERR:\n%s", destroyCode, destroyOut, destroyErr)
+	destroyOut, destroyErr, _ := runCmdWithStdinDetailed(t, otherDir, env, bin, "no\n", "destroy", "--manifest", otherDir)
+	if !strings.Contains(destroyOut+destroyErr, "DOCKFORM_RUN_ID="+runID+" is ignored") {
+		t.Fatalf("expected a warning that DOCKFORM_RUN_ID is ignored\nSTDOUT:\n%s\nSTDERR:\n%s", destroyOut, destroyErr)
 	}
 
-	// Verify resources were still discovered and destroyed despite different config
-	if !strings.Contains(destroyOut, "Volumes") || !strings.Contains(destroyOut, "Networks") || !strings.Contains(destroyOut, "Stacks") {
-		t.Fatalf("destroy should have found resources despite different config:\n%s", destroyOut)
-	}
-
-	// 4. VERIFY RESOURCES DESTROYED: Assert all labeled resources are gone
+	// 3. The applied run's resources must be untouched.
 	containersAfter := dockerLines(t, ctx, "ps", "-a", "--format", "{{.Names}}", "--filter", "label=io.dockform.identifier="+identifier)
-	if len(containersAfter) != 0 {
-		t.Fatalf("expected all containers to be destroyed regardless of config file, but found: %v", containersAfter)
+	if len(containersAfter) != len(containers) {
+		t.Fatalf("destroy with another manifest must not touch identifier %s: had %v, now %v", identifier, containers, containersAfter)
 	}
-
-	t.Logf("Successfully destroyed resources independent of config file content")
 }
 
 // TestDestroy_ScopedToStack verifies that `destroy --stack <context/stack>` only

@@ -38,12 +38,14 @@ networks and volumes are preserved.`,
 				return err
 			}
 
-			// Allow environment to override identifier for discovery/confirmation independence
 			identifier := common.GetFirstIdentifier(ctx.Config)
-			if override := os.Getenv("DOCKFORM_RUN_ID"); override != "" {
-				identifier = override
-				// Update project identifier to use the override
-				ctx.Config.Identifier = override
+			// DOCKFORM_RUN_ID used to replace the identifier for destroy only, so
+			// destroy could target resources plan and apply never touch. It no
+			// longer does; warn when it would have changed the target. A manifest
+			// that interpolates ${DOCKFORM_RUN_ID} into identifier matches it and
+			// stays quiet.
+			if v := os.Getenv("DOCKFORM_RUN_ID"); v != "" && v != identifier {
+				ctx.Printer.Warn("DOCKFORM_RUN_ID=%s is ignored: destroy uses the manifest's identifier %q", v, identifier)
 			}
 
 			// Build destroy plan using the planner

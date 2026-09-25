@@ -150,7 +150,6 @@ exit 0
 }
 
 func TestDestroy_CorrectIdentifier_ProceedsWithDestruction(t *testing.T) {
-	// Clear env var that overrides identifier from config
 	t.Setenv("DOCKFORM_RUN_ID", "")
 
 	undo := clitest.WithCustomDockerStub(t, `#!/bin/sh
@@ -481,5 +480,68 @@ exit 0
 	}
 	if !strings.Contains(err.Error(), "destroy") {
 		t.Fatalf("expected destroy-related error, got: %v", err)
+	}
+}
+
+const runIDDockerStub = `#!/bin/sh
+cmd="$1"; shift
+case "$cmd" in
+  version)
+    exit 0 ;;
+  volume)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "app-volume"; exit 0; fi
+    if [ "$sub" = "rm" ]; then exit 0; fi ;;
+  network)
+    sub="$1"; shift
+    if [ "$sub" = "ls" ]; then echo "app-network"; exit 0; fi
+    if [ "$sub" = "rm" ]; then exit 0; fi ;;
+  ps)
+    exit 0 ;;
+esac
+exit 0
+`
+
+// DOCKFORM_RUN_ID no longer changes what destroy targets: the prompt still
+// asks for the manifest's identifier, and a differing value is called out.
+func TestDestroy_RunIDDoesNotOverrideIdentifier(t *testing.T) {
+	t.Setenv("DOCKFORM_RUN_ID", "production")
+	defer clitest.WithCustomDockerStub(t, runIDDockerStub)()
+
+	root := cli.TestNewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader("demo\n")) // the manifest's identifier
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("destroy execute: %v", err)
+	}
+	got := out.String()
+	if strings.Contains(got, " canceled") {
+		t.Fatalf("the manifest identifier should confirm the destroy; got: %s", got)
+	}
+	if !strings.Contains(got, `DOCKFORM_RUN_ID=production is ignored: destroy uses the manifest's identifier "demo"`) {
+		t.Errorf("expected a warning that DOCKFORM_RUN_ID is ignored; got: %s", got)
+	}
+}
+
+// A manifest that interpolates ${DOCKFORM_RUN_ID} into identifier (as the e2e
+// tests do) sets both to the same value: nothing to warn about.
+func TestDestroy_RunIDMatchingIdentifierIsQuiet(t *testing.T) {
+	t.Setenv("DOCKFORM_RUN_ID", "demo")
+	defer clitest.WithCustomDockerStub(t, runIDDockerStub)()
+
+	root := cli.TestNewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader("demo\n"))
+	root.SetArgs([]string{"destroy", "--manifest", clitest.BasicConfigPath(t)})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("destroy execute: %v", err)
+	}
+	if strings.Contains(out.String(), "DOCKFORM_RUN_ID") {
+		t.Errorf("no warning expected when DOCKFORM_RUN_ID matches the identifier; got: %s", out.String())
 	}
 }
