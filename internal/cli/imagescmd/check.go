@@ -561,6 +561,8 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 		return padded
 	}
 
+	var notes legend
+
 	renderAttentionTable := func(rows []images.ImageStatus) {
 		wStack, wImage, wTag := computeBaseWidths(rows)
 		wUpgrade := len("UPGRADE")
@@ -586,7 +588,8 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 			tag := fmt.Sprintf("%-*s", wTag, r.CurrentTag)
 
 			if r.Error != "" {
-				pr.Plain("  %s  %s  %s  %s", stack, image, tag, ui.YellowText("! "+r.Error))
+				notes.addError(r.Stack, imageNameWithoutTag(r.Image), r.Error)
+				pr.Plain("  %s  %s  %s  %s  %s", stack, image, tag, fmt.Sprintf("%-*s", wUpgrade, "-"), ui.YellowText(labelError))
 				continue
 			}
 
@@ -594,9 +597,11 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 			var digest string
 			switch {
 			case r.NotApplied:
-				digest = ui.YellowText("not applied")
+				notes.use(labelNotApplied)
+				digest = ui.YellowText(labelNotApplied)
 			case r.DigestStale:
-				digest = ui.YellowText("changed")
+				notes.use(labelChanged)
+				digest = ui.YellowText(labelChanged)
 			default:
 				digest = "-"
 			}
@@ -642,14 +647,7 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 		}
 	}
 
-	// Footer: point "not applied" rows at apply, the command that fixes them.
-	for _, r := range results {
-		if r.Error == "" && r.NotApplied {
-			pr.Plain("\n%s  %s", ui.YellowText("!"),
-				dimStyle.Render(`"not applied": the compose file changed since the last apply, so the service doesn't run the image it names. Run dockform apply.`))
-			break
-		}
-	}
+	notes.render(pr)
 
 	// Footer: explain the "no tag_pattern" badge whenever any image in scope
 	// is missing a tag_pattern — across both attention and ok tables.

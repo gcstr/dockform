@@ -136,13 +136,19 @@ func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes 
 	})
 
 	var upgraded, notUpgraded [][]tableCell
+	var notes legend
+	reason := func(label string) tableCell {
+		notes.use(label)
+		return tableCell{text: label, style: ui.YellowText}
+	}
 	latest := 0
 	for _, r := range sorted {
 		stack, image := plainCell(r.Stack), plainCell(imageNameWithoutTag(r.Image))
 		tag := plainCell(r.CurrentTag)
 		switch {
 		case r.Error != "":
-			notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, warnCell(r.Error)})
+			notes.addError(r.Stack, imageNameWithoutTag(r.Image), r.Error)
+			notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, reason(labelError)})
 		case len(r.NewerTags) > 0:
 			to := tableCell{text: r.NewerTags[0], style: ui.YellowText}
 			fc, changed := changeMap[changeKey{r.Stack, r.Service}]
@@ -152,16 +158,12 @@ func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes 
 			case dryRun && len(stackFiles[r.Stack]) > 0:
 				upgraded = append(upgraded, []tableCell{stack, image, tag, to})
 			default:
-				notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, warnCell(fmt.Sprintf("%s available, but the tag was not found in the compose files", r.NewerTags[0]))})
+				notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, reason(labelTagNotFound)})
 			}
 		case r.NotApplied:
-			notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, warnCell(notAppliedHint)})
+			notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, reason(labelNotApplied)})
 		case r.DigestStale:
-			reason := "digest changed, no newer tag; run `dockform images pull`"
-			if !r.HasTagPattern {
-				reason = "no tag_pattern configured; digest changed, run `dockform images pull`"
-			}
-			notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, warnCell(reason)})
+			notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, reason(labelDigest)})
 		default:
 			latest++
 		}
@@ -192,6 +194,7 @@ func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes 
 	if latest > 0 {
 		section(fmt.Sprintf("%s  %d image(s) already latest", ui.GreenText("✓"), latest))
 	}
+	notes.render(pr)
 
 	// Footer: remind the user to apply the tag changes.
 	if len(changes) > 0 && !dryRun {
@@ -205,10 +208,6 @@ func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes 
 	}
 }
 
-// notAppliedHint explains an images.ErrNotApplied row: the compose file names
-// an image the host doesn't have, usually a tag images upgrade just rewrote.
-const notAppliedHint = "not applied: the compose file changed since the last apply; run `dockform apply`"
-
 // tableCell is one table cell: its text, and an optional style applied after
 // padding so column widths come from the plain text.
 type tableCell struct {
@@ -217,10 +216,6 @@ type tableCell struct {
 }
 
 func plainCell(s string) tableCell { return tableCell{text: s} }
-
-func warnCell(s string) tableCell {
-	return tableCell{text: "! " + s, style: ui.YellowText}
-}
 
 // printTable prints rows under a faint bold header in the images check style,
 // padding every column but the last to its widest cell.
