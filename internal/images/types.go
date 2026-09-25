@@ -1,6 +1,9 @@
 package images
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // ImageStatus represents the check result for a single image.
 type ImageStatus struct {
@@ -9,6 +12,7 @@ type ImageStatus struct {
 	Image         string   // Full image reference as written in compose
 	CurrentTag    string   // Current tag
 	DigestStale   bool     // True if remote digest differs from local
+	NotApplied    bool     // True if the service doesn't run the image the compose file names: the file changed since the last apply
 	NewerTags     []string // Newer semver tags (empty if no tag_pattern or no newer tags)
 	HasTagPattern bool     // True if a dockform.tag_pattern label is set on this service
 	Error         string   // Non-empty if check failed for this image
@@ -35,7 +39,17 @@ type ServiceSpec struct {
 // a pulled-but-not-recreated container still appears stale), falling back to
 // the stored image digest when no container is running.
 // This is injected to avoid coupling to the docker CLI directly.
+//
+// When the service does not run the image the compose file names, because the
+// file changed since the last apply, it returns ErrNotApplied: comparing
+// digests would be meaningless, and the fix is an apply, not a pull.
 type LocalDigestFunc func(ctx context.Context, stackKey, service, imageRef string) (string, error)
+
+// ErrNotApplied is returned by a LocalDigestFunc when the service does not
+// run the image the compose file names: the host lacks it, or the container
+// was created from another tag. Typically images upgrade rewrote the tag and
+// nothing was applied yet.
+var ErrNotApplied = errors.New("the service does not run the compose file's image; the compose file changed since the last apply")
 
 // FileChange represents a tag rewrite in a compose file.
 type FileChange struct {

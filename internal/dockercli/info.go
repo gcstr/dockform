@@ -69,31 +69,38 @@ func (c *Client) ImageInspectRepoDigests(ctx context.Context, imageRef string) (
 	return digests, nil
 }
 
-// ComposeContainerImageMap returns a map of "project|service" → full image ID
-// (sha256:…) for every running compose container on the daemon.
-// A single docker ps call is used so cost is constant regardless of container count.
-// Best-effort: returns nil on failure.
-func (c *Client) ComposeContainerImageMap(ctx context.Context) (map[string]string, error) {
+// RunningImage is the image a running compose container was created from.
+type RunningImage struct {
+	ID  string // full image ID (sha256:…), from compose's com.docker.compose.image label
+	Ref string // the image as the container names it; an image ID instead once its tag moved to another image
+}
+
+// ComposeContainerImageMap returns a map of "project|service" → the image
+// every running compose container was created from.
+// A single docker ps call is used so cost is constant regardless of container
+// count. docker ps has no image ID field, so the ID comes from the label
+// compose sets on each container.
+func (c *Client) ComposeContainerImageMap(ctx context.Context) (map[string]RunningImage, error) {
 	out, err := c.exec.Run(ctx,
 		"ps",
 		"--no-trunc",
 		"--filter", "label=com.docker.compose.service",
-		"--format", `{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.ImageID}}`,
+		"--format", `{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.Label "com.docker.compose.image"}}|{{.Image}}`,
 	)
 	if err != nil {
 		return nil, err
 	}
-	result := make(map[string]string)
+	result := make(map[string]RunningImage)
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "|", 3)
-		if len(parts) != 3 || parts[0] == "" || parts[1] == "" {
+		parts := strings.SplitN(line, "|", 4)
+		if len(parts) != 4 || parts[0] == "" || parts[1] == "" {
 			continue
 		}
-		result[parts[0]+"|"+parts[1]] = parts[2]
+		result[parts[0]+"|"+parts[1]] = RunningImage{ID: parts[2], Ref: parts[3]}
 	}
 	return result, nil
 }
@@ -133,6 +140,24 @@ func (c *Client) ImageRepoDigestMap(ctx context.Context, imageIDs []string) (map
 		}
 	}
 	return result, nil
+}
+
+// LocalImageRefs lists every repository:tag stored on the daemon in a single
+// docker image ls call. Untagged images are left out.
+func (c *Client) LocalImageRefs(ctx context.Context) ([]string, error) {
+	out, err := c.exec.Run(ctx, "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
+	if err != nil {
+		return nil, err
+	}
+	var refs []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.Contains(line, "<none>") {
+			continue
+		}
+		refs = append(refs, line)
+	}
+	return refs, nil
 }
 
 // ImageExists returns true if the given image is present locally in the configured context.
