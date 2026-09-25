@@ -146,12 +146,12 @@ func TestLLMCommand_PrintsGuide(t *testing.T) {
 	root := cli.TestNewRootCmd()
 	var out strings.Builder
 	root.SetOut(&out)
-	root.SetArgs([]string{"llm"})
+	root.SetArgs([]string{"llm", "--no-project"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("dockform llm: %v", err)
 	}
 	if out.String() != llmcmd.Render() {
-		t.Error("dockform llm should print the rendered guide")
+		t.Error("dockform llm --no-project should print exactly the rendered guide")
 	}
 	if strings.Contains(out.String(), "{{.Version}}") {
 		t.Error("the version placeholder was not filled in")
