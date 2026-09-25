@@ -27,6 +27,9 @@ func LoadConfigWithWarnings(cmd *cobra.Command, pr ui.Printer) (*manifest.Config
 		for _, name := range missing {
 			pr.Warn("environment variable %s is not set; replacing with empty string", name)
 		}
+		for _, w := range cfg.DeprecationWarnings() {
+			pr.Warn("%s", w)
+		}
 		return &cfg, nil
 	}
 	return nil, err
