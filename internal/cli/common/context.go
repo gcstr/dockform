@@ -34,27 +34,57 @@ func (ctx *CLIContext) GetDefaultClient() *dockercli.Client {
 	return ctx.Factory.GetClientForContext(name, ctx.Config)
 }
 
-// SetupCLIContext performs the standard CLI setup: load config, create client factory, validate, and create planner.
+// SetupCLIContext performs the standard CLI setup: connect to the manifest's
+// contexts (see ConnectContexts), validate, and create a planner.
 func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
+	clictx, parallel, err := ConnectContexts(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate in spinner
+	pr := clictx.Printer.(ui.StdPrinter)
+	err = SpinnerOperation(pr, "Validating...", func() error {
+		return ValidateWithFactory(cmd.Context(), clictx.Config, clictx.Factory)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Create planner with factory
+	plan := CreatePlannerWithFactory(clictx.Factory, pr)
+	if parallel == 1 {
+		plan = plan.WithParallel(false)
+	}
+	clictx.Planner = plan
+	return clictx, nil
+}
+
+// ConnectContexts is the setup every command that talks to the manifest's
+// Docker contexts needs: resolve --ssh-transport and --parallel, load the
+// manifest, apply target flags, open the SSH transport, and check that every
+// selected context is reachable. The returned CLIContext has no Planner. The
+// resolved --parallel value is returned alongside it.
+func ConnectContexts(cmd *cobra.Command) (*CLIContext, int, error) {
 	pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 
 	// Resolve the SSH transport first so a bad value fails before any work.
 	transport, warnings, err := ResolveSSHTransport(cmd)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	for _, w := range warnings {
 		pr.Warn("%s", w)
 	}
 	parallel, err := ResolveParallel(cmd)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Load configuration with warnings
 	cfg, err := LoadConfigWithWarnings(cmd, pr)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Apply target filtering if flags are registered
@@ -63,7 +93,7 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 		if !opts.IsEmpty() {
 			cfg, err = ResolveTargets(cfg, opts)
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 		}
 	}
@@ -76,7 +106,7 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	transport = EffectiveSSHTransport(cmd, transport)
 	if transport == SSHTransportTunnel {
 		if err := ActivateSSHTunnels(cmd, cfg); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
 
@@ -86,33 +116,18 @@ func SetupCLIContext(cmd *cobra.Command) (*CLIContext, error) {
 	// Fail fast (bounded) if any selected context's daemon is unreachable, before
 	// validation does any unbounded per-context daemon work.
 	if err := EnsureContextsReachable(cmd.Context(), cfg, factory); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Install run-scoped SSH multiplexing (best-effort) before any docker work.
 	ActivateSSHMux(cmd, cfg, transport)
-
-	// Validate in spinner
-	err = SpinnerOperation(pr, "Validating...", func() error {
-		return ValidateWithFactory(cmd.Context(), cfg, factory)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Create planner with factory
-	plan := CreatePlannerWithFactory(factory, pr)
-	if parallel == 1 {
-		plan = plan.WithParallel(false)
-	}
 
 	return &CLIContext{
 		Ctx:     cmd.Context(),
 		Config:  cfg,
 		Factory: factory,
 		Printer: pr,
-		Planner: plan,
-	}, nil
+	}, parallel, nil
 }
 
 // BuildPlan creates a plan using the CLI context with spinner UI.

@@ -81,32 +81,13 @@ available in scope.`,
 }
 
 func runCheck(cmd *cobra.Command, args []string) error {
-	pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-
-	// Load configuration with warnings.
-	cfg, err := common.LoadConfigWithWarnings(cmd, pr)
+	// Same setup as plan/apply: SSH transport, target flags, reachability.
+	clictx, _, err := common.ConnectContexts(cmd)
 	if err != nil {
 		return err
 	}
-
-	// Apply target filtering if flags are provided.
-	opts := common.ReadTargetOptions(cmd)
-	if !opts.IsEmpty() {
-		cfg, err = common.ResolveTargets(cfg, opts)
-		if err != nil {
-			return err
-		}
-	}
-
-	common.DisplayDaemonInfo(pr, cfg)
-
-	// Create client factory for multi-context support.
-	factory := common.CreateClientFactory()
-
-	// imagescmd doesn't use SetupCLIContext, so probe context reachability here.
-	if err := common.EnsureContextsReachable(cmd.Context(), cfg, factory); err != nil {
-		return err
-	}
+	pr := clictx.Printer.(ui.StdPrinter)
+	cfg, factory := clictx.Config, clictx.Factory
 
 	// Create registry client.
 	reg := registry.NewOCIClient(nil)

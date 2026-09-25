@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -222,9 +223,45 @@ func checkContextsReachable(ctx context.Context, cmd *cobra.Command, ctxOverride
 			"Note: manifest contexts were not checked (no manifest loaded); only the active context was probed.")}
 	}
 
+	// Probe through the transport apply would use, so a context that answers
+	// only through docker's own ssh helper does not pass. Tunnels are opened
+	// before any client exists; mux installs nothing before plan/apply's own
+	// reachability probes, so it needs nothing here.
+	var tunnelFailures []common.TunnelFailure
+	transport, _, err := common.ResolveSSHTransport(cmd)
+	if err != nil {
+		return []checkResult{{id: "ssh-transport", title: "SSH transport", status: StatusFail, summary: "invalid", errMsg: err.Error()}}
+	}
+	if common.EffectiveSSHTransport(cmd, transport) == common.SSHTransportTunnel {
+		tunnelFailures, err = common.ActivateSSHTunnelsPartial(cmd, cfg)
+		if err != nil {
+			return []checkResult{{id: "ssh-transport", title: "SSH transport", status: StatusFail, summary: "could not start", errMsg: err.Error()}}
+		}
+	}
+
+	// Contexts whose tunnel failed are reported as such, not probed again.
+	probeCfg := *cfg
+	probeCfg.Contexts = make(map[string]manifest.ContextConfig, len(cfg.Contexts))
+	for name, cc := range cfg.Contexts {
+		probeCfg.Contexts[name] = cc
+	}
+	for _, f := range tunnelFailures {
+		delete(probeCfg.Contexts, f.Context)
+	}
+
 	factory := common.CreateClientFactory()
-	probeResults := common.ProbeContextsReachability(ctx, cfg, factory)
-	results := make([]checkResult, 0, len(probeResults))
+	probeResults := common.ProbeContextsReachability(ctx, &probeCfg, factory)
+	results := make([]checkResult, 0, len(cfg.Contexts))
+	for _, f := range tunnelFailures {
+		results = append(results, checkResult{
+			id:      fmt.Sprintf("context:%s", f.Context),
+			title:   fmt.Sprintf("Context %q reachable", f.Context),
+			status:  StatusFail,
+			summary: "SSH tunnel failed",
+			errMsg:  f.Cause(),
+			note:    "Remedy: Check that ssh to this host works without a prompt and that sshd allows socket forwarding (AllowStreamLocalForwarding), or use --ssh-transport=mux.",
+		})
+	}
 	for _, r := range probeResults {
 		id := fmt.Sprintf("context:%s", r.Name)
 		if r.Reachable() {
@@ -245,6 +282,7 @@ func checkContextsReachable(ctx context.Context, cmd *cobra.Command, ctxOverride
 			note:    "Remedy: Verify the host is up and the Docker context is correct (docker context ls).",
 		})
 	}
+	sort.SliceStable(results, func(i, j int) bool { return results[i].id < results[j].id })
 	return results
 }
 

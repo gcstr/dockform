@@ -39,29 +39,13 @@ services available in scope.`,
 }
 
 func runPull(cmd *cobra.Command, args []string) error {
-	pr := ui.StdPrinter{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-
-	cfg, err := common.LoadConfigWithWarnings(cmd, pr)
+	// Same setup as plan/apply: SSH transport, target flags, reachability.
+	clictx, _, err := common.ConnectContexts(cmd)
 	if err != nil {
 		return err
 	}
-
-	opts := common.ReadTargetOptions(cmd)
-	if !opts.IsEmpty() {
-		cfg, err = common.ResolveTargets(cfg, opts)
-		if err != nil {
-			return err
-		}
-	}
-
-	common.DisplayDaemonInfo(pr, cfg)
-
-	factory := common.CreateClientFactory()
-
-	// imagescmd doesn't use SetupCLIContext, so probe context reachability here.
-	if err := common.EnsureContextsReachable(cmd.Context(), cfg, factory); err != nil {
-		return err
-	}
+	pr := clictx.Printer.(ui.StdPrinter)
+	cfg, factory := clictx.Config, clictx.Factory
 
 	reg := registry.NewOCIClient(nil)
 

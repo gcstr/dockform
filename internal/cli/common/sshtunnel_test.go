@@ -225,3 +225,73 @@ func TestActivateSSHTunnels_ForwardingRefusedNamesBothCauses(t *testing.T) {
 		t.Errorf("no reopen when the host reports the default socket, got %d opens", len(*calls))
 	}
 }
+
+func TestActivateSSHTunnels_OneFailureOpensNothing(t *testing.T) {
+	stubTunnelDeps(t, map[string]string{"good": "ssh://good", "bad": "ssh://bad"},
+		map[string]error{"bad": errors.New("ssh exited before the tunnel was ready: Permission denied (publickey)")},
+		nil, okCheck, "")
+	root, leaf := newTunnelCmd(t)
+	cfg := &manifest.Config{Contexts: map[string]manifest.ContextConfig{"good": {}, "bad": {}}}
+
+	if err := ActivateSSHTunnels(leaf, cfg); err == nil {
+		t.Fatal("expected an error when one tunnel cannot open")
+	}
+	if cfg.Contexts["good"].Host != "" {
+		t.Errorf("all-or-nothing: the working context must not be rewritten, got %q", cfg.Contexts["good"].Host)
+	}
+	if v := root.Context().Value(sshTunnelKey{}); v != nil {
+		t.Error("no tunnel manager should remain installed after a failure")
+	}
+}
+
+func TestActivateSSHTunnelsPartial_KeepsWorkingTunnels(t *testing.T) {
+	stubTunnelDeps(t, map[string]string{"good": "ssh://good", "bad": "ssh://bad"},
+		map[string]error{"bad": errors.New("ssh exited before the tunnel was ready: Permission denied (publickey)")},
+		nil, okCheck, "")
+	root, leaf := newTunnelCmd(t)
+	cfg := &manifest.Config{Contexts: map[string]manifest.ContextConfig{"good": {}, "bad": {}}}
+
+	failures, err := ActivateSSHTunnelsPartial(leaf, cfg)
+	if err != nil {
+		t.Fatalf("ActivateSSHTunnelsPartial: %v", err)
+	}
+	if len(failures) != 1 || failures[0].Context != "bad" {
+		t.Fatalf("expected one failure for %q, got %+v", "bad", failures)
+	}
+	cause := failures[0].Cause()
+	if !strings.Contains(cause, "SSH tunnel to bad failed") || !strings.Contains(cause, "SSH authentication failed") || !strings.Contains(cause, "Permission denied") {
+		t.Errorf("cause should name the host, classify the failure and keep ssh's detail, got: %s", cause)
+	}
+	if cfg.Contexts["bad"].Host != "" {
+		t.Errorf("failed context must keep its original endpoint, got %q", cfg.Contexts["bad"].Host)
+	}
+	host := cfg.Contexts["good"].Host
+	if !strings.HasPrefix(host, "unix://") {
+		t.Fatalf("working context should point at its tunnel socket, got %q", host)
+	}
+
+	dir := filepath.Dir(strings.TrimPrefix(host, "unix://"))
+	TeardownSSHTransport(root)
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("tunnel dir should be removed after teardown, stat err = %v", err)
+	}
+}
+
+func TestActivateSSHTunnelsPartial_AllFailInstallsNothing(t *testing.T) {
+	stubTunnelDeps(t, map[string]string{"bad": "ssh://bad"},
+		map[string]error{"bad": errors.New("ssh exited before the tunnel was ready: Connection refused")},
+		nil, okCheck, "")
+	root, leaf := newTunnelCmd(t)
+	cfg := &manifest.Config{Contexts: map[string]manifest.ContextConfig{"bad": {}}}
+
+	failures, err := ActivateSSHTunnelsPartial(leaf, cfg)
+	if err != nil {
+		t.Fatalf("ActivateSSHTunnelsPartial: %v", err)
+	}
+	if len(failures) != 1 {
+		t.Fatalf("expected one failure, got %+v", failures)
+	}
+	if v := root.Context().Value(sshTunnelKey{}); v != nil {
+		t.Error("no tunnel manager should be installed when every tunnel failed")
+	}
+}
