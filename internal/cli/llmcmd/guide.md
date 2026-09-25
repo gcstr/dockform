@@ -31,7 +31,8 @@ there is no state file: everything dockform creates carries the Docker label
   that layout. They are not discovered, so nothing above is loaded for them
   automatically.
 - **Secrets never touch disk.** Decrypted values go to compose as environment
-  variables, and the rendered compose document is piped over stdin.
+  variables, and the rendered compose document is piped over stdin. They reach
+  a container only through its `environment:` list (see below).
 
 ## Manifest reference
 
@@ -102,6 +103,63 @@ stacks:                           # optional: add to discovered stacks, or decla
   `dockform.tag_pattern`, e.g. `"^\\d+\\.\\d+\\.\\d+$$"` (compose needs `$$`
   for a literal `$`).
 
+## Writing compose files for dockform
+
+Compose doesn't enforce these, so getting them wrong fails silently:
+
+1. **Fileset volumes are external.** Declare `<stack>_<fileset>` with
+   `external: true`. Otherwise compose creates its own empty
+   `<project>_<name>` volume, and the synced files never show up.
+2. **Context networks and volumes are external too.** Anything under
+   `contexts.<ctx>.networks` or `contexts.<ctx>.volumes` is created by
+   dockform: reference it by its exact name with `external: true`.
+3. **Env and secrets reach a container only when listed.** Values from
+   `environment.env`, `secrets.env` and `environment.inline` are variables for
+   compose. A service gets one only through its `environment:` list, or a
+   `${VAR}` elsewhere in the file.
+
+A complete stack:
+
+```
+hetzner-one/web/
+├── compose.yaml
+├── environment.env        # SITE_NAME=Example
+├── secrets.env            # SOPS-encrypted: DB_PASSWORD=...
+└── volumes/
+    └── config/            # fileset "config", synced into the volume web_config
+        └── default.conf
+```
+
+```yaml
+# hetzner-one/web/compose.yaml
+services:
+  web:
+    image: nginx:1.27
+    environment:
+      - SITE_NAME            # from environment.env
+      - DB_PASSWORD          # from secrets.env
+    volumes:
+      - web_config:/etc/nginx/conf.d:ro
+    networks: [traefik]
+
+volumes:
+  web_config:
+    external: true           # the fileset's volume
+
+networks:
+  traefik:
+    external: true           # declared in dockform.yml, below
+```
+
+```yaml
+# dockform.yml
+identifier: homeserver
+contexts:
+  hetzner-one:
+    networks:
+      traefik: {}
+```
+
 ## Commands
 
 Global: `--manifest <path>`, `--ssh-transport tunnel|mux|direct` (default
@@ -133,12 +191,18 @@ Targeting (plan, apply, destroy, images): `--context <ctx>`,
 
 - **Add a stack**: create `<context>/<name>/compose.yaml`, then `plan` and `apply`.
 - **Add a secret**: `dockform secrets edit <context>/<stack>/secrets.env`,
-  reference `${NAME}` in the compose file, then apply.
+  list `NAME` under the service's `environment:`, then apply.
 - **Ship config files into a container**: put them in
-  `<context>/<stack>/volumes/<name>/` and mount the volume `<stack>_<name>`.
+  `<context>/<stack>/volumes/<name>/` and mount the volume `<stack>_<name>`,
+  declared `external: true`.
 - **Update images**: `images check`. New tags: `images upgrade`, then `apply`.
   Same tag, new content: `images pull --recreate`.
 - **Work on one host or stack**: add `--context <ctx>` or `--stack <ctx/stack>`.
+- **When something fails**: `dockform validate` checks the manifest and compose
+  files, `dockform doctor` checks tools and hosts, and every apply leaves a
+  debug log in `.dockform/logs/`.
+- **Anything not covered here**: https://dockform.io/ (manifest and command
+  reference), or `dockform <command> --help`.
 
 ## Rules for agents
 

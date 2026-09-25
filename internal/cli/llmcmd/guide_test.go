@@ -18,14 +18,24 @@ import (
 // The guide is hand-written, so these tests are what keep it honest: a new
 // manifest key or command fails CI until the guide describes it.
 
-// manifestExample returns the guide's annotated dockform.yml.
-func manifestExample(t *testing.T) string {
+// yamlBlockAfter returns the first ```yaml block after marker in the guide.
+func yamlBlockAfter(t *testing.T, marker string) string {
 	t.Helper()
-	m := regexp.MustCompile("(?s)```yaml\n(.*?)```").FindStringSubmatch(llmcmd.Render())
+	guide := llmcmd.Render()
+	i := strings.Index(guide, marker)
+	if i < 0 {
+		t.Fatalf("guide has no %q", marker)
+	}
+	m := regexp.MustCompile("(?s)```yaml\n(.*?)```").FindStringSubmatch(guide[i:])
 	if m == nil {
-		t.Fatal("guide has no ```yaml manifest example")
+		t.Fatalf("guide has no ```yaml block after %q", marker)
 	}
 	return m[1]
+}
+
+// manifestExample returns the guide's annotated dockform.yml.
+func manifestExample(t *testing.T) string {
+	return yamlBlockAfter(t, "## Manifest reference")
 }
 
 // yamlKeys collects every yaml key reachable from t.
