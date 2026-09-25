@@ -26,6 +26,7 @@ type infoExecStub struct {
 	imageInspectErr error
 
 	imageLsOut string
+	psOut      string
 }
 
 func (s *infoExecStub) Run(ctx context.Context, args ...string) (string, error) {
@@ -39,6 +40,8 @@ func (s *infoExecStub) Run(ctx context.Context, args ...string) (string, error) 
 		return s.composeShortOut, s.composeShortErr
 	case len(args) == 2 && args[0] == "compose" && args[1] == "version":
 		return s.composeLongOut, s.composeLongErr
+	case len(args) >= 1 && args[0] == "ps":
+		return s.psOut, nil
 	case len(args) >= 2 && args[0] == "image" && args[1] == "ls":
 		return s.imageLsOut, nil
 	case len(args) >= 3 && args[0] == "image" && args[1] == "inspect":
@@ -193,5 +196,30 @@ func TestLocalImageRefs_SkipsUntaggedImages(t *testing.T) {
 	}
 	if len(stub.calls) != 1 {
 		t.Fatalf("expected a single docker call, got %#v", stub.calls)
+	}
+}
+
+// docker ps has no ImageID field, so asking for one failed on every daemon and
+// silently disabled the running-image lookup. The ID comes from compose's label.
+func TestComposeContainerImageMap_ReadsComposeImageLabel(t *testing.T) {
+	stub := &infoExecStub{psOut: "navidrome|navidrome|sha256:2b27|deluan/navidrome:0.64.1\n" +
+		"paperless|paperless-redis|sha256:00c3|sha256:00c3\n" +
+		"|orphan|sha256:ffff|x:1\n"}
+	c := &Client{exec: stub}
+
+	got, err := c.ComposeContainerImageMap(context.Background())
+	if err != nil {
+		t.Fatalf("ComposeContainerImageMap: %v", err)
+	}
+	want := map[string]RunningImage{
+		"navidrome|navidrome":       {ID: "sha256:2b27", Ref: "deluan/navidrome:0.64.1"},
+		"paperless|paperless-redis": {ID: "sha256:00c3", Ref: "sha256:00c3"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	format := stub.calls[0][len(stub.calls[0])-1]
+	if strings.Contains(format, ".ImageID") || !strings.Contains(format, `{{.Label "com.docker.compose.image"}}`) {
+		t.Errorf("format must read the compose image label, not the nonexistent .ImageID field: %s", format)
 	}
 }

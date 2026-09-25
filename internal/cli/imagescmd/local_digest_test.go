@@ -5,18 +5,19 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/images"
 )
 
 type fakeLocalImages struct {
-	running   map[string]string // "project|service" → image ID
+	running   map[string]dockercli.RunningImage
 	digests   map[string]string // image ID → repo digest
 	refs      []string          // docker image ls output
 	refsErr   error
 	inspected map[string]string // image ref → repo digest, for the no-container fallback
 }
 
-func (f *fakeLocalImages) ComposeContainerImageMap(context.Context) (map[string]string, error) {
+func (f *fakeLocalImages) ComposeContainerImageMap(context.Context) (map[string]dockercli.RunningImage, error) {
 	return f.running, nil
 }
 
@@ -41,7 +42,7 @@ func lookupWith(f *fakeLocalImages) images.LocalDigestFunc {
 // The host has 0.64.1 (running) but not 0.64.2, which the compose file names.
 func TestLocalDigest_UpgradedTagNotOnHostIsNotApplied(t *testing.T) {
 	f := &fakeLocalImages{
-		running: map[string]string{"navidrome|navidrome": "sha256:old"},
+		running: map[string]dockercli.RunningImage{"navidrome|navidrome": {ID: "sha256:old", Ref: "deluan/navidrome:0.64.1"}},
 		digests: map[string]string{"sha256:old": "sha256:A"},
 		refs:    []string{"deluan/navidrome:0.64.1"},
 	}
@@ -59,11 +60,26 @@ func TestLocalDigest_NotRunningAndNotOnHostIsNotApplied(t *testing.T) {
 	}
 }
 
-// Pulled but not recreated: the host has the compose image, the container
-// still runs the old one. That stays digest drift (pull --recreate fixes it).
+// The reported follow-up: the upgraded tag was then pulled, so the host has
+// it, but the container still runs the tag it was created with.
+func TestLocalDigest_UpgradedTagPulledButNotAppliedIsNotApplied(t *testing.T) {
+	f := &fakeLocalImages{
+		running: map[string]dockercli.RunningImage{"navidrome|navidrome": {ID: "sha256:old", Ref: "deluan/navidrome:0.64.1"}},
+		digests: map[string]string{"sha256:old": "sha256:A"},
+		refs:    []string{"deluan/navidrome:0.64.1", "deluan/navidrome:0.64.2"},
+	}
+	_, err := lookupWith(f)(context.Background(), "one/navidrome", "navidrome", "deluan/navidrome:0.64.2")
+	if !errors.Is(err, images.ErrNotApplied) {
+		t.Fatalf("expected ErrNotApplied, got %v", err)
+	}
+}
+
+// Pulled but not recreated: a newer image was pulled under the same tag, so
+// docker names the container's image by ID. That stays digest drift, which
+// pull --recreate fixes.
 func TestLocalDigest_PulledButNotRecreatedComparesRunningImage(t *testing.T) {
 	f := &fakeLocalImages{
-		running: map[string]string{"navidrome|navidrome": "sha256:old"},
+		running: map[string]dockercli.RunningImage{"navidrome|navidrome": {ID: "sha256:old", Ref: "sha256:old"}},
 		digests: map[string]string{"sha256:old": "sha256:A"},
 		refs:    []string{"deluan/navidrome:0.64.2"},
 	}
@@ -114,5 +130,17 @@ func TestLocalRefKey(t *testing.T) {
 		if got != tc.want || ok != tc.ok {
 			t.Errorf("localRefKey(%q) = %q, %v; want %q, %v", tc.in, got, ok, tc.want, tc.ok)
 		}
+	}
+}
+
+func TestLocalDigest_RunningComposeImageUsesItsDigest(t *testing.T) {
+	f := &fakeLocalImages{
+		running: map[string]dockercli.RunningImage{"navidrome|navidrome": {ID: "sha256:cur", Ref: "deluan/navidrome:0.64.2"}},
+		digests: map[string]string{"sha256:cur": "sha256:B"},
+		refs:    []string{"deluan/navidrome:0.64.2"},
+	}
+	digest, err := lookupWith(f)(context.Background(), "one/navidrome", "navidrome", "docker.io/deluan/navidrome:0.64.2")
+	if err != nil || digest != "sha256:B" {
+		t.Fatalf("expected the running image's digest, got %q, %v", digest, err)
 	}
 }

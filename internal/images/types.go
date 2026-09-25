@@ -12,7 +12,7 @@ type ImageStatus struct {
 	Image         string   // Full image reference as written in compose
 	CurrentTag    string   // Current tag
 	DigestStale   bool     // True if remote digest differs from local
-	NotApplied    bool     // True if the image the compose file names is not on the host: the file changed since the last apply
+	NotApplied    bool     // True if the service doesn't run the image the compose file names: the file changed since the last apply
 	NewerTags     []string // Newer semver tags (empty if no tag_pattern or no newer tags)
 	HasTagPattern bool     // True if a dockform.tag_pattern label is set on this service
 	Error         string   // Non-empty if check failed for this image
@@ -40,15 +40,16 @@ type ServiceSpec struct {
 // the stored image digest when no container is running.
 // This is injected to avoid coupling to the docker CLI directly.
 //
-// When the image the compose file names is not on the host at all, it returns
-// ErrNotApplied: there is no local digest to compare, and the fix is an apply,
-// not a pull.
+// When the service does not run the image the compose file names, because the
+// file changed since the last apply, it returns ErrNotApplied: comparing
+// digests would be meaningless, and the fix is an apply, not a pull.
 type LocalDigestFunc func(ctx context.Context, stackKey, service, imageRef string) (string, error)
 
-// ErrNotApplied is returned by a LocalDigestFunc when the host does not have
-// the image the compose file names, typically because the tag was changed
-// (for example by images upgrade) and not applied yet.
-var ErrNotApplied = errors.New("image not on the host; the compose file changed since the last apply")
+// ErrNotApplied is returned by a LocalDigestFunc when the service does not
+// run the image the compose file names: the host lacks it, or the container
+// was created from another tag. Typically images upgrade rewrote the tag and
+// nothing was applied yet.
+var ErrNotApplied = errors.New("the service does not run the compose file's image; the compose file changed since the last apply")
 
 // FileChange represents a tag rewrite in a compose file.
 type FileChange struct {

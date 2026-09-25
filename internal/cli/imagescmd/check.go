@@ -222,13 +222,14 @@ func buildCheckInputs(ctx context.Context, cfg *manifest.Config, getClient clien
 // ensures that a service whose image has been pulled but not yet recreated
 // still appears stale — the container is still running the old image.
 //
-// When the image the compose file names is not on the host at all, it returns
+// When the service does not run the image the compose file names (the host
+// lacks it, or the container was created from another tag), it returns
 // images.ErrNotApplied instead of a digest: the file changed since the last
 // apply (images upgrade rewrote the tag, say), and a pull is the wrong fix.
 //
 // Performance: three calls are issued per Docker context (daemon), regardless
 // of how many services or stacks share that context:
-//  1. docker ps   — maps every running compose container to its image ID
+//  1. docker ps   — maps every running compose container to the image it runs
 //  2. docker image inspect (batched) — maps each image ID to its repo digest
 //  3. docker image ls — every repository:tag stored on the host
 //
@@ -246,7 +247,7 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 // localImageClient is the subset of *dockercli.Client the local digest lookup
 // needs, so tests can fake the daemon.
 type localImageClient interface {
-	ComposeContainerImageMap(ctx context.Context) (map[string]string, error)
+	ComposeContainerImageMap(ctx context.Context) (map[string]dockercli.RunningImage, error)
 	ImageRepoDigestMap(ctx context.Context, imageIDs []string) (map[string]string, error)
 	LocalImageRefs(ctx context.Context) ([]string, error)
 	ImageInspectRepoDigests(ctx context.Context, imageRef string) ([]string, error)
@@ -254,10 +255,10 @@ type localImageClient interface {
 
 func newLocalDigestFunc(getClient func(ctxName string) localImageClient, projects map[string]string) images.LocalDigestFunc {
 	type ctxCache struct {
-		containerImageID map[string]string // "project|service" → full image ID
-		imageDigest      map[string]string // full image ID → repo digest (sha256:…)
-		localRefs        map[string]bool   // localRefKey of every image stored on the host
-		refsListed       bool              // false when image ls failed: skip the not-applied check
+		running     map[string]dockercli.RunningImage // "project|service" → image the container runs
+		imageDigest map[string]string                 // full image ID → repo digest (sha256:…)
+		localRefs   map[string]bool                   // localRefKey of every image stored on the host
+		refsListed  bool                              // false when image ls failed: skip the not-applied check
 	}
 	cache := make(map[string]*ctxCache) // contextName → populated on first use
 
@@ -274,8 +275,8 @@ func newLocalDigestFunc(getClient func(ctxName string) localImageClient, project
 		cc, ok := cache[ctxName]
 		if !ok {
 			cc = &ctxCache{
-				containerImageID: make(map[string]string),
-				imageDigest:      make(map[string]string),
+				running:     make(map[string]dockercli.RunningImage),
+				imageDigest: make(map[string]string),
 			}
 
 			// One docker ps call for all compose containers on this daemon.
@@ -287,12 +288,13 @@ func newLocalDigestFunc(getClient func(ctxName string) localImageClient, project
 					"impact", "images on this context may be reported as stale")
 			}
 			if containerMap != nil {
-				cc.containerImageID = containerMap
+				cc.running = containerMap
 
 				// Collect unique image IDs, then batch-fetch their repo digests.
 				seen := make(map[string]struct{}, len(containerMap))
 				imageIDs := make([]string, 0, len(containerMap))
-				for _, id := range containerMap {
+				for _, ri := range containerMap {
+					id := ri.ID
 					if id == "" {
 						continue
 					}
@@ -335,9 +337,22 @@ func newLocalDigestFunc(getClient func(ctxName string) localImageClient, project
 
 		// Look up the running container's digest for this (stack, service).
 		proj := projects[stackKey]
+		ri, isRunning := cc.running[proj+"|"+service]
 
-		if imageID := cc.containerImageID[proj+"|"+service]; imageID != "" {
-			if digest := cc.imageDigest[imageID]; digest != "" {
+		// The container runs a different image than the compose file names
+		// (images upgrade rewrote the tag, then the new tag was pulled): an
+		// apply is what's missing. A Ref that is an image ID means the tag moved
+		// to a newer pull, which the digest comparison below reports.
+		if isRunning && !strings.HasPrefix(ri.Ref, "sha256:") {
+			running, okRunning := localRefKey(ri.Ref)
+			want, okWant := localRefKey(imageRef)
+			if okRunning && okWant && running != want {
+				return "", images.ErrNotApplied
+			}
+		}
+
+		if ri.ID != "" {
+			if digest := cc.imageDigest[ri.ID]; digest != "" {
 				return digest, nil
 			}
 		}
@@ -631,7 +646,7 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 	for _, r := range results {
 		if r.Error == "" && r.NotApplied {
 			pr.Plain("\n%s  %s", ui.YellowText("!"),
-				dimStyle.Render(`"not applied": the compose file names an image that isn't on the host yet. Run dockform apply.`))
+				dimStyle.Render(`"not applied": the compose file changed since the last apply, so the service doesn't run the image it names. Run dockform apply.`))
 			break
 		}
 	}
