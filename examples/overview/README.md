@@ -19,9 +19,9 @@ stacks:
       - docker-compose.yaml
     project:
       name: website
+    env-file:
+      - vars.env
     environment:
-      files:
-        - vars.env
       inline:
         - FOO=bar
         - BAZ=qux
