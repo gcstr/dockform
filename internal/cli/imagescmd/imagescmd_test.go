@@ -17,6 +17,9 @@ func newTestPrinter(buf *bytes.Buffer) ui.Printer {
 	return ui.StdPrinter{Out: buf, Err: buf}
 }
 
+// flat collapses whitespace, so assertions don't depend on where the legend wraps.
+func flat(s string) string { return strings.Join(strings.Fields(s), " ") }
+
 // stripANSI removes ANSI escape codes from a string for portable assertions.
 func stripANSI(s string) string {
 	return ui.StripANSI(s)
@@ -353,11 +356,11 @@ func TestRenderUpgradeTerminal_DigestStaleNoTagPattern(t *testing.T) {
 	renderUpgradeTerminal(pr, results, nil, map[string][]string{}, false)
 
 	got := stripANSI(buf.String())
-	if !strings.Contains(got, "no tag_pattern configured") {
-		t.Errorf("expected 'no tag_pattern configured', got: %q", got)
+	if !strings.Contains(got, "default/web  redis  7    digest changed") {
+		t.Errorf("expected a short digest changed reason, got: %q", got)
 	}
-	if !strings.Contains(got, "run `dockform images pull`") {
-		t.Errorf("expected 'dockform images pull' hint, got: %q", got)
+	if !strings.Contains(flat(got), "Run dockform images pull --recreate") {
+		t.Errorf("expected the legend to point at images pull --recreate, got: %q", got)
 	}
 	if strings.Contains(got, "docker compose pull") {
 		t.Errorf("hint should point at dockform, not raw compose, got: %q", got)
@@ -572,7 +575,7 @@ func TestRenderUpgradeTerminal_TagNotFoundIsNotUpgraded(t *testing.T) {
 	renderUpgradeTerminal(newTestPrinter(&buf), results, nil, map[string][]string{"default/web": {"/app/compose.yaml"}}, false)
 
 	got := stripANSI(buf.String())
-	if !strings.Contains(got, "1 image(s) not upgraded") || !strings.Contains(got, "1.27 available, but the tag was not found in the compose files") {
+	if !strings.Contains(got, "1 image(s) not upgraded") || !strings.Contains(got, "tag not found") || !strings.Contains(flat(got), "the current tag isn't in the compose files") {
 		t.Errorf("expected the image under not upgraded with the reason, got: %q", got)
 	}
 	if strings.Contains(got, "image(s) upgraded") {
@@ -594,8 +597,8 @@ func TestRenderUpgradeTerminal_LatestImagesAreOnlyCounted(t *testing.T) {
 	renderUpgradeTerminal(newTestPrinter(&buf), results, changes, map[string][]string{"default/web": {"/app/compose.yaml"}}, false)
 
 	got := stripANSI(buf.String())
-	for _, want := range []string{"1 image(s) upgraded", "1 image(s) not upgraded", "! name unknown", "2 image(s) already latest"} {
-		if !strings.Contains(got, want) {
+	for _, want := range []string{"1 image(s) upgraded", "1 image(s) not upgraded", "error", "default/db backup: name unknown", "2 image(s) already latest"} {
+		if !strings.Contains(flat(got), want) {
 			t.Errorf("missing %q, got: %q", want, got)
 		}
 	}
@@ -613,8 +616,8 @@ func TestRenderUpgradeTerminal_NotAppliedPointsAtApply(t *testing.T) {
 	var buf bytes.Buffer
 	renderUpgradeTerminal(newTestPrinter(&buf), []images.ImageStatus{notAppliedResult}, nil, map[string][]string{}, false)
 	got := stripANSI(buf.String())
-	if !strings.Contains(got, "not applied: the compose file changed since the last apply; run `dockform apply`") {
-		t.Errorf("expected the not-applied reason, got: %q", got)
+	if !strings.Contains(got, "0.64.2  not applied") || !strings.Contains(flat(got), "The compose file changed since the last apply. Run dockform apply") {
+		t.Errorf("expected a not applied reason explained in the legend, got: %q", got)
 	}
 	if strings.Contains(got, "images pull") || strings.Contains(got, "digest changed") {
 		t.Errorf("a not-applied image must not be sent to images pull, got: %q", got)
@@ -625,8 +628,8 @@ func TestRenderTerminal_NotAppliedNeedsAttention(t *testing.T) {
 	var buf bytes.Buffer
 	renderTerminal(newTestPrinter(&buf), []images.ImageStatus{notAppliedResult}, false)
 	got := stripANSI(buf.String())
-	for _, want := range []string{"1 image(s) need attention", "not applied", "Run dockform apply."} {
-		if !strings.Contains(got, want) {
+	for _, want := range []string{"1 image(s) need attention", "not applied", "Run dockform apply"} {
+		if !strings.Contains(flat(got), want) {
 			t.Errorf("missing %q, got: %q", want, got)
 		}
 	}
@@ -657,5 +660,54 @@ func TestRenderJSON_ReportsNotApplied(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), `"not_applied": true`) || !strings.Contains(buf.String(), `"digest_changed": false`) {
 		t.Errorf("expected not_applied true and digest_changed false, got: %s", buf.String())
+	}
+}
+
+func TestRenderUpgradeTerminal_LegendExplainsEachReasonOnce(t *testing.T) {
+	var buf bytes.Buffer
+	results := []images.ImageStatus{
+		{Stack: "one/a", Service: "a", Image: "a:1", CurrentTag: "1", DigestStale: true},
+		{Stack: "one/b", Service: "b", Image: "b:1", CurrentTag: "1", DigestStale: true},
+		{Stack: "one/c", Service: "c", Image: "c:1", CurrentTag: "1", NotApplied: true},
+	}
+	renderUpgradeTerminal(newTestPrinter(&buf), results, nil, map[string][]string{}, false)
+	got := stripANSI(buf.String())
+
+	if n := strings.Count(flat(got), "Run dockform images pull --recreate"); n != 1 {
+		t.Errorf("each reason should be explained once, found the digest hint %d times: %q", n, got)
+	}
+	if strings.Index(got, "  digest changed  ") > strings.Index(got, "  not applied  ") {
+		t.Errorf("legend should follow the table's order, got: %q", got)
+	}
+	for _, line := range strings.Split(got, "\n") {
+		if len([]rune(line)) > legendWidth {
+			t.Errorf("line wider than %d columns: %q", legendWidth, line)
+		}
+	}
+}
+
+func TestRenderTerminal_ErrorGoesToLegend(t *testing.T) {
+	var buf bytes.Buffer
+	results := []images.ImageStatus{
+		{Stack: "one/backup", Service: "backup", Image: "ghcr.io/acme/backup:1", CurrentTag: "1", Error: "name unknown: repository ghcr.io/acme/backup not found"},
+	}
+	renderTerminal(newTestPrinter(&buf), results, false)
+	got := stripANSI(buf.String())
+	if !strings.Contains(got, "one/backup  ghcr.io/acme/backup  1    -        error") {
+		t.Errorf("expected a short error cell in the row, got: %q", got)
+	}
+	if !strings.Contains(flat(got), "one/backup ghcr.io/acme/backup: name unknown: repository ghcr.io/acme/backup not found") {
+		t.Errorf("expected the full error in the legend, got: %q", got)
+	}
+}
+
+func TestWrapWords(t *testing.T) {
+	got := wrapWords("aa bb cc dd", 5)
+	want := []string{"aa bb", "cc dd"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("wrapWords = %q, want %q", got, want)
+	}
+	if got := wrapWords("averyveryverylongword x", 5); got[0] != "averyveryverylongword" || got[1] != "x" {
+		t.Errorf("a long word should get its own line, got %q", got)
 	}
 }
