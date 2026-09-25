@@ -183,6 +183,7 @@ Targeting (plan, apply, destroy, images): `--context <ctx>`,
 | `compose render [stack]` | Print a stack's resolved compose document, secrets masked. |
 | `manifest render` | Print the manifest after `${VAR}` interpolation. |
 | `init` | Create a starter dockform.yml. |
+| `llm setup` | Make agents load this guide: a block in AGENTS.md (and CLAUDE.md), plus a Claude Code SessionStart hook. |
 | `dashboard` | Full-screen TUI, for humans. |
 
 `dockform <command> --help` lists every flag.
