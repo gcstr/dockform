@@ -748,3 +748,32 @@ func TestMaskSecretsSimpleStrategiesAdditional(t *testing.T) {
 		t.Fatalf("expected token value to be redacted, got %s", preserve)
 	}
 }
+
+func TestLoadConfigWithWarningsEmitsDeprecations(t *testing.T) {
+	root := t.TempDir()
+	web := filepath.Join(root, "default", "web")
+	if err := os.MkdirAll(web, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for name, body := range map[string]string{"compose.yaml": "services:\n  web: {}\n", "extra.env": "EXTRA=1\n"} {
+		if err := os.WriteFile(filepath.Join(web, name), []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	path := filepath.Join(root, "dockform.yml")
+	writeManifest(t, path, "identifier: demo\ncontexts:\n  default: {}\nstacks:\n  default/web:\n    secrets:\n      sops: [extra.env]\n")
+
+	cmd := &cobra.Command{}
+	cmd.Flags().String("manifest", "", "")
+	cmd.SetContext(context.Background())
+	if err := cmd.Flags().Set("manifest", path); err != nil {
+		t.Fatalf("set flag: %v", err)
+	}
+	pr := &capturePrinter{}
+	if _, err := LoadConfigWithWarnings(cmd, pr); err != nil {
+		t.Fatalf("LoadConfigWithWarnings: %v", err)
+	}
+	if len(pr.warns) != 1 || !strings.Contains(pr.warns[0], "secrets.sops is deprecated") {
+		t.Fatalf("expected the secrets.sops deprecation warning, got %q", pr.warns)
+	}
+}
