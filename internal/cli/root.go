@@ -19,6 +19,7 @@ import (
 	"github.com/gcstr/dockform/internal/cli/doctorcmd"
 	"github.com/gcstr/dockform/internal/cli/imagescmd"
 	"github.com/gcstr/dockform/internal/cli/initcmd"
+	"github.com/gcstr/dockform/internal/cli/llmcmd"
 	"github.com/gcstr/dockform/internal/cli/manifestcmd"
 	"github.com/gcstr/dockform/internal/cli/plancmd"
 	"github.com/gcstr/dockform/internal/cli/secretcmd"
@@ -130,6 +131,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(doctorcmd.New())
 	cmd.AddCommand(dashboardcmd.New())
 	cmd.AddCommand(imagescmd.New())
+	cmd.AddCommand(llmcmd.New())
 
 	// Register optional developer-only commands
 	registerDocsCmd(cmd)
