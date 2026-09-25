@@ -25,7 +25,10 @@ func renderProject(in projectInput) string {
 	cfg := in.cfg
 	var b strings.Builder
 	b.WriteString("\n## This project\n\n")
-	b.WriteString("From the manifest and the stack directories. No Docker host was contacted.\n\n")
+	b.WriteString("From the manifest and the stack directories. No Docker host was contacted.\n")
+	b.WriteString("This reflects the repository when it was generated. If you add or move stacks,\n")
+	b.WriteString("secrets or filesets, refresh it with `dockform llm --project-only`; the rest of\n")
+	b.WriteString("the guide doesn't change.\n\n")
 	fmt.Fprintf(&b, "- Manifest: `%s`\n", in.manifestPath)
 	fmt.Fprintf(&b, "- Identifier: `%s`\n", cfg.Identifier)
 	fmt.Fprintf(&b, "- SOPS: %s\n", sopsSummary(cfg.Sops))

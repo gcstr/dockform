@@ -34,20 +34,30 @@ manifest key, the commands, common tasks, and rules to follow.
 Run inside a project, it ends with a "This project" section built from the
 manifest and the stack directories: contexts, stacks, env and secrets files,
 filesets, and warnings. That section is read locally; no Docker host is
-contacted.
+contacted. --project-only prints just that section, to refresh it without
+repeating the rest.
 
 It is meant to be loaded into an agent's context at the start of a session.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			out := Render()
-			if noProject, _ := cmd.Flags().GetBool("no-project"); !noProject {
-				out += projectSection(cmd)
+			var out string
+			noProject, _ := cmd.Flags().GetBool("no-project")
+			projectOnly, _ := cmd.Flags().GetBool("project-only")
+			switch {
+			case projectOnly:
+				out = strings.TrimPrefix(projectSection(cmd), "\n")
+			case noProject:
+				out = Render()
+			default:
+				out = Render() + projectSection(cmd)
 			}
 			_, err := fmt.Fprint(cmd.OutOrStdout(), out)
 			return err
 		},
 	}
 	cmd.Flags().Bool("no-project", false, "Leave out the \"This project\" section")
+	cmd.Flags().Bool("project-only", false, "Print only the \"This project\" section, to refresh it cheaply after changing the manifest or stacks")
+	cmd.MarkFlagsMutuallyExclusive("no-project", "project-only")
 	return cmd
 }
 

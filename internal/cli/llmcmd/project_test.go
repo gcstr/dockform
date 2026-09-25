@@ -151,3 +151,38 @@ func TestLLM_BrokenManifest(t *testing.T) {
 		t.Errorf("expected the load error in the project section, got:\n%s", out[strings.LastIndex(out, "##"):])
 	}
 }
+
+// --project-only is the cheap refresh the section itself points to: the
+// project part without repeating the guide.
+func TestLLM_ProjectOnly(t *testing.T) {
+	dir := writeProject(t)
+	full, _ := runLLM(t, "--manifest", dir)
+	only, _ := runLLM(t, "--manifest", dir, "--project-only")
+
+	if !strings.HasPrefix(only, "## This project\n") {
+		t.Errorf("--project-only should start with the section heading, got:\n%.200s", only)
+	}
+	if strings.Contains(only, "# Dockform (for AI agents)") || strings.Contains(only, "## Manifest reference") {
+		t.Error("--project-only must not repeat the guide")
+	}
+	if !strings.HasSuffix(full, only) {
+		t.Error("--project-only should print the same section the full output ends with")
+	}
+	if len(only)*3 > len(full) {
+		t.Errorf("refreshing should cost far less than the full guide: %d vs %d bytes", len(only), len(full))
+	}
+	if !strings.Contains(full, "refresh it with `dockform llm --project-only`") {
+		t.Error("the section should say how to refresh it cheaply")
+	}
+}
+
+func TestLLM_ProjectOnlyAndNoProjectConflict(t *testing.T) {
+	root := cli.TestNewRootCmd()
+	var b strings.Builder
+	root.SetOut(&b)
+	root.SetErr(&b)
+	root.SetArgs([]string{"llm", "--project-only", "--no-project"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected --project-only and --no-project to be rejected together")
+	}
+}
