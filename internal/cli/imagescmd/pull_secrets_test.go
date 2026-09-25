@@ -15,6 +15,7 @@ import (
 // recordingComposeClient captures the inline env passed to each compose call.
 type recordingComposeClient struct {
 	upInline     []string
+	upServices   []string
 	pullInline   []string
 	configInline []string
 	configDoc    dockercli.ComposeConfigDoc
@@ -30,8 +31,9 @@ func (c *recordingComposeClient) ComposePull(ctx context.Context, workingDir str
 	return "", nil
 }
 
-func (c *recordingComposeClient) ComposeUp(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, inlineEnv []string) (string, error) {
+func (c *recordingComposeClient) ComposeUpServices(ctx context.Context, workingDir string, files, profiles, envFiles []string, projectName string, services []string, inlineEnv []string) (string, error) {
 	c.upInline = inlineEnv
+	c.upServices = services
 	return "", nil
 }
 
@@ -76,7 +78,7 @@ func TestExecutePull_RecreateInjectsSopsSecrets(t *testing.T) {
 
 	for _, want := range []string{"FOO=bar", "DATABASE_PASSWORD=s3cret", "SECRET_KEY_BASE=abc123"} {
 		if !slices.Contains(client.upInline, want) {
-			t.Errorf("ComposeUp inline env missing %q; got %v", want, client.upInline)
+			t.Errorf("ComposeUpServices inline env missing %q; got %v", want, client.upInline)
 		}
 	}
 }
@@ -129,6 +131,23 @@ func TestExecutePull_FailsWhenSecretsCannotBeRead(t *testing.T) {
 		t.Fatal("expected an error when a stack's secrets cannot be read, got nil")
 	}
 	if client.upInline != nil {
-		t.Errorf("containers must not be recreated with unresolved secrets; ComposeUp got %v", client.upInline)
+		t.Errorf("containers must not be recreated with unresolved secrets; ComposeUpServices got %v", client.upInline)
+	}
+}
+
+func TestExecutePull_RecreateOnlyThePulledServices(t *testing.T) {
+	cfg, _ := secretStackFixture(t)
+	stale := []images.ImageStatus{
+		{Stack: "local/app", Service: "app", Image: "app:1", DigestStale: true},
+		{Stack: "local/app", Service: "worker", Image: "worker:1", DigestStale: true},
+	}
+	client := &recordingComposeClient{}
+	get := func(ctxName string) composeClient { return client }
+
+	if err := executePull(context.Background(), stale, cfg.GetAllStacks(), get, cfg, true); err != nil {
+		t.Fatalf("executePull: %v", err)
+	}
+	if !slices.Equal(client.upServices, []string{"app", "worker"}) {
+		t.Errorf("compose up should be scoped to the pulled services, got %v", client.upServices)
 	}
 }

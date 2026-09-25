@@ -195,8 +195,10 @@ func executePull(ctx context.Context, stale []images.ImageStatus, allStacks map[
 			return err
 		}
 
+		// Recreate only the pulled services: a whole-stack up would also start
+		// stopped services and apply unrelated drift the preview never showed.
 		if recreate {
-			if _, err := client.ComposeUp(ctx, g.stack.RootAbs, g.stack.Files, g.stack.Profiles, g.stack.EnvFile, projName, inline); err != nil {
+			if _, err := client.ComposeUpServices(ctx, g.stack.RootAbs, g.stack.Files, g.stack.Profiles, g.stack.EnvFile, projName, g.services, inline); err != nil {
 				return err
 			}
 		}
