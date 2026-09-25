@@ -118,8 +118,11 @@ type Project struct {
 	Name string `yaml:"name"`
 }
 
-// Environment holds environment file references and inline variables.
+// Environment holds inline variables for a stack. Env files come from the
+// stack directory (discovery.environment_file).
 type Environment struct {
+	// Files is rejected by validation with a pointer to the discovered env
+	// file. It is kept so that error, not a generic unknown-key one, is shown.
 	Files  []string `yaml:"files"`
 	Inline []string `yaml:"inline"`
 }

@@ -748,3 +748,37 @@ func TestGetAllSopsSecrets(t *testing.T) {
 		t.Errorf("missing expected secrets: %v", secrets)
 	}
 }
+
+func TestNormalize_RejectsEnvironmentFiles(t *testing.T) {
+	cfg := Config{
+		Identifier: "demo",
+		Contexts:   map[string]ContextConfig{"default": {}},
+		Stacks: map[string]Stack{
+			"default/web": {Root: "web", Environment: &Environment{Files: []string{"prod.env"}}},
+		},
+	}
+	err := cfg.normalizeAndValidate(t.TempDir())
+	if err == nil {
+		t.Fatal("expected environment.files to be rejected, not silently ignored")
+	}
+	for _, want := range []string{"default/web", "environment.files is not supported", "environment.env", "environment.inline"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q, got: %v", want, err)
+		}
+	}
+}
+
+func TestNormalize_EnvironmentFilesErrorNamesTheConfiguredEnvFile(t *testing.T) {
+	cfg := Config{
+		Identifier: "demo",
+		Discovery:  DiscoveryConfig{EnvironmentFile: ".env"},
+		Contexts:   map[string]ContextConfig{"default": {}},
+		Stacks: map[string]Stack{
+			"default/web": {Root: "web", Environment: &Environment{Files: []string{"prod.env"}}},
+		},
+	}
+	err := cfg.normalizeAndValidate(t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "the stack's .env") {
+		t.Fatalf("error should name the configured env file, got: %v", err)
+	}
+}

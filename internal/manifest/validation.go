@@ -95,6 +95,14 @@ func (c *Config) normalizeAndValidate(baseDir string) error {
 			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "stack %s: references unknown context %q", stackKey, context)
 		}
 
+		// environment.files was parsed but never used. Env files come from the
+		// stack directory by convention, so reject it rather than ignore it.
+		if stack.Environment != nil && len(stack.Environment.Files) > 0 {
+			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput,
+				"stack %s: environment.files is not supported; put the variables in the stack's %s, or set them with environment.inline",
+				stackKey, c.Discovery.GetEnvironmentFile())
+		}
+
 		// Validate stack name format
 		if !appKeyRegex.MatchString(stackName) {
 			return apperr.New("manifest.normalizeAndValidate", apperr.InvalidInput, "invalid stack name %q in key %q: must match ^[a-z0-9_.-]+$", stackName, stackKey)
