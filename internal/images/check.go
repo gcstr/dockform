@@ -2,6 +2,7 @@ package images
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"sort"
 	"sync"
@@ -79,12 +80,16 @@ func checkImage(
 	}
 
 	localDigest, err := localDigestFn(ctx, stackKey, svcName, imageStr)
-	if err != nil {
+	switch {
+	case errors.Is(err, ErrNotApplied):
+		// Nothing local to compare; newer tags are still worth reporting.
+		status.NotApplied = true
+	case err != nil:
 		status.Error = err.Error()
 		return status
+	default:
+		status.DigestStale = remoteDigest != localDigest
 	}
-
-	status.DigestStale = remoteDigest != localDigest
 
 	// Tag comparison (only when a pattern is configured).
 	if tagPattern == "" {

@@ -3,6 +3,7 @@ package imagescmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -118,9 +119,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		// unreliable when concurrent, so this must stay sequential.
 		localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory, projectsByStack(inputs)))
 
-		results, err = images.Check(cmd.Context(), inputs, reg, func(_ context.Context, stackKey, service, _ string) (string, error) {
-			return localDigests[stackKey+"|"+service], nil
-		})
+		results, err = images.Check(cmd.Context(), inputs, reg, localDigests.lookup)
 		return err
 	})
 	if err != nil {
@@ -223,19 +222,42 @@ func buildCheckInputs(ctx context.Context, cfg *manifest.Config, getClient clien
 // ensures that a service whose image has been pulled but not yet recreated
 // still appears stale — the container is still running the old image.
 //
-// Performance: two calls are issued per Docker context (daemon), regardless of
-// how many services or stacks share that context:
-//   1. docker ps   — maps every running compose container to its image ID
-//   2. docker image inspect (batched) — maps each image ID to its repo digest
+// When the image the compose file names is not on the host at all, it returns
+// images.ErrNotApplied instead of a digest: the file changed since the last
+// apply (images upgrade rewrote the tag, say), and a pull is the wrong fix.
+//
+// Performance: three calls are issued per Docker context (daemon), regardless
+// of how many services or stacks share that context:
+//  1. docker ps   — maps every running compose container to its image ID
+//  2. docker image inspect (batched) — maps each image ID to its repo digest
+//  3. docker image ls — every repository:tag stored on the host
 //
 // Everything is cached in the closure; calls must be sequential (see
 // prefetchLocalDigests). Failures are best-effort: an empty digest makes the
-// image appear stale, which is safe.
+// image appear stale, which is safe, and a failed image ls turns the
+// not-applied check off rather than guess.
 // projects maps stack keys to their compose project (see projectsByStack).
 func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientFactory, projects map[string]string) images.LocalDigestFunc {
+	return newLocalDigestFunc(func(ctxName string) localImageClient {
+		return factory.GetClientForContext(ctxName, cfg)
+	}, projects)
+}
+
+// localImageClient is the subset of *dockercli.Client the local digest lookup
+// needs, so tests can fake the daemon.
+type localImageClient interface {
+	ComposeContainerImageMap(ctx context.Context) (map[string]string, error)
+	ImageRepoDigestMap(ctx context.Context, imageIDs []string) (map[string]string, error)
+	LocalImageRefs(ctx context.Context) ([]string, error)
+	ImageInspectRepoDigests(ctx context.Context, imageRef string) ([]string, error)
+}
+
+func newLocalDigestFunc(getClient func(ctxName string) localImageClient, projects map[string]string) images.LocalDigestFunc {
 	type ctxCache struct {
 		containerImageID map[string]string // "project|service" → full image ID
 		imageDigest      map[string]string // full image ID → repo digest (sha256:…)
+		localRefs        map[string]bool   // localRefKey of every image stored on the host
+		refsListed       bool              // false when image ls failed: skip the not-applied check
 	}
 	cache := make(map[string]*ctxCache) // contextName → populated on first use
 
@@ -246,7 +268,7 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 			log.Debug("local_digest_skipped", "error", err)
 			return "", nil //nolint:nilerr // best-effort, logged
 		}
-		client := factory.GetClientForContext(ctxName, cfg)
+		client := getClient(ctxName)
 
 		// Populate cache for this context on first access.
 		cc, ok := cache[ctxName]
@@ -290,7 +312,25 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 					}
 				}
 			}
+			if refs, err := client.LocalImageRefs(ctx); err != nil {
+				log.Warn("local_images_unavailable", "context", ctxName, "error", err,
+					"impact", "images whose compose tag changed since the last apply may be reported as stale")
+			} else {
+				cc.localRefs = make(map[string]bool, len(refs))
+				for _, r := range refs {
+					if key, ok := localRefKey(r); ok {
+						cc.localRefs[key] = true
+					}
+				}
+				cc.refsListed = true
+			}
 			cache[ctxName] = cc
+		}
+
+		// The compose file names an image the host doesn't have: whatever runs
+		// (if anything) predates the file, so there is nothing to compare.
+		if key, ok := localRefKey(imageRef); ok && cc.refsListed && !cc.localRefs[key] {
+			return "", images.ErrNotApplied
 		}
 
 		// Look up the running container's digest for this (stack, service).
@@ -319,6 +359,32 @@ func makeLocalDigestFunc(cfg *manifest.Config, factory *dockercli.DefaultClientF
 		}
 		return "", nil
 	}
+}
+
+// localRefKey normalizes an image reference the way docker image ls prints
+// it, so a compose ref and a stored image compare equal: Docker Hub's registry
+// and library/ prefixes dropped, the tag defaulting to latest. Digest-pinned
+// references return false: they name content, not a tag, and are left to the
+// digest comparison.
+func localRefKey(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.Contains(raw, "@") {
+		return "", false
+	}
+	name, tag := raw, "latest"
+	if i := strings.LastIndex(raw, ":"); i > strings.LastIndex(raw, "/") {
+		name, tag = raw[:i], raw[i+1:]
+	}
+	for _, prefix := range []string{"docker.io/", "index.docker.io/", "registry-1.docker.io/"} {
+		if strings.HasPrefix(name, prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
+	}
+	if rest, ok := strings.CutPrefix(name, "library/"); ok && !strings.Contains(rest, "/") {
+		name = rest
+	}
+	return name + ":" + tag, true
 }
 
 // composeProject returns the compose project a stack runs under, which is what
@@ -351,19 +417,37 @@ func projectsByStack(inputs []images.CheckInput) map[string]string {
 // Docker daemons, and the local digest now reflects the running container rather
 // than the stored image. Running exec.Command concurrently (especially over SSH
 // contexts) is unreliable, hence sequential.
-func prefetchLocalDigests(ctx context.Context, inputs []images.CheckInput, fn images.LocalDigestFunc) map[string]string {
-	out := make(map[string]string)
+func prefetchLocalDigests(ctx context.Context, inputs []images.CheckInput, fn images.LocalDigestFunc) localDigests {
+	out := make(localDigests)
 	for _, input := range inputs {
 		for svcName, spec := range input.Services {
 			key := input.StackKey + "|" + svcName
 			if _, seen := out[key]; seen {
 				continue
 			}
-			digest, _ := fn(ctx, input.StackKey, svcName, spec.Image) // best-effort: empty string on failure
-			out[key] = digest
+			digest, err := fn(ctx, input.StackKey, svcName, spec.Image)
+			// Best-effort: other failures leave an empty digest.
+			if !errors.Is(err, images.ErrNotApplied) {
+				err = nil
+			}
+			out[key] = localDigest{digest: digest, err: err}
 		}
 	}
 	return out
+}
+
+type localDigest struct {
+	digest string
+	err    error // nil, or images.ErrNotApplied
+}
+
+// localDigests holds prefetched results by "stack|service".
+type localDigests map[string]localDigest
+
+// lookup is an images.LocalDigestFunc over the prefetched results.
+func (l localDigests) lookup(_ context.Context, stackKey, service, _ string) (string, error) {
+	d := l[stackKey+"|"+service]
+	return d.digest, d.err
 }
 
 // jsonResult is the JSON output format for a single image check result.
@@ -373,6 +457,7 @@ type jsonResult struct {
 	Image         string   `json:"image"`
 	CurrentTag    string   `json:"current_tag"`
 	DigestChanged bool     `json:"digest_changed"`
+	NotApplied    bool     `json:"not_applied"`
 	NewerTags     []string `json:"newer_tags,omitempty"`
 	Error         string   `json:"error,omitempty"`
 }
@@ -386,6 +471,7 @@ func renderJSON(cmd *cobra.Command, results []images.ImageStatus) error {
 			Image:         r.Image,
 			CurrentTag:    r.CurrentTag,
 			DigestChanged: r.DigestStale,
+			NotApplied:    r.NotApplied,
 			NewerTags:     r.NewerTags,
 			Error:         r.Error,
 		})
@@ -408,7 +494,7 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 	// Split into attention-needed and ok.
 	var attention, ok []images.ImageStatus
 	for _, r := range results {
-		if r.Error != "" || r.DigestStale || len(r.NewerTags) > 0 {
+		if r.Error != "" || r.DigestStale || r.NotApplied || len(r.NewerTags) > 0 {
 			attention = append(attention, r)
 		} else {
 			ok = append(ok, r)
@@ -491,9 +577,12 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 
 			upgrade := upgradeCellStyled(r, wUpgrade)
 			var digest string
-			if r.DigestStale {
+			switch {
+			case r.NotApplied:
+				digest = ui.YellowText("not applied")
+			case r.DigestStale:
 				digest = ui.YellowText("changed")
-			} else {
+			default:
 				digest = "-"
 			}
 			pr.Plain("  %s  %s  %s  %s  %s", stack, image, tag, upgrade, digest)
@@ -538,6 +627,15 @@ func renderTerminal(pr ui.Printer, results []images.ImageStatus, showAll bool) {
 		}
 	}
 
+	// Footer: point "not applied" rows at apply, the command that fixes them.
+	for _, r := range results {
+		if r.Error == "" && r.NotApplied {
+			pr.Plain("\n%s  %s", ui.YellowText("!"),
+				dimStyle.Render(`"not applied": the compose file names an image that isn't on the host yet. Run dockform apply.`))
+			break
+		}
+	}
+
 	// Footer: explain the "no tag_pattern" badge whenever any image in scope
 	// is missing a tag_pattern — across both attention and ok tables.
 	hasMissingPattern := false
@@ -572,4 +670,3 @@ func imageNameWithoutTag(image string) string {
 	}
 	return image
 }
-

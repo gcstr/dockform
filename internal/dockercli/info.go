@@ -135,6 +135,24 @@ func (c *Client) ImageRepoDigestMap(ctx context.Context, imageIDs []string) (map
 	return result, nil
 }
 
+// LocalImageRefs lists every repository:tag stored on the daemon in a single
+// docker image ls call. Untagged images are left out.
+func (c *Client) LocalImageRefs(ctx context.Context) ([]string, error) {
+	out, err := c.exec.Run(ctx, "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
+	if err != nil {
+		return nil, err
+	}
+	var refs []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.Contains(line, "<none>") {
+			continue
+		}
+		refs = append(refs, line)
+	}
+	return refs, nil
+}
+
 // ImageExists returns true if the given image is present locally in the configured context.
 func (c *Client) ImageExists(ctx context.Context, imageRef string) (bool, error) {
 	if strings.TrimSpace(imageRef) == "" {

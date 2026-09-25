@@ -1,7 +1,6 @@
 package imagescmd
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -69,9 +68,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	var results []images.ImageStatus
 	err = common.SpinnerOperation(pr, "Checking images...", func() error {
 		localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory, projectsByStack(inputs)))
-		results, err = images.Check(cmd.Context(), inputs, reg, func(_ context.Context, stackKey, service, _ string) (string, error) {
-			return localDigests[stackKey+"|"+service], nil
-		})
+		results, err = images.Check(cmd.Context(), inputs, reg, localDigests.lookup)
 		return err
 	})
 	if err != nil {
@@ -157,6 +154,8 @@ func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes 
 			default:
 				notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, warnCell(fmt.Sprintf("%s available, but the tag was not found in the compose files", r.NewerTags[0]))})
 			}
+		case r.NotApplied:
+			notUpgraded = append(notUpgraded, []tableCell{stack, image, tag, warnCell(notAppliedHint)})
 		case r.DigestStale:
 			reason := "digest changed, no newer tag; run `dockform images pull`"
 			if !r.HasTagPattern {
@@ -205,6 +204,10 @@ func renderUpgradeTerminal(pr ui.Printer, results []images.ImageStatus, changes 
 			dim.Render(" to publish the changes."))
 	}
 }
+
+// notAppliedHint explains an images.ErrNotApplied row: the compose file names
+// an image the host doesn't have, usually a tag images upgrade just rewrote.
+const notAppliedHint = "not applied: the compose file changed since the last apply; run `dockform apply`"
 
 // tableCell is one table cell: its text, and an optional style applied after
 // padding so column widths come from the plain text.

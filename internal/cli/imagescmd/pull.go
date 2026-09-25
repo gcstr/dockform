@@ -71,9 +71,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 	var results []images.ImageStatus
 	err = common.SpinnerOperation(pr, "Checking images...", func() error {
 		localDigests := prefetchLocalDigests(cmd.Context(), inputs, makeLocalDigestFunc(cfg, factory, projectsByStack(inputs)))
-		results, err = images.Check(cmd.Context(), inputs, reg, func(_ context.Context, stackKey, service, _ string) (string, error) {
-			return localDigests[stackKey+"|"+service], nil
-		})
+		results, err = images.Check(cmd.Context(), inputs, reg, localDigests.lookup)
 		return err
 	})
 	if err != nil {
@@ -81,15 +79,23 @@ func runPull(cmd *cobra.Command, args []string) error {
 	}
 
 	// Only care about same-tag digest drift: DigestStale, no newer tags, no error.
-	var stale []images.ImageStatus
+	var stale, notApplied []images.ImageStatus
 	for _, r := range results {
-		if r.DigestStale && len(r.NewerTags) == 0 && r.Error == "" {
+		switch {
+		case r.Error != "":
+		case r.NotApplied:
+			notApplied = append(notApplied, r)
+		case r.DigestStale && len(r.NewerTags) == 0:
 			stale = append(stale, r)
 		}
 	}
 
+	// A pull can't fix these: the host doesn't have the image the compose
+	// file names yet. Say so rather than report everything current.
+	renderNotApplied(pr, notApplied)
+
 	if len(stale) == 0 {
-		pr.Plain("%s  All images are current, no digest drift detected.", ui.GreenText("✓"))
+		pr.Plain("%s  No digest drift detected.", ui.GreenText("✓"))
 		return nil
 	}
 
@@ -239,6 +245,19 @@ func renderPullPreview(pr ui.Printer, stale []images.ImageStatus, recreate, dryR
 	default:
 		pr.Plain("\nPass --recreate to restart containers with the new images.")
 	}
+}
+
+// renderNotApplied lists the services whose compose file names an image the
+// host doesn't have, and points at apply.
+func renderNotApplied(pr ui.Printer, notApplied []images.ImageStatus) {
+	if len(notApplied) == 0 {
+		return
+	}
+	pr.Plain("%s  %d service(s) not applied: the compose file changed since the last apply\n", ui.YellowText("!"), len(notApplied))
+	for _, r := range notApplied {
+		pr.Plain("  %s  %s  %s: %s", ui.YellowText("→"), r.Stack, r.Service, r.Image)
+	}
+	pr.Plain("\nRun dockform apply to deploy them; images pull leaves them alone.\n")
 }
 
 // renderPullTerminal reports a finished pull. After --recreate the preview

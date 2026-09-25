@@ -603,3 +603,59 @@ func TestRenderUpgradeTerminal_LatestImagesAreOnlyCounted(t *testing.T) {
 		t.Errorf("images already on the latest tag should only be counted, got: %q", got)
 	}
 }
+
+var notAppliedResult = images.ImageStatus{
+	Stack: "hetzner-one/navidrome", Service: "navidrome", Image: "deluan/navidrome:0.64.2",
+	CurrentTag: "0.64.2", HasTagPattern: true, NotApplied: true,
+}
+
+func TestRenderUpgradeTerminal_NotAppliedPointsAtApply(t *testing.T) {
+	var buf bytes.Buffer
+	renderUpgradeTerminal(newTestPrinter(&buf), []images.ImageStatus{notAppliedResult}, nil, map[string][]string{}, false)
+	got := stripANSI(buf.String())
+	if !strings.Contains(got, "not applied: the compose file changed since the last apply; run `dockform apply`") {
+		t.Errorf("expected the not-applied reason, got: %q", got)
+	}
+	if strings.Contains(got, "images pull") || strings.Contains(got, "digest changed") {
+		t.Errorf("a not-applied image must not be sent to images pull, got: %q", got)
+	}
+}
+
+func TestRenderTerminal_NotAppliedNeedsAttention(t *testing.T) {
+	var buf bytes.Buffer
+	renderTerminal(newTestPrinter(&buf), []images.ImageStatus{notAppliedResult}, false)
+	got := stripANSI(buf.String())
+	for _, want := range []string{"1 image(s) need attention", "not applied", "Run dockform apply."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q, got: %q", want, got)
+		}
+	}
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "navidrome") && strings.HasSuffix(strings.TrimSpace(line), "changed") {
+			t.Errorf("a not-applied image must not show as digest changed, got row: %q", line)
+		}
+	}
+}
+
+func TestRenderNotApplied_ListsServicesAndPointsAtApply(t *testing.T) {
+	var buf bytes.Buffer
+	renderNotApplied(newTestPrinter(&buf), []images.ImageStatus{notAppliedResult})
+	got := stripANSI(buf.String())
+	for _, want := range []string{"1 service(s) not applied", "hetzner-one/navidrome  navidrome: deluan/navidrome:0.64.2", "Run dockform apply"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q, got: %q", want, got)
+		}
+	}
+}
+
+func TestRenderJSON_ReportsNotApplied(t *testing.T) {
+	var buf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
+	if err := renderJSON(cmd, []images.ImageStatus{notAppliedResult}); err != nil {
+		t.Fatalf("renderJSON: %v", err)
+	}
+	if !strings.Contains(buf.String(), `"not_applied": true`) || !strings.Contains(buf.String(), `"digest_changed": false`) {
+		t.Errorf("expected not_applied true and digest_changed false, got: %s", buf.String())
+	}
+}

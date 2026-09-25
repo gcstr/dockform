@@ -523,3 +523,27 @@ func TestCheck_EmptyInputs(t *testing.T) {
 		t.Errorf("expected empty results, got %d", len(results))
 	}
 }
+
+func TestCheck_NotAppliedIsNotDigestDrift(t *testing.T) {
+	reg := newMockRegistry()
+	reg.setDigest("deluan/navidrome", "0.64.2", "sha256:new")
+	reg.tags["deluan/navidrome"] = []string{"0.64.1", "0.64.2", "0.65.0"}
+
+	notApplied := func(context.Context, string, string, string) (string, error) { return "", ErrNotApplied }
+	inputs := []CheckInput{{
+		StackKey: "one/navidrome",
+		Services: map[string]ServiceSpec{"navidrome": {Image: "deluan/navidrome:0.64.2", TagPattern: `^\d+\.\d+\.\d+$`}},
+	}}
+
+	results, err := Check(context.Background(), inputs, reg, notApplied)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	r := results[0]
+	if !r.NotApplied || r.DigestStale || r.Error != "" {
+		t.Fatalf("expected not applied without digest drift or error, got %+v", r)
+	}
+	if len(r.NewerTags) != 1 || r.NewerTags[0] != "0.65.0" {
+		t.Errorf("newer tags should still be reported for a not-applied image, got %v", r.NewerTags)
+	}
+}

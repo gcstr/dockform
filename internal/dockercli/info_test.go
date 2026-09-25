@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -23,6 +24,8 @@ type infoExecStub struct {
 	composeLongErr  error
 
 	imageInspectErr error
+
+	imageLsOut string
 }
 
 func (s *infoExecStub) Run(ctx context.Context, args ...string) (string, error) {
@@ -36,6 +39,8 @@ func (s *infoExecStub) Run(ctx context.Context, args ...string) (string, error) 
 		return s.composeShortOut, s.composeShortErr
 	case len(args) == 2 && args[0] == "compose" && args[1] == "version":
 		return s.composeLongOut, s.composeLongErr
+	case len(args) >= 2 && args[0] == "image" && args[1] == "ls":
+		return s.imageLsOut, nil
 	case len(args) >= 3 && args[0] == "image" && args[1] == "inspect":
 		if s.imageInspectErr != nil {
 			return "", s.imageInspectErr
@@ -171,5 +176,22 @@ func TestImageExists_HandlesBlankAndInspectErrors(t *testing.T) {
 	exists, err = c.ImageExists(context.Background(), "nginx:latest")
 	if err != nil || !exists {
 		t.Fatalf("expected existing image true,nil; got exists=%v err=%v", exists, err)
+	}
+}
+
+func TestLocalImageRefs_SkipsUntaggedImages(t *testing.T) {
+	stub := &infoExecStub{imageLsOut: "deluan/navidrome:0.64.1\n<none>:<none>\nghcr.io/acme/app:<none>\nredis:8.10-alpine\n"}
+	c := &Client{exec: stub}
+
+	refs, err := c.LocalImageRefs(context.Background())
+	if err != nil {
+		t.Fatalf("LocalImageRefs: %v", err)
+	}
+	want := []string{"deluan/navidrome:0.64.1", "redis:8.10-alpine"}
+	if !reflect.DeepEqual(refs, want) {
+		t.Fatalf("refs = %v, want %v", refs, want)
+	}
+	if len(stub.calls) != 1 {
+		t.Fatalf("expected a single docker call, got %#v", stub.calls)
 	}
 }
