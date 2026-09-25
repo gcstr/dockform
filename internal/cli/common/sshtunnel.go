@@ -265,6 +265,14 @@ func tunnelTargets(cfg *manifest.Config, endpoints map[string]string) map[string
 	return out
 }
 
+// DockerContextEndpoints returns each named docker context's endpoint (for
+// example ssh://host), read with `docker context inspect`. That only reads
+// local docker metadata; no daemon is contacted. Names that cannot be
+// inspected are left out.
+func DockerContextEndpoints(ctx context.Context, names []string) map[string]string {
+	return lookupDockerEndpoints(ctx, names)
+}
+
 // dockerContextEndpoints reads each docker context's Docker endpoint. Names
 // that cannot be inspected are left out; the reachability check reports them.
 func dockerContextEndpoints(ctx context.Context, names []string) map[string]string {
