@@ -204,6 +204,8 @@ stacks:
 
 func TestValidate_Fails_WhenSopsAgeKeyMissing(t *testing.T) {
 	defer withStubDocker(t)()
+	t.Setenv("SOPS_AGE_KEY", "")
+	t.Setenv("SOPS_AGE_KEY_CMD", "")
 	tmp := t.TempDir()
 	mustWrite := func(path string, content string) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -384,6 +386,8 @@ stacks:
 
 func TestValidate_Fails_WhenAgeKeyFileEmptyWithSopsSecrets(t *testing.T) {
 	defer withStubDocker(t)()
+	t.Setenv("SOPS_AGE_KEY", "")
+	t.Setenv("SOPS_AGE_KEY_CMD", "")
 	tmp := t.TempDir()
 	mustWrite := func(path string, content string) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -643,5 +647,56 @@ func TestStatFailure_ReportsTheReasonOnceWithoutRepeatingThePath(t *testing.T) {
 	want := "fileset x source " + target + ": permission denied"
 	if got != want {
 		t.Errorf("statFailure = %q, want %q", got, want)
+	}
+}
+
+func TestValidate_Succeeds_WhenAgeKeyInEnvInsteadOfFile(t *testing.T) {
+	for name, tc := range map[string]struct{ keyFile, key, cmd string }{
+		"empty key_file, key":   {keyFile: "${AGE_KEY_FILE}", key: "AGE-SECRET-KEY-1TEST"},
+		"missing key_file, key": {keyFile: "/nonexistent/keys.txt", key: "AGE-SECRET-KEY-1TEST"},
+		"empty key_file, cmd":   {keyFile: "${AGE_KEY_FILE}", cmd: "print-age-key"},
+		"missing key_file, cmd": {keyFile: "/nonexistent/keys.txt", cmd: "print-age-key"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer withStubDocker(t)()
+			t.Setenv("AGE_KEY_FILE", "")
+			t.Setenv("SOPS_AGE_KEY", tc.key)
+			t.Setenv("SOPS_AGE_KEY_CMD", tc.cmd)
+			tmp := t.TempDir()
+			mustWrite := func(path string, content string) {
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatalf("mkdir: %v", err)
+				}
+				if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+					t.Fatalf("write %s: %v", path, err)
+				}
+			}
+
+			mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
+			mustWrite(filepath.Join(tmp, "website", "secrets.env"), "KEY=value\n")
+			mustWrite(filepath.Join(tmp, "dockform.yml"), `identifier: test-id
+contexts:
+  default: {}
+sops:
+  age:
+    key_file: `+tc.keyFile+`
+stacks:
+  default/website:
+    root: website
+    files:
+      - docker-compose.yaml
+    secrets:
+      sops:
+        - secrets.env
+`)
+
+			cfg, err := manifest.Load(tmp)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			if err := Validate(context.Background(), cfg, dockercli.NewClientFactory()); err != nil {
+				t.Fatalf("expected the environment key to satisfy validation, got: %v", err)
+			}
+		})
 	}
 }

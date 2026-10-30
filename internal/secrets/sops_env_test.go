@@ -78,3 +78,44 @@ func TestBuildSopsEnv_DoesNotSetLoopbackWhenAgentEnabled(t *testing.T) {
 		t.Fatalf("did not expect SOPS_GPG_EXEC when pgp agent is enabled, got: %q", got)
 	}
 }
+
+func TestBuildSopsEnv_MissingKeyFileKeepsEnvKey(t *testing.T) {
+	t.Setenv("SOPS_AGE_KEY", "AGE-SECRET-KEY-1ENV")
+	t.Setenv("SOPS_AGE_KEY_CMD", "")
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+	env := buildSopsEnv(SopsOptions{AgeKeyFile: filepath.Join(t.TempDir(), "missing.txt")})
+	if got := envValue(env, "SOPS_AGE_KEY_FILE"); got != "" {
+		t.Fatalf("SOPS_AGE_KEY_FILE should not point at a missing file: %q", got)
+	}
+	if got := envValue(env, "SOPS_AGE_KEY"); got != "AGE-SECRET-KEY-1ENV" {
+		t.Fatalf("unexpected SOPS_AGE_KEY: %q", got)
+	}
+}
+
+func TestBuildSopsEnv_MissingKeyFileKeepsEnvKeyCmd(t *testing.T) {
+	t.Setenv("SOPS_AGE_KEY", "")
+	t.Setenv("SOPS_AGE_KEY_CMD", "print-age-key")
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+	env := buildSopsEnv(SopsOptions{AgeKeyFile: filepath.Join(t.TempDir(), "missing.txt")})
+	if got := envValue(env, "SOPS_AGE_KEY_FILE"); got != "" {
+		t.Fatalf("SOPS_AGE_KEY_FILE should not point at a missing file: %q", got)
+	}
+	if got := envValue(env, "SOPS_AGE_KEY_CMD"); got != "print-age-key" {
+		t.Fatalf("unexpected SOPS_AGE_KEY_CMD: %q", got)
+	}
+}
+
+func TestBuildSopsEnv_KeyFileWinsOverEnvKey(t *testing.T) {
+	t.Setenv("SOPS_AGE_KEY", "AGE-SECRET-KEY-1ENV")
+	keyPath := filepath.Join(t.TempDir(), "age.key")
+	if err := os.WriteFile(keyPath, []byte("AGE-SECRET-KEY-1FILE\n"), 0o600); err != nil {
+		t.Fatalf("write key file: %v", err)
+	}
+
+	env := buildSopsEnv(SopsOptions{AgeKeyFile: keyPath})
+	if got := envValue(env, "SOPS_AGE_KEY"); got != "AGE-SECRET-KEY-1FILE\n" {
+		t.Fatalf("unexpected SOPS_AGE_KEY: %q", got)
+	}
+}

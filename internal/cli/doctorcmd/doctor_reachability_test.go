@@ -107,7 +107,8 @@ func TestDoctorCmd_UnreachableContext_TimesOutInsteadOfHanging(t *testing.T) {
 	go func() { done <- root.Execute() }()
 
 	select {
-	case <-done:
+	case err := <-done:
+		_ = err // an unreachable context can fail doctor; only the timing matters here
 		elapsed := time.Since(start)
 		if elapsed >= 3*time.Second {
 			t.Fatalf("doctor took %s; expected it to time out well before the stub's 5s sleep", elapsed)
