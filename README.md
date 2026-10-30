@@ -35,7 +35,7 @@ contexts:
   hetzner-one: {}
 ```
 
-`key_file` is optional when the age key is in `SOPS_AGE_KEY`, for example loaded from a password manager. Keep the `sops.age` block in the manifest either way. If the file exists, it wins over the variable.
+`key_file` is optional when sops can get the age key from the environment: either `SOPS_AGE_KEY` holds it, or `SOPS_AGE_KEY_CMD` prints it, for example from a password manager. `SOPS_AGE_KEY_CMD` keeps the key out of your shell environment. sops runs it without a shell, so `$VAR` is not expanded. Keep the `sops.age` block in the manifest either way, and set `sops.age.recipients` when using `SOPS_AGE_KEY_CMD`. If the file exists, it wins over both variables.
 
 ```
 project/

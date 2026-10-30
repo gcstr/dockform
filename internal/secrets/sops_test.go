@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -75,6 +76,16 @@ func TestParseDotenv_VariousCases(t *testing.T) {
 	}
 }
 
+// unsetEnv clears key for the test. sops treats a set but empty SOPS_AGE_KEY_CMD
+// as a command to run, so t.Setenv(key, "") is not enough.
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	t.Setenv(key, "")
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("unset %s: %v", key, err)
+	}
+}
+
 func TestDecryptAndParse_AgeKeyFromEnv(t *testing.T) {
 	requireSops(t)
 	dir := t.TempDir()
@@ -93,6 +104,7 @@ func TestDecryptAndParse_AgeKeyFromEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read key: %v", err)
 	}
+	unsetEnv(t, "SOPS_AGE_KEY_CMD")
 	if err := os.Remove(keyPath); err != nil {
 		t.Fatalf("remove key: %v", err)
 	}
@@ -112,6 +124,41 @@ func TestDecryptAndParse_AgeKeyFromEnv(t *testing.T) {
 	}
 }
 
+func TestDecryptAndParse_AgeKeyFromEnvCmd(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as the key command")
+	}
+	requireSops(t)
+	dir := t.TempDir()
+	keyPath, recip := writeTempAgeKey(t, dir, true)
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	t.Setenv("SOPS_AGE_KEY", "")
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+	plainPath := filepath.Join(dir, "secret.env")
+	if err := os.WriteFile(plainPath, []byte("FOO=bar\n"), 0o600); err != nil {
+		t.Fatalf("write plaintext: %v", err)
+	}
+	if err := EncryptDotenvFileWithSops(context.Background(), plainPath, []string{recip}, keyPath, nil, "", false, "", ""); err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	cmdPath := filepath.Join(dir, "print-age-key")
+	script := "#!/bin/sh\ncat '" + keyPath + "'\n"
+	if err := os.WriteFile(cmdPath, []byte(script), 0o700); err != nil {
+		t.Fatalf("write key command: %v", err)
+	}
+	t.Setenv("SOPS_AGE_KEY_CMD", cmdPath)
+
+	pairs, err := DecryptAndParse(context.Background(), plainPath, SopsOptions{AgeConfigured: true})
+	if err != nil {
+		t.Fatalf("DecryptAndParse: %v", err)
+	}
+	if len(pairs) != 1 || pairs[0] != "FOO=bar" {
+		t.Fatalf("unexpected pairs: %#v", pairs)
+	}
+}
+
 func TestDecryptAndParse_AgeConfiguredWithoutKeyDoesNotReadPlaintext(t *testing.T) {
 	requireSops(t)
 	dir := t.TempDir()
@@ -119,8 +166,9 @@ func TestDecryptAndParse_AgeConfiguredWithoutKeyDoesNotReadPlaintext(t *testing.
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
-	t.Setenv("SOPS_AGE_KEY", "")
-	t.Setenv("SOPS_AGE_KEY_FILE", "")
+	unsetEnv(t, "SOPS_AGE_KEY")
+	unsetEnv(t, "SOPS_AGE_KEY_CMD")
+	unsetEnv(t, "SOPS_AGE_KEY_FILE")
 	plainPath := filepath.Join(dir, "secret.env")
 	if err := os.WriteFile(plainPath, []byte("FOO=bar\n"), 0o600); err != nil {
 		t.Fatalf("write plaintext: %v", err)

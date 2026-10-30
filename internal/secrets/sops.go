@@ -26,12 +26,21 @@ type SopsOptions struct {
 	PgpRecipients   []string
 }
 
-// ageKeyEnv is the environment variable sops reads an age key from.
-const ageKeyEnv = "SOPS_AGE_KEY"
+// Environment variables sops reads an age key from, or runs to get one.
+const (
+	ageKeyEnv    = "SOPS_AGE_KEY"
+	ageKeyCmdEnv = "SOPS_AGE_KEY_CMD"
+)
 
 // AgeKeyInEnv reports whether an age key is available through SOPS_AGE_KEY.
 func AgeKeyInEnv() bool {
 	return strings.TrimSpace(os.Getenv(ageKeyEnv)) != ""
+}
+
+// AgeKeySourceInEnv reports whether sops can get an age key from the environment,
+// either directly or by running SOPS_AGE_KEY_CMD.
+func AgeKeySourceInEnv() bool {
+	return AgeKeyInEnv() || strings.TrimSpace(os.Getenv(ageKeyCmdEnv)) != ""
 }
 
 // buildSopsEnv builds environment variables for SOPS without mutating global process environment.
@@ -61,11 +70,11 @@ func buildSopsEnv(opts SopsOptions) []string {
 			}
 		}
 		// Also set SOPS_AGE_KEY for environments where sops reads the key from env.
-		// A missing file leaves an inherited SOPS_AGE_KEY in charge.
+		// A missing file leaves an inherited SOPS_AGE_KEY or SOPS_AGE_KEY_CMD in charge.
 		if b, err := os.ReadFile(key); err == nil {
 			setEnv("SOPS_AGE_KEY_FILE", key)
 			setEnv(ageKeyEnv, string(b))
-		} else if !AgeKeyInEnv() {
+		} else if !AgeKeySourceInEnv() {
 			setEnv("SOPS_AGE_KEY_FILE", key)
 		}
 	}

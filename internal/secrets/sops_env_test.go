@@ -81,6 +81,7 @@ func TestBuildSopsEnv_DoesNotSetLoopbackWhenAgentEnabled(t *testing.T) {
 
 func TestBuildSopsEnv_MissingKeyFileKeepsEnvKey(t *testing.T) {
 	t.Setenv("SOPS_AGE_KEY", "AGE-SECRET-KEY-1ENV")
+	t.Setenv("SOPS_AGE_KEY_CMD", "")
 	t.Setenv("SOPS_AGE_KEY_FILE", "")
 
 	env := buildSopsEnv(SopsOptions{AgeKeyFile: filepath.Join(t.TempDir(), "missing.txt")})
@@ -89,6 +90,20 @@ func TestBuildSopsEnv_MissingKeyFileKeepsEnvKey(t *testing.T) {
 	}
 	if got := envValue(env, "SOPS_AGE_KEY"); got != "AGE-SECRET-KEY-1ENV" {
 		t.Fatalf("unexpected SOPS_AGE_KEY: %q", got)
+	}
+}
+
+func TestBuildSopsEnv_MissingKeyFileKeepsEnvKeyCmd(t *testing.T) {
+	t.Setenv("SOPS_AGE_KEY", "")
+	t.Setenv("SOPS_AGE_KEY_CMD", "print-age-key")
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+
+	env := buildSopsEnv(SopsOptions{AgeKeyFile: filepath.Join(t.TempDir(), "missing.txt")})
+	if got := envValue(env, "SOPS_AGE_KEY_FILE"); got != "" {
+		t.Fatalf("SOPS_AGE_KEY_FILE should not point at a missing file: %q", got)
+	}
+	if got := envValue(env, "SOPS_AGE_KEY_CMD"); got != "print-age-key" {
+		t.Fatalf("unexpected SOPS_AGE_KEY_CMD: %q", got)
 	}
 }
 
