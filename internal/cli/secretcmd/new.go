@@ -51,13 +51,15 @@ func resolveRecipientsAndKey(cfg manifest.Config) (sopsResolved, error) {
 		return sopsResolved{}, apperr.New("cli.resolveRecipientsAndKey", apperr.InvalidInput, "sops config not configured")
 	}
 	var ageRecipients []string
+	ageConfigured := false
 	ageKey := ""
 	if cfg.Sops.Age != nil {
+		ageConfigured = true
 		ageKey = cfg.Sops.Age.KeyFile
-		// Prefer explicit recipients, else derive from key file
+		// Prefer explicit recipients, else derive from key file or SOPS_AGE_KEY
 		if len(cfg.Sops.Age.Recipients) > 0 {
 			ageRecipients = cfg.Sops.Age.Recipients
-		} else if strings.TrimSpace(ageKey) != "" {
+		} else if strings.TrimSpace(ageKey) != "" || secrets.AgeKeyInEnv() {
 			r, err := secrets.AgeRecipientsFromKeyFile(ageKey)
 			if err != nil {
 				return sopsResolved{}, err
@@ -80,7 +82,7 @@ func resolveRecipientsAndKey(cfg manifest.Config) (sopsResolved, error) {
 	if len(ageRecipients) == 0 && len(pgpRecipients) == 0 {
 		return sopsResolved{}, apperr.New("cli.resolveRecipientsAndKey", apperr.InvalidInput, "no sops recipients configured (age or pgp)")
 	}
-	return sopsResolved{opts: secrets.SopsOptions{AgeKeyFile: ageKey, AgeRecipients: ageRecipients, PgpKeyringDir: pgpDir, PgpUseAgent: pgpAgent, PgpPinentryMode: pgpMode, PgpPassphrase: pgpPass, PgpRecipients: pgpRecipients}, ageRecipients: ageRecipients}, nil
+	return sopsResolved{opts: secrets.SopsOptions{AgeConfigured: ageConfigured, AgeKeyFile: ageKey, AgeRecipients: ageRecipients, PgpKeyringDir: pgpDir, PgpUseAgent: pgpAgent, PgpPinentryMode: pgpMode, PgpPassphrase: pgpPass, PgpRecipients: pgpRecipients}, ageRecipients: ageRecipients}, nil
 }
 
 func newCreateCmd() *cobra.Command {
@@ -184,6 +186,7 @@ func newDecryptCmd() *cobra.Command {
 			var opts secrets.SopsOptions
 			if cfg.Sops != nil {
 				if cfg.Sops.Age != nil {
+					opts.AgeConfigured = true
 					opts.AgeKeyFile = cfg.Sops.Age.KeyFile
 				}
 				if cfg.Sops.Pgp != nil {

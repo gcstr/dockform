@@ -12,6 +12,7 @@ import (
 	"github.com/gcstr/dockform/internal/apperr"
 	"github.com/gcstr/dockform/internal/dockercli"
 	"github.com/gcstr/dockform/internal/manifest"
+	"github.com/gcstr/dockform/internal/secrets"
 )
 
 // Validate performs comprehensive validation of the user config and environment.
@@ -42,14 +43,14 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 		}
 	}
 
-	// 2) SOPS key file validation
-	if hasSopsSecrets && cfg.Sops != nil && cfg.Sops.Age != nil {
+	// 2) SOPS key file validation (SOPS_AGE_KEY stands in for the file)
+	if hasSopsSecrets && cfg.Sops != nil && cfg.Sops.Age != nil && !secrets.AgeKeyInEnv() {
 		// Check if key_file is empty - this indicates a missing environment variable
 		if cfg.Sops.Age.KeyFile == "" {
 			return apperr.New("validator.Validate", apperr.InvalidInput,
 				"SOPS age key_file is empty but SOPS secrets are configured; "+
 					"if using environment variable interpolation (e.g., ${AGE_KEY_FILE}), "+
-					"ensure the variable is set in your environment")
+					"ensure the variable is set in your environment, or provide the key through SOPS_AGE_KEY")
 		}
 
 		// Validate that the key file exists
@@ -60,7 +61,7 @@ func Validate(ctx context.Context, cfg manifest.Config, factory *dockercli.Defau
 			}
 		}
 		if _, err := os.Stat(key); err != nil {
-			return apperr.Wrap("validator.Validate", apperr.NotFound, err, "SOPS age key file %s not found", key)
+			return apperr.Wrap("validator.Validate", apperr.NotFound, err, "SOPS age key file %s not found and SOPS_AGE_KEY is not set", key)
 		}
 	}
 

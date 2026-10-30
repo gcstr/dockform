@@ -111,6 +111,7 @@ func TestEncryptDotenvFileWithSops_BadRecipient_Error(t *testing.T) {
 }
 
 func TestAgeRecipientsFromKeyFile_ErrorPaths(t *testing.T) {
+	t.Setenv("SOPS_AGE_KEY", "")
 	if _, err := AgeRecipientsFromKeyFile(""); err == nil || !apperr.IsKind(err, apperr.InvalidInput) {
 		t.Fatalf("expected invalid input error for empty key path, got: %v", err)
 	}
@@ -127,5 +128,25 @@ func TestAgeRecipientsFromKeyFile_ErrorPaths(t *testing.T) {
 	}
 	if _, err := AgeRecipientsFromKeyFile(bad); err == nil || !apperr.IsKind(err, apperr.InvalidInput) {
 		t.Fatalf("expected invalid input error for malformed key file, got: %v", err)
+	}
+}
+
+func TestAgeRecipientsFromKeyFile_FallsBackToEnvKey(t *testing.T) {
+	dir := t.TempDir()
+	keyPath, recip := writeTempAgeKey(t, dir, true)
+	b, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read key: %v", err)
+	}
+	t.Setenv("SOPS_AGE_KEY", string(b))
+
+	for _, path := range []string{"", filepath.Join(dir, "missing.txt")} {
+		recips, err := AgeRecipientsFromKeyFile(path)
+		if err != nil {
+			t.Fatalf("AgeRecipientsFromKeyFile(%q): %v", path, err)
+		}
+		if len(recips) != 1 || recips[0] != recip {
+			t.Fatalf("AgeRecipientsFromKeyFile(%q): unexpected recipients %#v", path, recips)
+		}
 	}
 }

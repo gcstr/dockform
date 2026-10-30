@@ -204,6 +204,7 @@ stacks:
 
 func TestValidate_Fails_WhenSopsAgeKeyMissing(t *testing.T) {
 	defer withStubDocker(t)()
+	t.Setenv("SOPS_AGE_KEY", "")
 	tmp := t.TempDir()
 	mustWrite := func(path string, content string) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -384,6 +385,7 @@ stacks:
 
 func TestValidate_Fails_WhenAgeKeyFileEmptyWithSopsSecrets(t *testing.T) {
 	defer withStubDocker(t)()
+	t.Setenv("SOPS_AGE_KEY", "")
 	tmp := t.TempDir()
 	mustWrite := func(path string, content string) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -643,5 +645,53 @@ func TestStatFailure_ReportsTheReasonOnceWithoutRepeatingThePath(t *testing.T) {
 	want := "fileset x source " + target + ": permission denied"
 	if got != want {
 		t.Errorf("statFailure = %q, want %q", got, want)
+	}
+}
+
+func TestValidate_Succeeds_WhenAgeKeyInEnvInsteadOfFile(t *testing.T) {
+	for name, keyFile := range map[string]string{
+		"empty key_file":   "${AGE_KEY_FILE}",
+		"missing key_file": "/nonexistent/keys.txt",
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer withStubDocker(t)()
+			t.Setenv("AGE_KEY_FILE", "")
+			t.Setenv("SOPS_AGE_KEY", "AGE-SECRET-KEY-1TEST")
+			tmp := t.TempDir()
+			mustWrite := func(path string, content string) {
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatalf("mkdir: %v", err)
+				}
+				if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+					t.Fatalf("write %s: %v", path, err)
+				}
+			}
+
+			mustWrite(filepath.Join(tmp, "website", "docker-compose.yaml"), "version: '3'\nservices: {}\n")
+			mustWrite(filepath.Join(tmp, "website", "secrets.env"), "KEY=value\n")
+			mustWrite(filepath.Join(tmp, "dockform.yml"), `identifier: test-id
+contexts:
+  default: {}
+sops:
+  age:
+    key_file: `+keyFile+`
+stacks:
+  default/website:
+    root: website
+    files:
+      - docker-compose.yaml
+    secrets:
+      sops:
+        - secrets.env
+`)
+
+			cfg, err := manifest.Load(tmp)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			if err := Validate(context.Background(), cfg, dockercli.NewClientFactory()); err != nil {
+				t.Fatalf("expected SOPS_AGE_KEY to satisfy validation, got: %v", err)
+			}
+		})
 	}
 }

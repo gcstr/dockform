@@ -16,8 +16,9 @@ import (
 
 // AgeRecipientsFromKeyFile reads an age identity file and returns the corresponding recipient(s).
 // It supports resolving ~/ in the path similarly to DecryptAndParse.
+// When the file is unset or cannot be opened, SOPS_AGE_KEY is used if it holds a key.
 func AgeRecipientsFromKeyFile(ageKeyFile string) ([]string, error) {
-	if ageKeyFile == "" {
+	if ageKeyFile == "" && !AgeKeyInEnv() {
 		return nil, apperr.New("secrets.AgeRecipientsFromKeyFile", apperr.InvalidInput, "age key file path is empty")
 	}
 	key := ageKeyFile
@@ -28,10 +29,18 @@ func AgeRecipientsFromKeyFile(ageKeyFile string) ([]string, error) {
 	}
 	f, err := os.Open(key)
 	if err != nil {
+		if AgeKeyInEnv() {
+			return ageRecipientsFromIdentities(strings.NewReader(os.Getenv(ageKeyEnv)))
+		}
 		return nil, apperr.Wrap("secrets.AgeRecipientsFromKeyFile", apperr.NotFound, err, "open age key file")
 	}
 	defer func() { _ = f.Close() }()
-	identities, err := age.ParseIdentities(f)
+	return ageRecipientsFromIdentities(f)
+}
+
+// ageRecipientsFromIdentities parses age identities and returns the corresponding recipient(s).
+func ageRecipientsFromIdentities(src io.ReadSeeker) ([]string, error) {
+	identities, err := age.ParseIdentities(src)
 	if err != nil {
 		return nil, apperr.Wrap("secrets.AgeRecipientsFromKeyFile", apperr.InvalidInput, err, "parse age identities")
 	}
@@ -46,8 +55,8 @@ func AgeRecipientsFromKeyFile(ageKeyFile string) ([]string, error) {
 		}
 	}
 	if len(recips) == 0 {
-		if _, err := f.Seek(0, io.SeekStart); err == nil {
-			b, _ := io.ReadAll(f)
+		if _, err := src.Seek(0, io.SeekStart); err == nil {
+			b, _ := io.ReadAll(src)
 			for _, ln := range strings.Split(string(b), "\n") {
 				ln = strings.TrimSpace(ln)
 				if strings.HasPrefix(ln, "# public key:") {

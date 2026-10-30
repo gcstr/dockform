@@ -35,6 +35,8 @@ contexts:
   hetzner-one: {}
 ```
 
+`key_file` is optional when the age key is in `SOPS_AGE_KEY`, for example loaded from a password manager. Keep the `sops.age` block in the manifest either way. If the file exists, it wins over the variable.
+
 ```
 project/
 ├── dockform.yaml

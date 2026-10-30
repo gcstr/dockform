@@ -74,3 +74,78 @@ func TestParseDotenv_VariousCases(t *testing.T) {
 		}
 	}
 }
+
+func TestDecryptAndParse_AgeKeyFromEnv(t *testing.T) {
+	requireSops(t)
+	dir := t.TempDir()
+	keyPath, recip := writeTempAgeKey(t, dir, true)
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	plainPath := filepath.Join(dir, "secret.env")
+	if err := os.WriteFile(plainPath, []byte("FOO=bar\n"), 0o600); err != nil {
+		t.Fatalf("write plaintext: %v", err)
+	}
+	if err := EncryptDotenvFileWithSops(context.Background(), plainPath, []string{recip}, keyPath, nil, "", false, "", ""); err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	b, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read key: %v", err)
+	}
+	if err := os.Remove(keyPath); err != nil {
+		t.Fatalf("remove key: %v", err)
+	}
+	t.Setenv("SOPS_AGE_KEY", string(b))
+
+	for name, opts := range map[string]SopsOptions{
+		"no key_file":      {AgeConfigured: true},
+		"missing key_file": {AgeConfigured: true, AgeKeyFile: keyPath},
+	} {
+		pairs, err := DecryptAndParse(context.Background(), plainPath, opts)
+		if err != nil {
+			t.Fatalf("%s: DecryptAndParse: %v", name, err)
+		}
+		if len(pairs) != 1 || pairs[0] != "FOO=bar" {
+			t.Fatalf("%s: unexpected pairs: %#v", name, pairs)
+		}
+	}
+}
+
+func TestDecryptAndParse_AgeConfiguredWithoutKeyDoesNotReadPlaintext(t *testing.T) {
+	requireSops(t)
+	dir := t.TempDir()
+	_, recip := writeTempAgeKey(t, dir, true)
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
+	t.Setenv("SOPS_AGE_KEY", "")
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+	plainPath := filepath.Join(dir, "secret.env")
+	if err := os.WriteFile(plainPath, []byte("FOO=bar\n"), 0o600); err != nil {
+		t.Fatalf("write plaintext: %v", err)
+	}
+	if err := EncryptDotenvFileWithSops(context.Background(), plainPath, []string{recip}, "", nil, "", false, "", ""); err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+
+	if pairs, err := DecryptAndParse(context.Background(), plainPath, SopsOptions{AgeConfigured: true}); err == nil {
+		t.Fatalf("expected a decrypt error, got pairs: %#v", pairs)
+	}
+}
+
+func TestDecryptAndParse_EnvKeyAloneKeepsPlaintextFallback(t *testing.T) {
+	t.Setenv("SOPS_AGE_KEY", "AGE-SECRET-KEY-1ENV")
+	plainPath := filepath.Join(t.TempDir(), "plain.env")
+	if err := os.WriteFile(plainPath, []byte("FOO=bar\n"), 0o600); err != nil {
+		t.Fatalf("write plaintext: %v", err)
+	}
+
+	pairs, err := DecryptAndParse(context.Background(), plainPath, SopsOptions{})
+	if err != nil {
+		t.Fatalf("DecryptAndParse: %v", err)
+	}
+	if len(pairs) != 1 || pairs[0] != "FOO=bar" {
+		t.Fatalf("unexpected pairs: %#v", pairs)
+	}
+}

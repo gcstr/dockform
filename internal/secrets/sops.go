@@ -15,6 +15,7 @@ import (
 // SopsOptions provides decryption/encryption settings for SOPS (age + pgp)
 type SopsOptions struct {
 	// Age
+	AgeConfigured bool // sops.age is declared, so files are decrypted even without a key file
 	AgeKeyFile    string
 	AgeRecipients []string
 	// PGP (GnuPG)
@@ -23,6 +24,14 @@ type SopsOptions struct {
 	PgpPinentryMode string // "default" | "loopback"
 	PgpPassphrase   string // interpolated already; not logged
 	PgpRecipients   []string
+}
+
+// ageKeyEnv is the environment variable sops reads an age key from.
+const ageKeyEnv = "SOPS_AGE_KEY"
+
+// AgeKeyInEnv reports whether an age key is available through SOPS_AGE_KEY.
+func AgeKeyInEnv() bool {
+	return strings.TrimSpace(os.Getenv(ageKeyEnv)) != ""
 }
 
 // buildSopsEnv builds environment variables for SOPS without mutating global process environment.
@@ -51,11 +60,13 @@ func buildSopsEnv(opts SopsOptions) []string {
 				key = filepath.Join(home, key[2:])
 			}
 		}
-		setEnv("SOPS_AGE_KEY_FILE", key)
-
-		// Also set SOPS_AGE_KEY for environments where sops reads the key from env
+		// Also set SOPS_AGE_KEY for environments where sops reads the key from env.
+		// A missing file leaves an inherited SOPS_AGE_KEY in charge.
 		if b, err := os.ReadFile(key); err == nil {
-			setEnv("SOPS_AGE_KEY", string(b))
+			setEnv("SOPS_AGE_KEY_FILE", key)
+			setEnv(ageKeyEnv, string(b))
+		} else if !AgeKeyInEnv() {
+			setEnv("SOPS_AGE_KEY_FILE", key)
 		}
 	}
 
@@ -83,7 +94,7 @@ func buildSopsEnv(opts SopsOptions) []string {
 // This function is safe for concurrent use across multiple goroutines.
 func DecryptAndParse(ctx context.Context, path string, opts SopsOptions) ([]string, error) {
 	// If neither Age nor PGP is configured, treat as plaintext
-	if strings.TrimSpace(opts.AgeKeyFile) == "" && strings.TrimSpace(opts.PgpKeyringDir) == "" {
+	if !opts.AgeConfigured && strings.TrimSpace(opts.AgeKeyFile) == "" && strings.TrimSpace(opts.PgpKeyringDir) == "" {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return nil, apperr.Wrap("secrets.DecryptAndParse", apperr.NotFound, err, "read plaintext file %s", path)
